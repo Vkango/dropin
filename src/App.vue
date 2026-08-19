@@ -7,9 +7,8 @@ import AlbumsPage from './components/AlbumsPage.vue'
 import ArtistsPage from './components/ArtistsPage.vue'
 import SoundEffectsPage from './components/SoundEffectsPage.vue'
 import PluginsPage from './components/PluginsPage.vue'
-import FullscreenPlayer from './components/FullscreenPlayer.vue'
 import DetailPanel from './components/DetailPanel.vue'
-import PlayerControls from './components/PlayerControls.vue'
+import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
 import MotionTransition from './components/MotionTransition.vue'
 import { themeManager } from './utils/themeManager.js'
@@ -487,20 +486,13 @@ onMounted(async () => {
     <!-- 右侧详情面板 -->
     <!-- <DetailPanel :current-song="currentSong" /> -->
 
-    <!-- 底部播放控制栏 -->
-    <PlayerControls :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
+    <!-- 共享播放卡片：迷你播放器和全屏内容在同一张卡片内替换 -->
+    <PlayerSurface :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
       :total-time="totalTime" :progress="progress" :is-fullscreen="showFullscreenPlayer"
-      @toggle-play="handleTogglePlay" @previous="handlePrevious"
-      @next="handleNext" @progress-change="handleProgressChange" @repeat="handleRepeat" @menu="handleMenu"
-      @add="handleAdd" @expand-player="handleExpandPlayer" />
-
-    <!-- 全屏播放器 -->
-    <FullscreenPlayer :is-visible="showFullscreenPlayer" :current-song="currentSong" :is-playing="isPlaying"
-      :current-time="currentTime" :total-time="totalTime" :progress="progress"
-      @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay"
-      @previous="handlePrevious" @next="handleNext" @progress-change="handleProgressChange"
-      @volume-change="(volume) => console.log('音量变化:', volume)" @shuffle="() => console.log('随机播放')"
-      @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')" @queue="() => console.log('播放队列')" />
+      @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay" @previous="handlePrevious" @next="handleNext"
+      @progress-change="handleProgressChange" @volume-change="(volume) => console.log('音量变化:', volume)"
+      @shuffle="() => console.log('随机播放')" @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')"
+      @queue="() => console.log('播放队列')" @menu="handleMenu" @add="handleAdd" @expand-player="handleExpandPlayer" />
   </div>
 </template>
 
@@ -540,7 +532,6 @@ onMounted(async () => {
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
   background: #1a1a1a;
   color: #ffffff;
   overflow: hidden;
@@ -639,7 +630,7 @@ body {
   height: 100vh;
   background: var(--md-sys-color-background);
   color: #ffffff;
-  font-family: 'Inter', Arial, sans-serif;
+  font-family: Microsoft YaHei, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .main-content-wrapper {

@@ -14,6 +14,9 @@ importers:
       '@applemusic-like-lyrics/vue':
         specifier: ^0.1.5
         version: 0.1.5(@pixi/app@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3))(@pixi/filter-blur@7.4.3(@pixi/core@7.4.3))(@pixi/filter-bulge-pinch@5.1.1(@pixi/core@7.4.3))(@pixi/filter-color-matrix@7.4.3(@pixi/core@7.4.3))(@pixi/sprite@7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3)))(jss-preset-default@10.10.0)(jss@10.10.0)(vue@3.5.40)
+      '@lucide/vue':
+        specifier: ^1.32.0
+        version: 1.32.0(vue@3.5.40)
       '@pixi/app':
         specifier: ^7.4.3
         version: 7.4.3(@pixi/core@7.4.3)(@pixi/display@7.4.3(@pixi/core@7.4.3))
@@ -263,6 +266,11 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
+
+  '@lucide/vue@1.32.0':
+    resolution: {integrity: sha512-1JU7YEsgE2QhugazyzHZDkqAAZz+Iiwr4bmGxVNDIFEXryPoACCnB7nognKklSitCTbp1mfC1xetruPczxM6uw==}
+    peerDependencies:
+      vue: '>=3.0.1'
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     resolution: {integrity: sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ==}
@@ -1026,6 +1034,10 @@ snapshots:
     optional: true
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
+
+  '@lucide/vue@1.32.0(vue@3.5.40)':
+    dependencies:
+      vue: 3.5.40
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
     optional: true
