@@ -3,10 +3,10 @@
         <!-- 页面标题 -->
         <div class="music-banner" @click="showAlbumDetail">
             <div class="image-container">
-                <Transition name="banner-image">
+                <MotionTransition variant="banner">
                     <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
                         referrerpolicy="no-referrer">
-                </Transition>
+                </MotionTransition>
             </div>
             <div class="banner-content">
                 <div class="title">DROPIN MUSIC PLAYER</div>
@@ -18,12 +18,18 @@
         <div class="page-header">
             <h1 class="page-title"></h1>
             <div class="view-controls">
-                <button class="view-btn" :class="{ active: viewMode === 'grid' }" @click="setViewMode('grid')">
+                <MotionButton class="view-btn" :class="{ active: viewMode === 'grid' }"
+                    :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                    :while-press="{ scale: 0.96 }" :transition="microTransition"
+                    @click="setViewMode('grid')">
                     <Icon src="/assets/list.svg" size="sm" />
-                </button>
-                <button class="view-btn" :class="{ active: viewMode === 'list' }" @click="setViewMode('list')">
+                </MotionButton>
+                <MotionButton class="view-btn" :class="{ active: viewMode === 'list' }"
+                    :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                    :while-press="{ scale: 0.96 }" :transition="microTransition"
+                    @click="setViewMode('list')">
                     <Icon src="/assets/folder.svg" size="sm" />
-                </button>
+                </MotionButton>
             </div>
         </div>
 
@@ -47,26 +53,29 @@
         </div>
 
         <!-- 专辑网格/列表 -->
-        <Transition name="view" mode="out-in">
+        <MotionTransition variant="page" mode="out-in">
             <div v-if="viewMode === 'grid'" key="grid" class="albums-grid">
-                <div v-for="album in filteredAlbums" :key="album.id" class="album-card"
+                <MotionDiv v-for="album in filteredAlbums" :key="album.id" class="album-card" initial="rest"
+                    while-hover="hover" :variants="cardVariants"
                     @click="$emit('album-select', album)">
                     <div class="album-cover">
-                        <Transition name="album-image" mode="out-in">
-                            <img :key="album.cover" :src="album.cover" :alt="album.title" />
-                        </Transition>
-                        <div class="album-overlay">
-                            <button class="play-btn" @click.stop="$emit('album-play', album)">
+                        <MotionTransition variant="cover" mode="out-in">
+                            <MotionImg :key="album.cover" :src="album.cover" :alt="album.title"
+                                :variants="imageVariants" />
+                        </MotionTransition>
+                        <MotionDiv class="album-overlay" :variants="overlayVariants">
+                            <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }" :while-press="{ scale: 0.94 }"
+                                :transition="microTransition" @click.stop="$emit('album-play', album)">
                                 <Icon src="/assets/play.svg" size="lg" />
-                            </button>
-                        </div>
+                            </MotionButton>
+                        </MotionDiv>
                     </div>
                     <div class="album-info">
                         <h3 class="album-title">{{ album.title }}</h3>
                         <p class="album-artist">{{ album.artist }}</p>
                         <p class="album-meta">{{ album.year }} • {{ album.trackCount }} 首歌</p>
                     </div>
-                </div>
+                </MotionDiv>
             </div>
 
             <div v-else key="list" class="albums-list">
@@ -78,7 +87,8 @@
                     <div class="header-tracks">歌曲数</div>
                     <div class="header-duration">时长</div>
                 </div>
-                <div v-for="album in filteredAlbums" :key="album.id" class="album-row"
+                <MotionDiv v-for="album in filteredAlbums" :key="album.id" class="album-row" initial="rest"
+                    while-hover="hover" :variants="rowVariants"
                     @click="$emit('album-select', album)">
                     <div class="row-cover">
                         <img :src="album.cover" :alt="album.title" />
@@ -89,19 +99,23 @@
                     <div class="row-tracks">{{ album.trackCount }}</div>
                     <div class="row-duration">{{ album.duration }}</div>
                     <div class="row-actions">
-                        <button class="action-btn" @click.stop="$emit('album-play', album)">
+                        <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                            :transition="microTransition" @click.stop="$emit('album-play', album)">
                             <Icon src="/assets/play.svg" size="sm" />
-                        </button>
+                        </MotionButton>
                     </div>
-                </div>
+                </MotionDiv>
             </div>
-        </Transition>
+        </MotionTransition>
     </div>
 </template>
 
 <script setup>
 import { ref, computed, inject } from 'vue'
 import Icon from './Icon.vue'
+import MotionTransition from './MotionTransition.vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
 const props = defineProps({
     albums: {
@@ -111,6 +125,19 @@ const props = defineProps({
 })
 const currentSong = inject('currentSong')
 const emit = defineEmits(['album-select', 'album-play'])
+
+const MotionDiv = motion.div
+const MotionImg = motion.img
+const MotionButton = motion.button
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const cardVariants = { rest: { y: 0 }, hover: { y: -4 } }
+const imageVariants = { rest: { scale: 1 }, hover: { scale: 1.05 } }
+const overlayVariants = { rest: { opacity: 0 }, hover: { opacity: 1 } }
+const rowVariants = {
+    rest: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+    hover: { backgroundColor: 'rgba(var(--primary-color), 0.05)' }
+}
 
 const viewMode = ref('grid')
 const sortBy = ref('name')
@@ -182,13 +209,7 @@ const filteredAlbums = computed(() => {
     border-radius: 8px;
     padding: 8px 12px;
     cursor: pointer;
-    transition: all 0.2s ease;
     color: rgba(var(--text-color), 0.7);
-}
-
-.view-btn:hover {
-    background: rgba(var(--primary-color), 0.1);
-    color: rgba(var(--primary-color), 0.3);
 }
 
 .view-btn.active {
@@ -233,11 +254,6 @@ const filteredAlbums = computed(() => {
 
 .album-card {
     cursor: pointer;
-    transition: transform 0.2s ease;
-}
-
-.album-card:hover {
-    transform: translateY(-4px);
 }
 
 .album-cover {
@@ -253,11 +269,6 @@ const filteredAlbums = computed(() => {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.3s ease;
-}
-
-.album-card:hover .album-cover img {
-    transform: scale(1.05);
 }
 
 .album-overlay {
@@ -270,12 +281,6 @@ const filteredAlbums = computed(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.album-card:hover .album-overlay {
-    opacity: 1;
 }
 
 .play-btn {
@@ -288,12 +293,7 @@ const filteredAlbums = computed(() => {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
     color: white;
-}
-
-.play-btn:hover {
-    transform: scale(1.1);
 }
 
 .album-info {
@@ -352,11 +352,6 @@ const filteredAlbums = computed(() => {
     padding: 12px 16px;
     border-radius: 8px;
     cursor: pointer;
-    transition: background 0.2s ease;
-}
-
-.album-row:hover {
-    background: rgba(var(--primary-color), 0.05);
 }
 
 .row-cover img {
@@ -386,44 +381,6 @@ const filteredAlbums = computed(() => {
     cursor: pointer;
     padding: 8px;
     border-radius: 50%;
-    transition: all 0.2s ease;
-}
-
-.action-btn:hover {
-    background: rgba(var(--primary-color), 0.1);
-    color: rgba(var(--primary-color), 0.3);
-}
-
-/* 视图切换动画 */
-.view-enter-active,
-.view-leave-active {
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.view-enter-from {
-    opacity: 0;
-    transform: translateY(20px);
-}
-
-.view-leave-to {
-    opacity: 0;
-    transform: translateY(-20px);
-}
-
-/* 专辑图片过渡动画 */
-.album-image-enter-active,
-.album-image-leave-active {
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.album-image-enter-from {
-    opacity: 0;
-    transform: scale(0.9);
-}
-
-.album-image-leave-to {
-    opacity: 0;
-    transform: scale(1.1);
 }
 
 /* 滚动条样式 */

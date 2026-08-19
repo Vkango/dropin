@@ -1,15 +1,17 @@
 <template>
-    <Transition name="modal" appear>
+    <MotionTransition variant="modal" appear>
         <div v-if="visible" class="modal-overlay" @click="handleOverlayClick">
-            <Transition name="card" appear>
+            <MotionTransition variant="card" appear>
                 <div v-if="visible" class="album-card" @click.stop>
-                    <button class="close-button" @click="$emit('close')">
+                    <MotionButton class="close-button" :while-hover="{ scale: 1.08 }" :while-press="{ scale: 0.94 }"
+                        :transition="microTransition" @click="$emit('close')">
                         <Icon src="/assets/close.svg" size="sm" />
-                    </button>
+                    </MotionButton>
                     <div class="album-cover">
-                        <Transition name="album-cover" mode="out-in">
-                            <img :key="album.coverUrl" :src="album.coverUrl" :alt="album.title" />
-                        </Transition>
+                        <MotionTransition variant="albumCover" mode="out-in">
+                            <MotionImg :key="album.coverUrl" :src="album.coverUrl" :alt="album.title"
+                                :while-hover="{ scale: 1.05 }" :transition="microTransition" />
+                        </MotionTransition>
                     </div>
                     <div class="album-info">
                         <div class="album-header">
@@ -23,15 +25,19 @@
 
                         <!-- 操作按钮 -->
                         <div class="action-buttons">
-                            <button class="play-all-btn" @click="$emit('play-all')">
+                            <MotionButton class="play-all-btn"
+                                :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.3)' }"
+                                :while-press="{ scale: 0.96 }" :transition="microTransition" @click="$emit('play-all')">
                                 <Icon src="/assets/play.svg" size="sm" />
                                 <span>Play all</span>
-                            </button>
+                            </MotionButton>
                         </div>
 
                         <!-- 歌曲列表 -->
                         <div class="track-list">
-                            <div v-for="(track, index) in album.tracks" :key="track.id" class="track-item"
+                            <MotionDiv v-for="(track, index) in album.tracks" :key="track.id" class="track-item"
+                                :while-hover="{ backgroundColor: 'rgba(var(--primary-color), 0.08)' }"
+                                :transition="microTransition"
                                 @click="$emit('track-select', track)" @dblclick="$emit('track-play', track)">
                                 <div class="track-number">{{ index + 1 }}</div>
                                 <div class="track-info">
@@ -39,18 +45,28 @@
                                     <div class="track-artist">{{ track.artist || album.artist }}</div>
                                 </div>
                                 <div class="track-duration">{{ track.duration }}</div>
-                            </div>
+                            </MotionDiv>
                         </div>
                     </div>
                 </div>
-            </Transition>
+            </MotionTransition>
         </div>
-    </Transition>
+    </MotionTransition>
 </template>
 
 <script setup>
 import { defineProps, defineEmits } from 'vue'
 import Icon from './Icon.vue'
+import MotionTransition from './MotionTransition.vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { computed } from 'vue'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+
+const MotionButton = motion.button
+const MotionDiv = motion.div
+const MotionImg = motion.img
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 
 const props = defineProps({
     visible: {
@@ -59,7 +75,6 @@ const props = defineProps({
     },
     album: {
         type: Object,
-        required: true,
         default: () => ({
             title: '',
             artist: '',
@@ -94,21 +109,6 @@ const handleOverlayClick = () => {
     padding: 20px;
 }
 
-.modal-enter-active,
-.modal-leave-active {
-    transition: opacity 0.3s ease, backdrop-filter 0.3s ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-    opacity: 0;
-}
-
-.modal-enter-to,
-.modal-leave-from {
-    opacity: 1;
-}
-
 /* 卡片本体 - 3D动画效果 */
 .album-card {
     background: rgba(var(--surface-color), 0.05);
@@ -128,31 +128,6 @@ const handleOverlayClick = () => {
     backdrop-filter: blur(20px);
 }
 
-/* 卡片3D动画 */
-.card-enter-active {
-    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.card-leave-active {
-    transition: all 0.3s cubic-bezier(0.55, 0.085, 0.68, 0.53);
-}
-
-.card-enter-from {
-    opacity: 0;
-    transform: perspective(1000px) rotateX(-15deg) rotateY(10deg) translateZ(-100px) scale(0.8);
-}
-
-.card-leave-to {
-    opacity: 0;
-    transform: perspective(1000px) rotateX(15deg) rotateY(-10deg) translateZ(-100px) scale(0.8);
-}
-
-.card-enter-to,
-.card-leave-from {
-    opacity: 1;
-    transform: perspective(1000px) rotateX(0deg) rotateY(0deg) translateZ(0px) scale(1);
-}
-
 .close-button {
     position: absolute;
     top: 16px;
@@ -165,7 +140,6 @@ const handleOverlayClick = () => {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
     z-index: 10;
 }
 
@@ -181,41 +155,6 @@ const handleOverlayClick = () => {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.3s ease;
-}
-
-.album-cover:hover img {
-    transform: scale(1.05);
-}
-
-/* 专辑封面过渡动画 */
-.album-cover-enter-active,
-.album-cover-leave-active {
-    transition: all 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-}
-
-.album-cover-enter-from {
-    opacity: 0;
-    transform: scale(0.9) rotateY(-15deg);
-    filter: blur(5px) brightness(0.8);
-}
-
-.album-cover-leave-to {
-    opacity: 0;
-    transform: scale(1.1) rotateY(15deg);
-    filter: blur(5px) brightness(1.2);
-}
-
-.album-cover-enter-to,
-.album-cover-leave-from {
-    opacity: 1;
-    transform: scale(1) rotateY(0deg);
-    filter: blur(0) brightness(1);
 }
 
 .album-info {
@@ -271,15 +210,9 @@ const handleOverlayClick = () => {
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.play-all-btn:hover {
-    background: rgba(var(--primary-color), 0.3);
-    transform: translateY(-1px);
 }
 
 .track-list {
@@ -296,12 +229,7 @@ const handleOverlayClick = () => {
     padding: 8px 12px;
     border-radius: 8px;
     cursor: pointer;
-    transition: all 0.2s ease;
     font-size: 14px;
-}
-
-.track-item:hover {
-    background: rgba(var(--primary-color), 0.08);
 }
 
 .track-number {

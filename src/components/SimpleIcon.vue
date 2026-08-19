@@ -1,14 +1,17 @@
 <template>
-    <div class="svg-icon" :class="{ 'hover-enabled': hover }" :style="iconStyles">
+    <MotionDiv class="svg-icon" :class="{ 'hover-enabled': hover }" :style="iconStyles"
+        :while-hover="hoverState" :transition="microTransition">
         <svg :width="size" :height="size" :viewBox="viewBox" class="svg-content">
             <use :href="`${src}#icon`" v-if="isFragment" />
             <image :href="src" v-else width="100%" height="100%" />
         </svg>
-    </div>
+    </MotionDiv>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
 const props = defineProps({
     // SVG图片地址或者SVG fragment ID
@@ -48,6 +51,13 @@ const props = defineProps({
     }
 })
 
+const MotionDiv = motion.div
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const hoverState = computed(() => props.hover
+    ? { color: props.hoverColor || 'var(--primary-hover-color, #cccccc)' }
+    : undefined)
+
 // 判断是否是SVG fragment
 const isFragment = computed(() => {
     return props.src.includes('#')
@@ -73,7 +83,6 @@ const iconStyles = computed(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s ease;
     color: var(--icon-color);
 }
 
@@ -82,13 +91,7 @@ const iconStyles = computed(() => {
     height: 100%;
     fill: currentColor;
     stroke: currentColor;
-    transition: all 0.2s ease;
     filter: drop-shadow(0 0 0 var(--icon-color));
-}
-
-/* Hover效果 */
-.svg-icon.hover-enabled:hover {
-    color: var(--icon-hover-color);
 }
 
 /* 预设尺寸类 */

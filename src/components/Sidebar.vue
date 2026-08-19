@@ -6,13 +6,14 @@
         </div>
 
         <nav class="nav-menu">
-            <div v-for="item in sidebarItems" :key="item.id" :class="['nav-item', { active: item.active }]"
+            <MotionDiv v-for="item in sidebarItems" :key="item.id" :class="['nav-item', { active: item.active }]"
+                :while-hover="{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }" :transition="microTransition"
                 @click="$emit('nav-item-click', item)">
                 <span class="nav-icon">
                     <Icon :src="'/assets/' + item.icon" />
                 </span>
                 <span class="nav-label">{{ item.label }}</span>
-            </div>
+            </MotionDiv>
         </nav>
 
         <!-- 我的标签 -->
@@ -20,12 +21,14 @@
             <div class="section-header">
                 <span class="section-icon">📁</span>
                 <span class="section-title">我的标签</span>
-                <button class="add-btn" @click="$emit('add-tag')">+</button>
+                <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
+                    :transition="microTransition" @click="$emit('add-tag')">+</MotionButton>
             </div>
-            <div class="nav-item">
+            <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }"
+                :transition="microTransition">
                 <span class="nav-icon">🏷️</span>
                 <span class="nav-label">未分类标签001</span>
-            </div>
+            </MotionDiv>
         </div>
 
         <!-- 播放列表 -->
@@ -33,7 +36,8 @@
             <div class="section-header">
                 <span class="section-icon">▶️</span>
                 <span class="section-title">播放列表</span>
-                <button class="add-btn" @click="$emit('add-playlist')">+</button>
+                <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
+                    :transition="microTransition" @click="$emit('add-playlist')">+</MotionButton>
             </div>
         </div>
 
@@ -42,24 +46,29 @@
             <div class="section-header">
                 <span class="section-icon">🧩</span>
                 <span class="section-title">扩展插件</span>
-                <button class="add-btn" @click="$emit('add-plugin')">+</button>
+                <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
+                    :transition="microTransition" @click="$emit('add-plugin')">+</MotionButton>
             </div>
-            <div class="nav-item">
+            <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }"
+                :transition="microTransition">
                 <span class="nav-icon">👣</span>
                 <span class="nav-label">我的足迹</span>
-            </div>
-            <div class="nav-item">
+            </MotionDiv>
+            <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }"
+                :transition="microTransition">
                 <span class="nav-icon">⏰</span>
                 <span class="nav-label">定时停止</span>
-            </div>
+            </MotionDiv>
 
         </div>
     </aside>
 </template>
 
 <script setup>
-import { defineProps, defineEmits } from 'vue'
+import { defineProps, defineEmits, computed } from 'vue'
 import Icon from './Icon.vue';
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
 const props = defineProps({
     sidebarItems: {
@@ -79,6 +88,11 @@ const emit = defineEmits([
     'add-playlist',
     'add-plugin'
 ])
+
+const MotionDiv = motion.div
+const MotionButton = motion.button
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 </script>
 
 <style scoped>
@@ -119,11 +133,6 @@ const emit = defineEmits([
     padding: 10px 12px;
     border-radius: 6px;
     cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.nav-item:hover {
-    background: rgba(255, 255, 255, 0.05);
 }
 
 .nav-item.active {
@@ -174,7 +183,4 @@ const emit = defineEmits([
     height: 20px;
 }
 
-.add-btn:hover {
-    color: #ffffff;
-}
 </style>

@@ -4,29 +4,34 @@
         <div class="page-header">
             <h1 class="page-title">扩展插件</h1>
             <div class="page-actions">
-                <button class="install-btn" @click="showInstallDialog">
+                <MotionButton class="install-btn" :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.2)' }"
+                    :while-press="{ scale: 0.96 }" :transition="microTransition" @click="showInstallDialog">
                     <Icon src="/assets/ext.svg" size="sm" />
                     安装插件
-                </button>
-                <button class="refresh-btn" @click="refreshPlugins">
+                </MotionButton>
+                <MotionButton class="refresh-btn" :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.2)' }"
+                    :while-press="{ scale: 0.96 }" :transition="microTransition" @click="refreshPlugins">
                     <Icon src="/assets/restore.svg" size="sm" />
                     刷新
-                </button>
+                </MotionButton>
             </div>
         </div>
 
         <!-- 筛选标签 -->
         <div class="filter-tabs">
-            <button v-for="category in categories" :key="category.id" class="filter-tab"
+            <MotionButton v-for="category in categories" :key="category.id" class="filter-tab"
+                :while-hover="{ backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                :while-press="{ scale: 0.97 }" :transition="microTransition"
                 :class="{ active: activeCategory === category.id }" @click="activeCategory = category.id">
                 {{ category.label }}
                 <span class="count">{{ category.count }}</span>
-            </button>
+            </MotionButton>
         </div>
 
         <!-- 插件列表 -->
         <div class="plugins-grid">
-            <div v-for="plugin in filteredPlugins" :key="plugin.id" class="plugin-card" :class="{
+            <MotionDiv v-for="plugin in filteredPlugins" :key="plugin.id" class="plugin-card" initial="rest"
+                while-hover="hover" :variants="cardVariants" :class="{
                 installed: plugin.installed,
                 disabled: plugin.disabled
             }">
@@ -66,22 +71,30 @@
                 </div>
 
                 <div class="plugin-actions">
-                    <button v-if="!plugin.installed" class="action-btn install" @click="installPlugin(plugin)">
+                    <MotionButton v-if="!plugin.installed" class="action-btn install"
+                        :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.8)' }"
+                        :while-press="{ scale: 0.96 }" :transition="microTransition" @click="installPlugin(plugin)">
                         安装
-                    </button>
-                    <button v-else-if="plugin.disabled" class="action-btn enable" @click="enablePlugin(plugin)">
+                    </MotionButton>
+                    <MotionButton v-else-if="plugin.disabled" class="action-btn enable"
+                        :while-hover="{ y: -1, backgroundColor: '#45a049' }" :while-press="{ scale: 0.96 }"
+                        :transition="microTransition" @click="enablePlugin(plugin)">
                         启用
-                    </button>
+                    </MotionButton>
                     <div v-else class="installed-actions">
-                        <button class="action-btn disable" @click="disablePlugin(plugin)">
+                        <MotionButton class="action-btn disable"
+                            :while-hover="{ backgroundColor: 'rgba(var(--outline-color), 0.2)' }"
+                            :while-press="{ scale: 0.96 }" :transition="microTransition" @click="disablePlugin(plugin)">
                             禁用
-                        </button>
-                        <button class="action-btn uninstall" @click="uninstallPlugin(plugin)">
+                        </MotionButton>
+                        <MotionButton class="action-btn uninstall"
+                            :while-hover="{ backgroundColor: 'rgba(244, 67, 54, 0.2)' }"
+                            :while-press="{ scale: 0.96 }" :transition="microTransition" @click="uninstallPlugin(plugin)">
                             卸载
-                        </button>
+                        </MotionButton>
                     </div>
                 </div>
-            </div>
+            </MotionDiv>
         </div>
 
         <!-- 空状态 -->
@@ -96,8 +109,18 @@
 <script setup>
 import { ref, computed } from 'vue'
 import Icon from './Icon.vue'
-
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 const emit = defineEmits(['plugin-install', 'plugin-uninstall', 'plugin-enable', 'plugin-disable'])
+
+const MotionDiv = motion.div
+const MotionButton = motion.button
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const cardVariants = {
+    rest: { y: 0, boxShadow: '0 0 0 rgba(0, 0, 0, 0)', borderColor: 'rgba(var(--outline-color), 0.1)' },
+    hover: { y: -2, boxShadow: '0 8px 24px rgba(0, 0, 0, 0.1)', borderColor: 'rgba(var(--primary-color), 0.2)' }
+}
 
 const activeCategory = ref('all')
 
@@ -289,16 +312,9 @@ const disablePlugin = (plugin) => {
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.install-btn:hover,
-.refresh-btn:hover {
-    background: rgba(var(--primary-color), 0.2);
-    transform: translateY(-1px);
 }
 
 /* 筛选标签 */
@@ -319,16 +335,10 @@ const disablePlugin = (plugin) => {
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     gap: 8px;
     color: rgba(var(--text-color), 0.7);
-}
-
-.filter-tab:hover {
-    background: rgba(var(--primary-color), 0.1);
-    color: rgba(var(--primary-color), 0.3);
 }
 
 .filter-tab.active {
@@ -360,16 +370,9 @@ const disablePlugin = (plugin) => {
     border: 1px solid rgba(var(--outline-color), 0.1);
     border-radius: 16px;
     padding: 24px;
-    transition: all 0.2s ease;
     display: flex;
     flex-direction: column;
     gap: 16px;
-}
-
-.plugin-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-    border-color: rgba(var(--primary-color), 0.2);
 }
 
 .plugin-card.installed {
@@ -508,7 +511,6 @@ const disablePlugin = (plugin) => {
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
     margin-right: 8px;
 }
 
@@ -517,19 +519,9 @@ const disablePlugin = (plugin) => {
     color: white;
 }
 
-.action-btn.install:hover {
-    background: rgba(var(--primary-color), 0.8);
-    transform: translateY(-1px);
-}
-
 .action-btn.enable {
     background: #4CAF50;
     color: white;
-}
-
-.action-btn.enable:hover {
-    background: #45a049;
-    transform: translateY(-1px);
 }
 
 .action-btn.disable {
@@ -537,17 +529,9 @@ const disablePlugin = (plugin) => {
     color: rgba(var(--text-color), 0.7);
 }
 
-.action-btn.disable:hover {
-    background: rgba(var(--outline-color), 0.2);
-}
-
 .action-btn.uninstall {
     background: rgba(244, 67, 54, 0.1);
     color: #f44336;
-}
-
-.action-btn.uninstall:hover {
-    background: rgba(244, 67, 54, 0.2);
 }
 
 .installed-actions {

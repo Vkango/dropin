@@ -14,7 +14,8 @@
                 <div v-if="index === 1" class="group-label">#</div>
                 <div v-if="index === 2" class="group-label">A</div>
                 <div v-if="index === 4" class="group-label">A</div>
-                <div class="song-item" @click="$emit('song-select', song)">
+                <MotionDiv class="song-item" :while-hover="{ backgroundColor: '#2a2a2a' }"
+                    :transition="microTransition" @click="$emit('song-select', song)">
 
                     <div class="col-info">
                         <img :src="song.cover" :alt="song.title" class="song-cover" />
@@ -25,14 +26,16 @@
                     </div>
                     <div class="col-album">{{ song.album }}</div>
                     <div class="col-duration">{{ song.duration }}</div>
-                </div>
+                </MotionDiv>
             </template>
         </div>
     </div>
 </template>
 
 <script setup>
-import { defineProps, defineEmits } from 'vue'
+import { defineProps, defineEmits, computed } from 'vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
 const props = defineProps({
     songs: {
@@ -42,6 +45,9 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['song-select', 'song-play'])
+const MotionDiv = motion.div
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 </script>
 
 <style scoped>
@@ -74,11 +80,6 @@ const emit = defineEmits(['song-select', 'song-play'])
     padding: 12px 20px;
     border-bottom: 1px solid #333;
     cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.song-item:hover {
-    background: #2a2a2a;
 }
 
 .col-play {
@@ -92,10 +93,6 @@ const emit = defineEmits(['song-select', 'song-play'])
     color: #888;
     cursor: pointer;
     font-size: 14px;
-}
-
-.play-btn:hover {
-    color: #ffffff;
 }
 
 .col-info {

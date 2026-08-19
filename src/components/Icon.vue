@@ -1,17 +1,21 @@
 <template>
-    <span class="icon-wrapper" :class="[
+    <MotionSpan class="icon-wrapper" :class="[
         `icon-${size}`,
         { 'icon-hover': hover, 'icon-clickable': clickable }
-    ]" :style="iconStyles" @click="handleClick">
+    ]" :style="iconStyles" :while-hover="hoverState" :while-press="pressState"
+        :transition="microTransition" @click="handleClick">
         <svg v-if="svgContent" class="icon-svg" :width="actualSize" :height="actualSize" :viewBox="viewBox"
             v-html="svgContent"></svg>
-        <div v-else-if="loading" class="loading">⟳</div>
+        <MotionDiv v-else-if="loading" class="loading" :animate="{ opacity: [0.5, 1, 0.5] }"
+            :transition="pulseTransition">⟳</MotionDiv>
         <div v-else class="error">!</div>
-    </span>
+    </MotionSpan>
 </template>
 
 <script setup>
 import { computed, ref, watch, onMounted } from 'vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
 const props = defineProps({
     // SVG文件路径
@@ -51,6 +55,17 @@ const emit = defineEmits(['click', 'error'])
 const svgContent = ref('')
 const viewBox = ref('0 0 24 24')
 const loading = ref(false)
+const MotionSpan = motion.span
+const MotionDiv = motion.div
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const pulseTransition = computed(() => reducedMotion.value
+    ? INSTANT_MOTION
+    : { type: 'keyframes', duration: 1.5, ease: 'easeInOut', repeat: Infinity })
+const hoverState = computed(() => props.hover
+    ? { color: props.hoverColor || 'rgb(var(--primary-hover-color, 0, 86, 179))', scale: props.clickable ? 1.05 : 1 }
+    : props.clickable ? { scale: 1.05 } : undefined)
+const pressState = computed(() => props.clickable ? { scale: 0.95 } : undefined)
 
 // 预设尺寸映射
 const sizeMap = {
@@ -150,24 +165,11 @@ onMounted(() => {
     width: var(--icon-size);
     height: var(--icon-size);
     color: rgb(var(--icon-color, var(--primary-color, #333)));
-    transition: color 0.2s ease, transform 0.1s ease;
     user-select: none;
-}
-
-.icon-wrapper.icon-hover:hover {
-    color: rgb(var(--icon-hover-color, var(--primary-hover-color, #007acc)));
 }
 
 .icon-wrapper.icon-clickable {
     cursor: pointer;
-}
-
-.icon-wrapper.icon-clickable:hover {
-    transform: scale(1.05);
-}
-
-.icon-wrapper.icon-clickable:active {
-    transform: scale(0.95);
 }
 
 .icon-svg {
@@ -179,22 +181,10 @@ onMounted(() => {
 
 .loading {
     opacity: 0.5;
-    animation: pulse 1.5s ease-in-out infinite;
 }
 
 .error {
     color: #f56565;
 }
 
-@keyframes pulse {
-
-    0%,
-    100% {
-        opacity: 0.5;
-    }
-
-    50% {
-        opacity: 1;
-    }
-}
 </style>

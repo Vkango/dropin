@@ -53,24 +53,36 @@
         <section class="example-section">
             <h3>在按钮中使用</h3>
             <div class="example-row">
-                <button class="icon-button">
+                <MotionButton class="icon-button" :while-hover="{ backgroundColor: '#f8f9fa', borderColor: '#007acc' }"
+                    :while-press="{ scale: 0.97 }" :transition="microTransition">
                     <Icon src="/assets/close.svg" size="sm" color="white" />
                     关闭
-                </button>
-                <button class="icon-button primary">
+                </MotionButton>
+                <MotionButton class="icon-button primary" :while-hover="{ backgroundColor: '#0056b3' }"
+                    :while-press="{ scale: 0.97 }" :transition="microTransition">
                     <Icon src="/assets/user.svg" size="sm" color="white" />
                     用户
-                </button>
-                <button class="icon-button secondary">
+                </MotionButton>
+                <MotionButton class="icon-button secondary" :while-hover="{ backgroundColor: '#545b62' }"
+                    :while-press="{ scale: 0.97 }"
+                    :transition="microTransition">
                     <Icon src="/assets/settings.svg" size="sm" />
                     设置
-                </button>
+                </MotionButton>
             </div>
         </section>
     </div>
 </template>
 
 <script setup>
+import { computed } from 'vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+
+const MotionButton = motion.button
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+
 const handleIconClick = () => {
     console.log('图标被点击了!')
 }
@@ -115,12 +127,6 @@ const handleIconClick = () => {
     border-radius: 4px;
     background: white;
     cursor: pointer;
-    transition: all 0.2s;
-}
-
-.icon-button:hover {
-    background: #f8f9fa;
-    border-color: #007acc;
 }
 
 .icon-button.primary {
@@ -129,17 +135,10 @@ const handleIconClick = () => {
     border-color: #007acc;
 }
 
-.icon-button.primary:hover {
-    background: #0056b3;
-}
-
 .icon-button.secondary {
     background: #6c757d;
     color: white;
     border-color: #6c757d;
 }
 
-.icon-button.secondary:hover {
-    background: #545b62;
-}
 </style>

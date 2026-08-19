@@ -3,10 +3,10 @@
         <!-- 顶部问候区域 -->
         <div class="music-banner" @click="showAlbumDetail">
             <div class="image-container">
-                <Transition name="banner-image">
+                <MotionTransition variant="banner">
                     <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
                         referrerpolicy="no-referrer">
-                </Transition>
+                </MotionTransition>
             </div>
             <div class="banner-content">
                 <div class="title">DROPIN MUSIC PLAYER</div>
@@ -18,24 +18,26 @@
         <div class="recently-played">
             <div class="section-header">
                 <h2 class="section-title">最近播放</h2>
-                <button class="see-all-btn" @click="$emit('navigate', 'library')">查看全部</button>
+                <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }"
+                    :transition="microTransition" @click="$emit('navigate', 'library')">查看全部</MotionButton>
             </div>
             <div class="recent-grid">
-                <div v-for="item in recentlyPlayed" :key="item.id" class="recent-item"
-                    @click="$emit('song-play', item)">
+                <MotionDiv v-for="item in recentlyPlayed" :key="item.id" class="recent-item" initial="rest"
+                    while-hover="hover" :variants="cardVariants" @click="$emit('song-play', item)">
                     <div class="recent-cover">
-                        <Transition name="cover-image" mode="out-in">
-                            <img :key="item.cover" :src="item.cover" :alt="item.title" />
-                        </Transition>
-                        <div class="play-overlay">
+                        <MotionTransition variant="cover" mode="out-in">
+                            <MotionImg :key="item.cover" :src="item.cover" :alt="item.title"
+                                :variants="imageVariants" />
+                        </MotionTransition>
+                        <MotionDiv class="play-overlay" :variants="overlayVariants">
                             <Icon src="/assets/play.svg" size="md" />
-                        </div>
+                        </MotionDiv>
                     </div>
                     <div class="recent-info">
                         <h3 class="recent-title">{{ item.title }}</h3>
                         <p class="recent-artist">{{ item.artist }}</p>
                     </div>
-                </div>
+                </MotionDiv>
             </div>
         </div>
 
@@ -43,22 +45,24 @@
         <div class="recommended-playlists">
             <div class="section-header">
                 <h2 class="section-title">为您推荐</h2>
-                <button class="see-all-btn" @click="$emit('navigate', 'playlists')">查看全部</button>
+                <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }"
+                    :transition="microTransition" @click="$emit('navigate', 'playlists')">查看全部</MotionButton>
             </div>
             <div class="playlist-grid">
-                <div v-for="playlist in recommendedPlaylists" :key="playlist.id" class="playlist-item"
+                <MotionDiv v-for="playlist in recommendedPlaylists" :key="playlist.id" class="playlist-item"
+                    initial="rest" while-hover="hover" :variants="cardVariants"
                     @click="$emit('playlist-play', playlist)">
                     <div class="playlist-cover">
-                        <img :src="playlist.cover" :alt="playlist.name" />
-                        <div class="play-overlay">
+                        <MotionImg :src="playlist.cover" :alt="playlist.name" :variants="imageVariants" />
+                        <MotionDiv class="play-overlay" :variants="overlayVariants">
                             <Icon src="/assets/play.svg" size="lg" />
-                        </div>
+                        </MotionDiv>
                     </div>
                     <div class="playlist-info">
                         <h3 class="playlist-title">{{ playlist.name }}</h3>
                         <p class="playlist-desc">{{ playlist.description }}</p>
                     </div>
-                </div>
+                </MotionDiv>
             </div>
         </div>
     </div>
@@ -67,6 +71,9 @@
 <script setup>
 import { computed, onMounted, ref, inject } from 'vue'
 import Icon from './Icon.vue'
+import MotionTransition from './MotionTransition.vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
 const props = defineProps({
     recentlyPlayed: {
@@ -80,6 +87,24 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['song-play', 'playlist-play', 'navigate'])
+
+const MotionDiv = motion.div
+const MotionImg = motion.img
+const MotionButton = motion.button
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const cardVariants = {
+    rest: { y: 0 },
+    hover: { y: -4 }
+}
+const imageVariants = {
+    rest: { scale: 1 },
+    hover: { scale: 1.05 }
+}
+const overlayVariants = {
+    rest: { opacity: 0 },
+    hover: { opacity: 1 }
+}
 
 const currentTime = ref('')
 const currentSong = inject('currentSong')
@@ -155,11 +180,6 @@ onMounted(() => {
     font-weight: 500;
     cursor: pointer;
     padding: 8px 0;
-    transition: opacity 0.2s ease;
-}
-
-.see-all-btn:hover {
-    opacity: 0.8;
 }
 
 /* 最近播放网格 */
@@ -175,11 +195,6 @@ onMounted(() => {
 
 .recent-item {
     cursor: pointer;
-    transition: transform 0.2s ease;
-}
-
-.recent-item:hover {
-    transform: translateY(-4px);
 }
 
 .recent-cover {
@@ -195,11 +210,6 @@ onMounted(() => {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.3s ease;
-}
-
-.recent-item:hover .recent-cover img {
-    transform: scale(1.05);
 }
 
 .play-overlay {
@@ -212,12 +222,6 @@ onMounted(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.recent-item:hover .play-overlay {
-    opacity: 1;
 }
 
 .recent-info {
@@ -251,11 +255,6 @@ onMounted(() => {
 
 .playlist-item {
     cursor: pointer;
-    transition: transform 0.2s ease;
-}
-
-.playlist-item:hover {
-    transform: translateY(-4px);
 }
 
 .playlist-cover {
@@ -271,15 +270,6 @@ onMounted(() => {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.3s ease;
-}
-
-.playlist-item:hover .playlist-cover img {
-    transform: scale(1.05);
-}
-
-.playlist-item:hover .play-overlay {
-    opacity: 1;
 }
 
 .playlist-info {
@@ -305,22 +295,6 @@ onMounted(() => {
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-}
-
-/* 封面图片过渡动画 */
-.cover-image-enter-active,
-.cover-image-leave-active {
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.cover-image-enter-from {
-    opacity: 0;
-    transform: scale(0.95);
-}
-
-.cover-image-leave-to {
-    opacity: 0;
-    transform: scale(1.05);
 }
 
 /* 滚动条样式 */

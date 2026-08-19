@@ -3,10 +3,10 @@
         <!-- 页面标题 -->
         <div class="music-banner" @click="showAlbumDetail">
             <div class="image-container">
-                <Transition name="banner-image">
+                <MotionTransition variant="banner">
                     <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
                         referrerpolicy="no-referrer">
-                </Transition>
+                </MotionTransition>
             </div>
             <div class="banner-content">
                 <div class="title">DROPIN MUSIC PLAYER</div>
@@ -244,19 +244,26 @@
 
         <!-- 重置按钮 -->
         <div class="reset-section">
-            <button @click="resetToDefaults" class="reset-btn">
+            <MotionButton class="reset-btn" :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.2)' }"
+                :while-press="{ scale: 0.96 }" :transition="microTransition" @click="resetToDefaults">
                 <Icon src="/assets/restore.svg" size="sm" />
                 Reset to Defaults
-            </button>
+            </MotionButton>
         </div>
     </div>
 </template>
 
 <script setup>
-import { ref, reactive, watch, inject } from 'vue'
+import { ref, reactive, watch, inject, computed } from 'vue'
 import Icon from './Icon.vue'
+import MotionTransition from './MotionTransition.vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 const currentSong = inject('currentSong')
 const emit = defineEmits(['effects-change'])
+const MotionButton = motion.button
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 
 const currentPreset = ref('original')
 const viewMode = ref('custom')
@@ -650,16 +657,10 @@ const resetToDefaults = () => {
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     gap: 8px;
     margin: 0 auto;
-}
-
-.reset-btn:hover {
-    background: rgba(var(--primary-color), 0.2);
-    transform: translateY(-1px);
 }
 
 /* 滚动条样式 */

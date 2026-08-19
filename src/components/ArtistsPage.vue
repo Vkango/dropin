@@ -3,10 +3,10 @@
         <!-- 页面标题 -->
         <div class="music-banner" @click="showAlbumDetail">
             <div class="image-container">
-                <Transition name="banner-image">
+                <MotionTransition variant="banner">
                     <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
                         referrerpolicy="no-referrer">
-                </Transition>
+                </MotionTransition>
             </div>
             <div class="banner-content">
                 <div class="title">DROPIN MUSIC PLAYER</div>
@@ -18,12 +18,18 @@
         <div class="page-header">
             <h1 class="page-title"></h1>
             <div class="view-controls">
-                <button class="view-btn" :class="{ active: viewMode === 'grid' }" @click="setViewMode('grid')">
+                <MotionButton class="view-btn" :class="{ active: viewMode === 'grid' }"
+                    :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                    :while-press="{ scale: 0.96 }" :transition="microTransition"
+                    @click="setViewMode('grid')">
                     <Icon src="/assets/list.svg" size="sm" />
-                </button>
-                <button class="view-btn" :class="{ active: viewMode === 'list' }" @click="setViewMode('list')">
+                </MotionButton>
+                <MotionButton class="view-btn" :class="{ active: viewMode === 'list' }"
+                    :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                    :while-press="{ scale: 0.96 }" :transition="microTransition"
+                    @click="setViewMode('list')">
                     <Icon src="/assets/folder.svg" size="sm" />
-                </button>
+                </MotionButton>
             </div>
         </div>
 
@@ -40,20 +46,22 @@
         </div>
 
         <!-- 艺术家网格/列表 -->
-        <Transition name="view" mode="out-in">
+        <MotionTransition variant="page" mode="out-in">
             <div v-if="viewMode === 'grid'" key="grid" class="artists-grid">
-                <div v-for="artist in filteredArtists" :key="artist.id" class="artist-card"
+                <MotionDiv v-for="artist in filteredArtists" :key="artist.id" class="artist-card" initial="rest"
+                    while-hover="hover" :variants="cardVariants"
                     @click="$emit('artist-select', artist)">
                     <div class="artist-avatar">
-                        <Transition name="avatar-image" mode="out-in">
-                            <img :key="artist.avatar || artist.cover" :src="artist.avatar || artist.cover"
-                                :alt="artist.name" />
-                        </Transition>
-                        <div class="artist-overlay">
-                            <button class="play-btn" @click.stop="$emit('artist-play', artist)">
+                        <MotionTransition variant="cover" mode="out-in">
+                            <MotionImg :key="artist.avatar || artist.cover" :src="artist.avatar || artist.cover"
+                                :alt="artist.name" :variants="imageVariants" />
+                        </MotionTransition>
+                        <MotionDiv class="artist-overlay" :variants="overlayVariants">
+                            <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }" :while-press="{ scale: 0.94 }"
+                                :transition="microTransition" @click.stop="$emit('artist-play', artist)">
                                 <Icon src="/assets/play.svg" size="lg" />
-                            </button>
-                        </div>
+                            </MotionButton>
+                        </MotionDiv>
                     </div>
                     <div class="artist-info">
                         <h3 class="artist-name">{{ artist.name }}</h3>
@@ -64,7 +72,7 @@
                             </span>
                         </div>
                     </div>
-                </div>
+                </MotionDiv>
             </div>
 
             <div v-else key="list" class="artists-list">
@@ -76,7 +84,8 @@
                     <div class="header-genres">流派</div>
                     <div class="header-actions"></div>
                 </div>
-                <div v-for="artist in filteredArtists" :key="artist.id" class="artist-row"
+                <MotionDiv v-for="artist in filteredArtists" :key="artist.id" class="artist-row" initial="rest"
+                    while-hover="hover" :variants="rowVariants"
                     @click="$emit('artist-select', artist)">
                     <div class="row-avatar">
                         <img :src="artist.avatar || artist.cover" :alt="artist.name" />
@@ -93,22 +102,27 @@
                         </span>
                     </div>
                     <div class="row-actions">
-                        <button class="action-btn" @click.stop="$emit('artist-play', artist)">
+                        <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                            :transition="microTransition" @click.stop="$emit('artist-play', artist)">
                             <Icon src="/assets/play.svg" size="sm" />
-                        </button>
-                        <button class="action-btn" @click.stop="toggleFollow(artist)">
+                        </MotionButton>
+                        <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                            :transition="microTransition" @click.stop="toggleFollow(artist)">
                             <Icon :src="artist.isFollowing ? '/assets/favourite.svg' : '/assets/user.svg'" size="sm" />
-                        </button>
+                        </MotionButton>
                     </div>
-                </div>
+                </MotionDiv>
             </div>
-        </Transition>
+        </MotionTransition>
     </div>
 </template>
 
 <script setup>
 import { ref, computed, inject } from 'vue'
 import Icon from './Icon.vue'
+import MotionTransition from './MotionTransition.vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 const currentSong = inject('currentSong')
 const props = defineProps({
     artists: {
@@ -118,6 +132,19 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['artist-select', 'artist-play', 'artist-follow'])
+
+const MotionDiv = motion.div
+const MotionImg = motion.img
+const MotionButton = motion.button
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const cardVariants = { rest: { y: 0 }, hover: { y: -4 } }
+const imageVariants = { rest: { scale: 1 }, hover: { scale: 1.05 } }
+const overlayVariants = { rest: { opacity: 0 }, hover: { opacity: 1 } }
+const rowVariants = {
+    rest: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+    hover: { backgroundColor: 'rgba(var(--primary-color), 0.05)' }
+}
 
 const viewMode = ref('grid')
 const sortBy = ref('name')
@@ -203,13 +230,7 @@ const filteredArtists = computed(() => {
     border-radius: 8px;
     padding: 8px 12px;
     cursor: pointer;
-    transition: all 0.2s ease;
     color: rgba(var(--text-color), 0.7);
-}
-
-.view-btn:hover {
-    background: rgba(var(--primary-color), 0.1);
-    color: rgba(var(--primary-color), 0.3);
 }
 
 .view-btn.active {
@@ -262,12 +283,7 @@ const filteredArtists = computed(() => {
 
 .artist-card {
     cursor: pointer;
-    transition: transform 0.2s ease;
     text-align: center;
-}
-
-.artist-card:hover {
-    transform: translateY(-4px);
 }
 
 .artist-avatar {
@@ -284,11 +300,6 @@ const filteredArtists = computed(() => {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: transform 0.3s ease;
-}
-
-.artist-card:hover .artist-avatar img {
-    transform: scale(1.05);
 }
 
 .artist-overlay {
@@ -301,12 +312,6 @@ const filteredArtists = computed(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.artist-card:hover .artist-overlay {
-    opacity: 1;
 }
 
 .play-btn {
@@ -319,12 +324,7 @@ const filteredArtists = computed(() => {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
     color: white;
-}
-
-.play-btn:hover {
-    transform: scale(1.1);
 }
 
 .artist-info {
@@ -388,11 +388,6 @@ const filteredArtists = computed(() => {
     padding: 12px 16px;
     border-radius: 8px;
     cursor: pointer;
-    transition: background 0.2s ease;
-}
-
-.artist-row:hover {
-    background: rgba(var(--primary-color), 0.05);
 }
 
 .row-avatar img {
@@ -447,44 +442,6 @@ const filteredArtists = computed(() => {
     cursor: pointer;
     padding: 6px;
     border-radius: 50%;
-    transition: all 0.2s ease;
-}
-
-.action-btn:hover {
-    background: rgba(var(--primary-color), 0.1);
-    color: rgba(var(--primary-color), 0.3);
-}
-
-/* 视图切换动画 */
-.view-enter-active,
-.view-leave-active {
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.view-enter-from {
-    opacity: 0;
-    transform: translateY(20px);
-}
-
-.view-leave-to {
-    opacity: 0;
-    transform: translateY(-20px);
-}
-
-/* 头像图片过渡动画 */
-.avatar-image-enter-active,
-.avatar-image-leave-active {
-    transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-.avatar-image-enter-from {
-    opacity: 0;
-    transform: scale(0.9);
-}
-
-.avatar-image-leave-to {
-    opacity: 0;
-    transform: scale(1.1);
 }
 
 /* 滚动条样式 */

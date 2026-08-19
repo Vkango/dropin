@@ -4,24 +4,34 @@
     <div class="title">{{ title }}</div>
     <div class="controls" @mouseup.stop @mouseleave.stop @mousedown.stop>
       <RippleButton class="control-button" style="padding: 0; width: 48px; height: 45px;" id="avatar"
+        :hover-style="{ opacity: 1 }"
         @click="emit('showNotificationBox')">
         <img class="avatar" style="width: 20px; height: 20px; border-radius: 20px; padding: 0; margin-top: 5px;"
           :src="user.avatar">
         <div id="msgCount" v-if="msgCount > 0">{{ msgCount > 99 ? `99+` : msgCount }}</div>
       </RippleButton>
-      <RippleButton class="control-button" @click="emit('showTabs')"> <!--Tabs-->
+      <RippleButton class="control-button"
+        :hover-style="{ color: 'rgba(var(--text-color), 1)', backgroundColor: 'rgba(var(--text-color), 0.1)' }"
+        @click="emit('showTabs')"> <!--Tabs-->
         <img class="icon" src="/assets/list.svg">
       </RippleButton>
-      <RippleButton class="control-button" @click="minimizeWindow">
+      <RippleButton class="control-button"
+        :hover-style="{ color: 'rgba(var(--text-color), 1)', backgroundColor: 'rgba(var(--text-color), 0.1)' }"
+        @click="minimizeWindow">
         <img class="icon" src="/assets/minimize.svg">
       </RippleButton>
-      <RippleButton v-if="isMaximized" class="control-button" @click="maximizeWindow">
+      <RippleButton v-if="isMaximized" class="control-button"
+        :hover-style="{ color: 'rgba(var(--text-color), 1)', backgroundColor: 'rgba(var(--text-color), 0.1)' }"
+        @click="maximizeWindow">
         <img class="icon" src="/assets/restore.svg">
       </RippleButton>
-      <RippleButton v-if="!isMaximized" class="control-button" @click="maximizeWindow">
+      <RippleButton v-if="!isMaximized" class="control-button"
+        :hover-style="{ color: 'rgba(var(--text-color), 1)', backgroundColor: 'rgba(var(--text-color), 0.1)' }"
+        @click="maximizeWindow">
         <img class="icon" src="/assets/maximize.svg">
       </RippleButton>
-      <RippleButton class="control-button" id="close" @click="closeWindow"><img class="icon" src="/assets/close1.svg">
+      <RippleButton class="control-button" id="close"
+        :hover-style="{ color: 'white', backgroundColor: 'rgba(255, 0, 0, 0.5)' }" @click="closeWindow"><img class="icon" src="/assets/close1.svg">
       </RippleButton>
     </div>
   </div>
@@ -101,13 +111,8 @@ const emit = defineEmits(['showTabs', 'showNotificationBox']);
 
 
 <style scoped>
-#avatar:hover {
-  opacity: 1;
-}
-
 #avatar {
   opacity: 0.7;
-  transition: all 0.3s ease;
 }
 
 .icon {
@@ -190,21 +195,6 @@ const emit = defineEmits(['showTabs', 'showNotificationBox']);
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  transition: color 0.2s ease, background-color 0.2s ease;
   border-radius: 0;
-}
-
-.control-button:hover {
-  color: rgba(var(--text-color), 1);
-  background-color: rgba(var(--text-color), 0.1);
-}
-
-#close:hover {
-  color: white;
-  background-color: rgba(255, 0, 0, 0.5);
-}
-
-.control-button:active {
-  background-color: rgba(var(--text-color), 0.1);
 }
 </style>

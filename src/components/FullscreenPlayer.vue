@@ -1,35 +1,36 @@
 <template>
 
-    <div v-show="shouldShow" class="fullscreen-player" :class="animationClass" @click.self="$emit('close')">
-        <!-- AMLL 背景渲染器 -->
-        <div style="position: absolute; width: 100%; height: 100%; background-color: rgb(var(--primary-color));"></div>
-        <div class="player-container" @click.stop>
+    <AnimatePresence>
+        <MotionDiv v-if="shouldShow" class="fullscreen-player" :initial="{ opacity: 0 }"
+            :animate="{ opacity: 1 }" :exit="{ opacity: 0 }" :transition="springTransition"
+            @click.self="$emit('close')">
+            <!-- AMLL 背景渲染器 -->
+            <div style="position: absolute; width: 100%; height: 100%; background-color: rgb(var(--primary-color));"></div>
+            <MotionDiv class="player-container" :initial="playerEnterState" :animate="playerOpenState"
+                :exit="playerExitState" :transition="springTransition" @click.stop>
             <!-- 关闭按钮 -->
-            <button class="close-button" @click="$emit('close')">
+            <MotionButton class="close-button" :while-hover="{ scale: 1.1 }" :while-press="{ scale: 0.94 }"
+                :transition="microTransition" @click="$emit('close')">
                 <Icon src="/assets/close.svg" size="md" />
-            </button>
+            </MotionButton>
 
             <!-- 主要内容区 -->
             <div class="player-content">
                 <!-- 专辑封面区域 -->
                 <div class="album-section">
                     <div class="vinyl-area">
-                        <div class="vinyl-container" :class="{ spinning: isPlaying }">
+                        <MotionDiv class="vinyl-container" :animate="{ rotate: isPlaying ? 360 : 0 }"
+                            :transition="isPlaying ? loopTransition : instantTransition">
                             <div class="vinyl-record">
-                                <Transition name="album-cover" mode="out-in">
+                                <MotionTransition variant="albumCover" mode="out-in">
                                     <img :key="currentSong.cover" :src="currentSong.cover" :alt="currentSong.title"
                                         class="album-cover" />
-                                </Transition>
+                                </MotionTransition>
                             </div>
-                        </div>
+                        </MotionDiv>
                     </div>
 
-                    <!-- 音频可视化 -->
-                    <!-- <div class="visualizer">
-                        <div v-for="i in 32" :key="i" class="visualizer-bar" :class="{ active: isPlaying }"
-                            :style="{ animationDelay: `${i * 50}ms` }"></div>
-                    </div> -->
-                    <Transition name="song-info" mode="out-in">
+                    <MotionTransition variant="songInfo" mode="out-in">
                         <div :key="currentSong.title" class="song-details">
                             <h1 class="song-title">{{ currentSong.title }}</h1>
                             <h2 class="song-artist">{{ currentSong.artist }}</h2>
@@ -42,7 +43,7 @@
                                 <span class="tag">44.1kHz</span>
                             </div>
                         </div>
-                    </Transition>
+                    </MotionTransition>
                 </div>
 
                 <!-- 歌曲信息和歌词区域 -->
@@ -59,9 +60,10 @@
                 <div class="player-controls">
                     <!-- 进度条 -->
                     <div class="additional-controls">
-                        <button class="control-btn" @click="$emit('add-to-playlist')">
+                        <MotionButton class="control-btn" :while-hover="{ scale: 1.08 }" :while-press="{ scale: 0.94 }"
+                            :transition="microTransition" @click="$emit('add-to-playlist')">
                             <Icon src="/assets/inbox.svg" size="sm" />
-                        </button>
+                        </MotionButton>
 
                         <div class="volume-control">
                             <Icon src="/assets/inventory.svg" size="sm" />
@@ -71,16 +73,19 @@
                             </div>
                         </div>
 
-                        <button class="control-btn" @click="$emit('queue')">
+                        <MotionButton class="control-btn" :while-hover="{ scale: 1.08 }" :while-press="{ scale: 0.94 }"
+                            :transition="microTransition" @click="$emit('queue')">
                             <Icon src="/assets/list.svg" size="sm" />
-                        </button>
+                        </MotionButton>
                     </div>
                     <div class="progress-section">
                         <span class="time-display">{{ currentTime }}</span>
                         <div class="progress-container" @click="handleProgressClick">
                             <div class="progress-track">
-                                <div class="progress-fill" :style="{ width: progress + '%' }"></div>
-                                <div class="progress-thumb" :style="{ left: progress + '%' }"></div>
+                                <MotionDiv class="progress-fill" :animate="{ width: progress + '%' }"
+                                    :transition="microTransition"></MotionDiv>
+                                <MotionDiv class="progress-thumb" :animate="{ left: progress + '%' }"
+                                    :transition="microTransition"></MotionDiv>
                             </div>
                         </div>
                         <span class="time-display">{{ totalTime }}</span>
@@ -92,22 +97,23 @@
 
                 </div>
             </div>
-        </div>
+            </MotionDiv>
 
         <!-- <LyricPlayer :lyricLines="lyricLines" :currentTime="currentTimeMs" class="amll-lyric-player" -->
         <!-- style="position: absolute; left: 0px; top: 0px; width: 100%; height: 100%;" /> -->
-    </div>
+        </MotionDiv>
+    </AnimatePresence>
 
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, inject, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import Icon from './Icon.vue'
+import MotionTransition from './MotionTransition.vue'
+import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
+import { APPLE_SPRING, INSTANT_MOTION, LINEAR_LOOP, MICRO_SPRING } from '../utils/motion.js'
 import { LyricPlayer, BackgroundRender } from "@applemusic-like-lyrics/vue";
 import { EplorRenderer } from '@applemusic-like-lyrics/core';
-
-const currentSong = inject('currentSong')
-
 const props = defineProps({
     isVisible: {
         type: Boolean,
@@ -133,88 +139,47 @@ const props = defineProps({
         type: Number,
         default: 0
     },
-    animationState: {
-        type: String,
-        default: 'idle' // 'idle', 'expanding', 'collapsing'
-    },
-    isTransitioning: {
-        type: Boolean,
-        default: false
-    }
 })
 
-// 动画状态控制
-const animationClass = ref('')
-const isAnimating = ref(false)
-const shouldShow = ref(false) // 控制实际的v-show显示
-const currentAnimationId = ref(0) // 用于跟踪当前动画序列
+const MotionDiv = motion.div
+const MotionButton = motion.button
 
-// 监听外部动画状态变化
-watch(() => props.animationState, async (newState) => {
-    const animationId = ++currentAnimationId.value // 生成新的动画ID
+const reducedMotion = useReducedMotion()
+const springTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : APPLE_SPRING)
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const instantTransition = computed(() => INSTANT_MOTION)
+const loopTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : LINEAR_LOOP)
+const shouldShow = ref(false)
 
-    if (newState === 'expanding') {
-        // 进入动画 - 从PlayerControls展开
-        shouldShow.value = true // 立即显示组件
-        await nextTick() // 等待DOM更新
+const playerEnterState = {
+    opacity: 0,
+    rotateX: 45,
+    rotateY: -25,
+    scaleX: 0.25,
+    scaleY: 0.08,
+    x: '-35vw',
+    y: '40vh',
+    z: -500,
+    filter: 'blur(6px) brightness(0.4)'
+}
 
-        isAnimating.value = true
-        animationClass.value = 'expanding'
+const playerOpenState = {
+    opacity: 1,
+    rotateX: 0,
+    rotateY: 0,
+    scaleX: 1,
+    scaleY: 1,
+    x: 0,
+    y: 0,
+    z: 0,
+    filter: 'blur(0px) brightness(1)'
+}
 
-        // 动画完成后重置状态（检查动画ID避免竞态条件）
-        setTimeout(() => {
-            if (currentAnimationId.value === animationId) {
-                animationClass.value = 'expanded'
-                isAnimating.value = false
-            }
-        }, 800)
-    } else if (newState === 'collapsing') {
-        // 退出动画 - 收缩到PlayerControls
-        isAnimating.value = true
-        animationClass.value = 'collapsing'
+const playerExitState = { ...playerEnterState }
 
-        // 动画完成后再隐藏组件（检查动画ID避免竞态条件）
-        setTimeout(() => {
-            if (currentAnimationId.value === animationId) {
-                animationClass.value = ''
-                isAnimating.value = false
-                shouldShow.value = false // 动画结束后才隐藏
-            }
-        }, 600) // 与动画时长一致
-    }
-})
-
-// 保持对isVisible的兼容性监听（备用）
-watch(() => props.isVisible, async (newVal, oldVal) => {
-    // 只有在animationState为idle时才使用这个逻辑（向后兼容）
-    if (props.animationState !== 'idle') return
-
-    if (newVal && !oldVal) {
-        // 显示 - 进入动画
-        shouldShow.value = true // 立即显示组件
-        await nextTick() // 等待DOM更新
-
-        isAnimating.value = true
-        animationClass.value = 'expanding'
-
-        // 动画完成后重置状态
-        setTimeout(() => {
-            animationClass.value = 'expanded'
-            isAnimating.value = false
-        }, 800)
-    } else if (!newVal && oldVal) {
-        // 隐藏 - 退出动画
-        isAnimating.value = true
-        animationClass.value = 'collapsing'
-
-        // 动画完成后再隐藏组件
-        setTimeout(() => {
-            animationClass.value = ''
-            isAnimating.value = false
-            shouldShow.value = false // 动画结束后才隐藏
-        }, 600) // 与动画时长一致
-    }
-})
+watch(() => props.isVisible, (visible) => {
+    shouldShow.value = visible
+}, { immediate: true })
 
 // 创建测试用的歌词数据（AMLL格式）
 const createTestLyrics = () => {
@@ -414,61 +379,6 @@ watch(() => props.currentSong.title, () => {
     backface-visibility: hidden;
     width: 100vw;
     height: 100vh;
-    opacity: 0;
-    /* filter:  brightness(0.2); */
-}
-
-.fullscreen-player.expanding {
-    animation: container-expand 0.6s ease forwards;
-}
-
-.fullscreen-player.expanded {
-    opacity: 1;
-    /* filter: blur(0px) brightness(1); */
-}
-
-.fullscreen-player.collapsing {
-    animation: collapse-to-bottom-left 0.6s ease forwards;
-}
-
-@keyframes container-expand {
-    0% {
-        transform: scaleX(0.5) scaleY(0.5) translateX(-100%) translateY(100%) translateZ(-500px);
-        opacity: 0;
-        /* filter:  brightness(0.2); */
-    }
-
-    100% {
-        transform: perspective(2000px) rotateX(0deg) rotateY(0deg) scaleX(1) scaleY(1) translateX(0) translateY(0) translateZ(0);
-        opacity: 1;
-        /* filter: blur(0px) brightness(1); */
-    }
-}
-
-@keyframes container-collapse {
-    0% {
-        transform: perspective(2000px) rotateX(0deg) rotateY(0deg) scaleX(1) scaleY(1) translateX(0) translateY(0) translateZ(0);
-        opacity: 1;
-        /* filter: blur(0px) brightness(1); */
-    }
-
-    100% {
-        transform: scaleX(0.5) scaleY(0.5) translateX(-100%) translateY(100%) translateZ(-500px);
-        opacity: 0;
-        /* filter:  brightness(0.2); */
-    }
-}
-
-@keyframes collapse-to-bottom-left {
-    0% {
-        opacity: 1;
-        /* filter: blur(0px) brightness(1); */
-    }
-
-    100% {
-        opacity: 0;
-        /* filter:  brightness(0.2); */
-    }
 }
 
 .player-container {
@@ -478,22 +388,7 @@ watch(() => props.currentSong.title, () => {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    transform: perspective(2000px) rotateX(45deg) rotateY(-25deg) scaleX(0.25) scaleY(0.08) translateX(-35vw) translateY(40vh) translateZ(-500px);
     transform-origin: 50% 100%;
-}
-
-.fullscreen-player.expanding .player-container {
-    transform: perspective(2000px) rotateX(0deg) rotateY(0deg) scaleX(1) scaleY(1) translateX(0) translateY(0) translateZ(0);
-    opacity: 1;
-    filter: blur(0px) brightness(1);
-}
-
-.fullscreen-player.expanded .player-container {
-    transform: perspective(2000px) rotateX(0deg) rotateY(0deg) scaleX(1) scaleY(1) translateX(0) translateY(0) translateZ(0);
-}
-
-.fullscreen-player.collapsing .player-container {
-    animation: container-collapse 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
 .close-button {
@@ -506,16 +401,10 @@ watch(() => props.currentSong.title, () => {
     width: 48px;
     height: 48px;
     cursor: pointer;
-    transition: all 0.2s ease;
     z-index: 10;
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.close-button:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: scale(1.1);
 }
 
 .player-content {
@@ -585,10 +474,6 @@ watch(() => props.currentSong.title, () => {
     border-radius: 50%;
     object-fit: cover;
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
-}
-
-.vinyl-container.spinning .album-cover {
-    animation: spin 10s steps(360) infinite;
 }
 
 .song-info {
@@ -693,7 +578,6 @@ watch(() => props.currentSong.title, () => {
     height: 100%;
     background: linear-gradient(90deg, rgba(var(--primary-color), 0.3), rgba(var(--primary-color), 0.8));
     border-radius: 3px;
-    transition: width 0.1s ease;
 }
 
 .progress-thumb {
@@ -705,7 +589,6 @@ watch(() => props.currentSong.title, () => {
     background: white;
     border-radius: 50%;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: left 0.1s ease;
     opacity: 0;
 }
 
@@ -716,17 +599,10 @@ watch(() => props.currentSong.title, () => {
     width: 56px;
     height: 56px;
     cursor: pointer;
-    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
     color: rgba(255, 255, 255, 0.8);
-}
-
-.control-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: scale(1.1);
-    color: white;
 }
 
 .control-btn.active {
@@ -773,45 +649,4 @@ watch(() => props.currentSong.title, () => {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
-@keyframes spin {
-    from {
-        transform: rotateZ(0deg);
-    }
-
-    to {
-        transform: rotateZ(360deg);
-    }
-}
-
-
-.album-cover-enter-active,
-.album-cover-leave-active {
-    transition: all 0.5s ease !important;
-    animation: none !important;
-}
-
-.album-cover-enter-from {
-    opacity: 0;
-    transform: scale(0.8) rotate(-10deg) !important;
-}
-
-.album-cover-leave-to {
-    opacity: 0;
-    transform: scale(1.2) rotate(10deg) !important;
-}
-
-.song-info-enter-active,
-.song-info-leave-active {
-    transition: all 0.4s ease;
-}
-
-.song-info-enter-from {
-    opacity: 0;
-    transform: translateY(20px);
-}
-
-.song-info-leave-to {
-    opacity: 0;
-    transform: translateY(-20px);
-}
 </style>

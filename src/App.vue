@@ -11,6 +11,7 @@ import FullscreenPlayer from './components/FullscreenPlayer.vue'
 import DetailPanel from './components/DetailPanel.vue'
 import PlayerControls from './components/PlayerControls.vue'
 import TitleBar from './components/TitleBar.vue'
+import MotionTransition from './components/MotionTransition.vue'
 import { themeManager } from './utils/themeManager.js'
 
 // 当前页面状态
@@ -20,11 +21,6 @@ const pageCache = reactive(new Map())
 
 // 全屏播放器状态
 const showFullscreenPlayer = ref(false)
-
-// 播放器动画状态
-const playerAnimationState = ref('idle') // 'idle', 'expanding', 'collapsing'
-const isPlayerTransitioning = ref(false)
-const currentAnimationId = ref(0) // 用于跟踪当前动画序列
 
 // 页面组件映射
 const pageComponents = {
@@ -290,16 +286,16 @@ const navigateToPage = (pageId) => {
 
   currentPage.value = pageId
 
-  // 恢复页面状态
-  setTimeout(() => {
-    const cachedState = pageCache.get(pageId)
-    if (cachedState) {
-      const mainContent = document.querySelector('.main-content')
-      if (mainContent) {
-        mainContent.scrollTop = cachedState.scrollPosition
-      }
-    }
-  }, 100)
+}
+
+const restorePageScroll = () => {
+  const cachedState = pageCache.get(currentPage.value)
+  if (!cachedState) return
+
+  const mainContent = document.querySelector('.main-content')
+  if (mainContent) {
+    mainContent.scrollTop = cachedState.scrollPosition
+  }
 }
 
 // 当前页面组件
@@ -427,38 +423,14 @@ const handleAdd = () => {
 }
 
 const handleExpandPlayer = () => {
-  const animationId = ++currentAnimationId.value // 生成新的动画ID
-
-  isPlayerTransitioning.value = true
-  playerAnimationState.value = 'expanding'
-
-  // 立即显示全屏播放器（用于开始动画）
   showFullscreenPlayer.value = true
-
-  // 动画完成后重置状态（检查动画ID避免竞态条件）
-  setTimeout(() => {
-    if (currentAnimationId.value === animationId) {
-      playerAnimationState.value = 'idle'
-      isPlayerTransitioning.value = false
-    }
-  }, 800) // 与动画时长一致
 }
 
 const handleCloseFullscreenPlayer = () => {
-  const animationId = ++currentAnimationId.value // 生成新的动画ID
+  showFullscreenPlayer.value = false
+}
 
-  isPlayerTransitioning.value = true
-  playerAnimationState.value = 'collapsing'
-
-  // 动画完成后隐藏全屏播放器（检查动画ID避免竞态条件）
-  setTimeout(() => {
-    if (currentAnimationId.value === animationId) {
-      showFullscreenPlayer.value = false
-      playerAnimationState.value = 'idle'
-      isPlayerTransitioning.value = false
-    }
-  }, 600) // 与动画时长一致
-}// 获取当前页面所需的props
+// 获取当前页面所需的props
 const getPageProps = () => {
   switch (currentPage.value) {
     case 'home':
@@ -500,7 +472,7 @@ onMounted(async () => {
 
     <!-- 主内容区 -->
     <div class="main-content-wrapper">
-      <Transition name="page" mode="out-in">
+      <MotionTransition variant="page" mode="out-in" @after-enter="restorePageScroll">
         <KeepAlive :max="5">
           <component :is="currentPageComponent" :key="currentPage" v-bind="getPageProps()"
             @song-select="handleSongSelect" @song-play="handleSongPlay" @album-select="handleAlbumSelect"
@@ -509,7 +481,7 @@ onMounted(async () => {
             @header-control-click="handleHeaderControlClick" @effects-change="handleEffectsChange"
             class="main-content" />
         </KeepAlive>
-      </Transition>
+      </MotionTransition>
     </div>
 
     <!-- 右侧详情面板 -->
@@ -517,15 +489,15 @@ onMounted(async () => {
 
     <!-- 底部播放控制栏 -->
     <PlayerControls :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
-      :total-time="totalTime" :progress="progress" :animation-state="playerAnimationState"
-      :is-transitioning="isPlayerTransitioning" @toggle-play="handleTogglePlay" @previous="handlePrevious"
+      :total-time="totalTime" :progress="progress" :is-fullscreen="showFullscreenPlayer"
+      @toggle-play="handleTogglePlay" @previous="handlePrevious"
       @next="handleNext" @progress-change="handleProgressChange" @repeat="handleRepeat" @menu="handleMenu"
       @add="handleAdd" @expand-player="handleExpandPlayer" />
 
     <!-- 全屏播放器 -->
     <FullscreenPlayer :is-visible="showFullscreenPlayer" :current-song="currentSong" :is-playing="isPlaying"
-      :current-time="currentTime" :total-time="totalTime" :progress="progress" :animation-state="playerAnimationState"
-      :is-transitioning="isPlayerTransitioning" @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay"
+      :current-time="currentTime" :total-time="totalTime" :progress="progress"
+      @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay"
       @previous="handlePrevious" @next="handleNext" @progress-change="handleProgressChange"
       @volume-change="(volume) => console.log('音量变化:', volume)" @shuffle="() => console.log('随机播放')"
       @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')" @queue="() => console.log('播放队列')" />
@@ -567,39 +539,11 @@ onMounted(async () => {
   --md-sys-color-outline-variant: 202, 182, 224;
 }
 
-/* 页面切换动画 */
-.page-enter-active,
-.page-leave-active {
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-}
-
-.page-enter-from {
-  opacity: 0;
-  transform: translateY(20px);
-}
-
-.page-leave-to {
-  opacity: 0;
-  transform: translateY(-20px);
-}
-
-.page-enter-to,
-.page-leave-from {
-  opacity: 1;
-  transform: translateX(0);
-}
-
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
   background: #1a1a1a;
   color: #ffffff;
   overflow: hidden;
-  transition: all 0.3s ease;
 }
 
 /* Banner 样式 */
@@ -621,45 +565,6 @@ body {
 .image-container img {
   -webkit-mask-image: linear-gradient(rgba(0, 0, 0, 0.1), transparent);
   mask-image: linear-gradient(rgba(0, 0, 0, 0.1), transparent);
-  filter: blur(5px);
-  transition: transform 0.3s ease;
-}
-
-/* Banner 图片过渡动画 */
-.banner-image-enter-active {
-  transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.banner-image-leave-active {
-  transition: all 0.5s cubic-bezier(0.55, 0.085, 0.68, 0.53);
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.banner-image-enter-from {
-  opacity: 0;
-  transform: scale(1.1) translateY(30px);
-  filter: blur(15px);
-}
-
-.banner-image-leave-to {
-  opacity: 0;
-  transform: scale(0.9) translateY(-30px);
-  filter: blur(15px);
-}
-
-.banner-image-enter-to,
-.banner-image-leave-from {
-  opacity: 1;
-  transform: scale(1) translateY(0);
   filter: blur(5px);
 }
 

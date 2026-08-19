@@ -1,18 +1,20 @@
 <template>
-    <div class="svg-icon" :style="iconStyles">
+    <MotionDiv class="svg-icon" :style="iconStyles" :while-hover="hoverState" :transition="microTransition">
         <svg v-if="svgContent" :width="size" :height="size" :viewBox="viewBox" v-html="svgContent"
             class="svg-content" />
         <div v-else-if="loading" class="loading-placeholder">
-            <div class="loading-spinner"></div>
+            <MotionDiv class="loading-spinner" :animate="{ rotate: 360 }" :transition="spinnerTransition"></MotionDiv>
         </div>
         <div v-else class="error-placeholder">
             <span>!</span>
         </div>
-    </div>
+    </MotionDiv>
 </template>
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
 const props = defineProps({
     // SVG图片地址
@@ -50,6 +52,15 @@ const props = defineProps({
 const svgContent = ref('')
 const viewBox = ref('0 0 24 24')
 const loading = ref(false)
+const MotionDiv = motion.div
+const reducedMotion = useReducedMotion()
+const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const spinnerTransition = computed(() => reducedMotion.value
+    ? INSTANT_MOTION
+    : { type: 'keyframes', duration: 1, ease: 'linear', repeat: Infinity })
+const hoverState = computed(() => props.hover
+    ? { color: props.hoverColor || 'var(--primary-hover-color, #cccccc)' }
+    : undefined)
 
 // 计算样式
 const iconStyles = computed(() => {
@@ -124,7 +135,6 @@ onMounted(() => {
     justify-content: center;
     width: var(--icon-size);
     height: var(--icon-size);
-    transition: all 0.2s ease;
 }
 
 .svg-content {
@@ -132,13 +142,6 @@ onMounted(() => {
     height: 100%;
     fill: var(--icon-color);
     stroke: var(--icon-color);
-    transition: all 0.2s ease;
-}
-
-/* Hover效果 */
-.svg-icon.hover:hover .svg-content {
-    fill: var(--icon-hover-color);
-    stroke: var(--icon-hover-color);
 }
 
 /* 加载状态 */
@@ -156,7 +159,6 @@ onMounted(() => {
     border: 2px solid var(--icon-color, #ffffff);
     border-top: 2px solid transparent;
     border-radius: 50%;
-    animation: spin 1s linear infinite;
 }
 
 /* 错误状态 */
@@ -170,16 +172,6 @@ onMounted(() => {
     font-weight: bold;
     font-size: 0.8em;
     opacity: 0.5;
-}
-
-@keyframes spin {
-    0% {
-        transform: rotate(0deg);
-    }
-
-    100% {
-        transform: rotate(360deg);
-    }
 }
 
 /* 响应式大小 */
