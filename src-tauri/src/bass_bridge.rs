@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fs,
     path::PathBuf,
     sync::{mpsc, Arc, Mutex},
     thread,
@@ -769,11 +770,20 @@ impl BassRuntime {
 
     fn channel_info(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "channelId", "bass_channel_info")?;
-        let info = self
-            .channel(id, "bass_channel_info")?
-            .as_channel()
+        let channel = self.channel(id, "bass_channel_info")?.as_channel();
+        let info = channel
             .info()
             .map_err(|error| bass_error("bass_channel_info", error))?;
+        let length_seconds = channel
+            .length()
+            .ok()
+            .flatten()
+            .map(|value| value.as_secs_f64());
+        let stream_tags = channel
+            .tags(TagKind::Http)
+            .into_iter()
+            .chain(channel.tags(TagKind::Icy))
+            .collect::<Vec<_>>();
         Ok(json!({
             "frequency": info.frequency,
             "channels": info.channels,
@@ -782,6 +792,8 @@ impl BassRuntime {
             "originalResolution": info.original_resolution,
             "plugin": info.plugin,
             "filename": info.filename,
+            "bitrate": channel_bitrate(info.filename.as_deref(), length_seconds, &stream_tags),
+            "format": channel_format(info.filename.as_deref(), &stream_tags),
         }))
     }
 
@@ -1407,6 +1419,80 @@ fn parse_tag_kind(value: &str) -> Result<TagKind, BridgeError> {
         "mediafoundation" | "mf" => Ok(TagKind::MediaFoundation),
         _ => Err(bridge_error("bass_channel_tags", "unknown tag kind")),
     }
+}
+
+fn channel_bitrate(
+    filename: Option<&str>,
+    length_seconds: Option<f64>,
+    tags: &[String],
+) -> Option<u32> {
+    for tag in tags {
+        let normalized = tag.trim().to_ascii_lowercase();
+        if normalized.starts_with("icy-br:") || normalized.starts_with("icy-br=") {
+            if let Some(value) = normalized[6..]
+                .trim_start_matches([':', '='])
+                .split_whitespace()
+                .next()
+                .and_then(|value| value.parse::<u32>().ok())
+            {
+                return Some(value);
+            }
+        }
+    }
+
+    let (Some(filename), Some(length_seconds)) = (filename, length_seconds) else {
+        return None;
+    };
+    if length_seconds <= 0.0 {
+        return None;
+    }
+
+    fs::metadata(filename).ok().and_then(|metadata| {
+        let bitrate = (metadata.len() as f64 * 8.0 / length_seconds / 1000.0).round();
+        (bitrate > 0.0 && bitrate <= u32::MAX as f64).then_some(bitrate as u32)
+    })
+}
+
+fn channel_format(filename: Option<&str>, tags: &[String]) -> Option<String> {
+    if let Some(filename) = filename {
+        let source = filename.split(['?', '#']).next().unwrap_or(filename);
+        if let Some(extension) = source
+            .rsplit(['/', '\\'])
+            .next()
+            .and_then(|name| name.rsplit_once('.'))
+            .map(|(_, extension)| extension)
+        {
+            if !extension.is_empty() {
+                return Some(extension.to_ascii_uppercase());
+            }
+        }
+    }
+
+    let content_type = tags.iter().find_map(|tag| {
+        let (key, value) = tag.split_once(':')?;
+        key.trim()
+            .eq_ignore_ascii_case("content-type")
+            .then_some(value.trim())
+    })?;
+    let content_type = content_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+    Some(
+        match content_type.as_str() {
+            "audio/mpeg" => "MP3",
+            "audio/flac" => "FLAC",
+            "audio/ogg" => "OGG",
+            "audio/opus" => "OPUS",
+            "audio/wav" | "audio/wave" | "audio/x-wav" => "WAV",
+            "audio/aac" => "AAC",
+            "audio/mp4" | "audio/x-m4a" => "M4A",
+            _ => return None,
+        }
+        .into(),
+    )
 }
 
 fn parse_sync_kind(args: &Value) -> Result<SyncKind, BridgeError> {
@@ -2993,5 +3079,21 @@ mod tests {
         assert_eq!(catalog["bassApiVersion"], json!(bass_rs::BASS_API_VERSION));
         assert_eq!(catalog["constantCount"], json!(283));
         assert!(catalog["constants"]["BASS_ATTRIB_VOL"].is_number());
+    }
+
+    #[test]
+    fn channel_info_derives_stream_format_and_bitrate() {
+        assert_eq!(
+            channel_format(Some(r"E:\Music\demo.flac"), &[]),
+            Some("FLAC".into())
+        );
+        assert_eq!(
+            channel_format(None, &["Content-Type: audio/mpeg; charset=utf-8".into()]),
+            Some("MP3".into())
+        );
+        assert_eq!(
+            channel_bitrate(None, None, &["icy-br: 128".into()]),
+            Some(128)
+        );
     }
 }

@@ -367,10 +367,13 @@ const formatSampleRate = (value) => {
 const formatBitrate = (value) => {
     const bitrate = Number(value)
     if (!Number.isFinite(bitrate) || bitrate <= 0) return ''
-    return `${Math.round(bitrate / 1000)}Kbps`
+    return `${Math.round(bitrate)}Kbps`
 }
 
 const bassFormatName = (info) => {
+    const bassFormat = String(info?.format || '').trim()
+    if (bassFormat) return `${bassFormat.toUpperCase()} Audio`
+
     const source = String(info?.filename || '')
         .split(/[?#]/, 1)[0]
         .split(/[\\/]/).pop() || ''
@@ -389,7 +392,7 @@ const songTags = computed(() => {
 
     return [
         { key: 'sample-rate', label: formatSampleRate(info.frequency) },
-        { key: 'bitrate', label: formatBitrate(props.currentSong?.bitrate) },
+        { key: 'bitrate', label: formatBitrate(info.bitrate ?? props.currentSong?.bitrate) },
         {
             key: 'channels',
             label: Number(info.channels) > 0
@@ -682,7 +685,7 @@ onUnmounted(() => {
 
 watch([lyricRows, activeLyricRowIndex, activeLyricTimelineRow], measureLyrics, { deep: true, flush: 'post' })
 watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], startAudioBands)
-watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.currentSong?.title], startBassTrackInfo)
+watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.currentSong?.title], startBassTrackInfo, { immediate: true })
 </script>
 
 <style scoped>
