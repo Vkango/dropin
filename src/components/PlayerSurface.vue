@@ -19,11 +19,12 @@
                 <FullscreenPlayer :is-visible="isFullscreen" :current-song="currentSong" :is-playing="isPlaying"
                     :current-time="currentTime" :current-time-ms="currentTimeMs" :total-time="totalTime"
                     :progress="progress" :lyrics="lyrics" :lyrics-loading="lyricsLoading"
+                    :channel-id="channelId" :background-mode="backgroundMode"
                     @close="$emit('close')" @toggle-play="$emit('toggle-play')" @previous="$emit('previous')"
                     @next="$emit('next')" @progress-change="$emit('progress-change', $event)"
                     @volume-change="$emit('volume-change', $event)" @shuffle="$emit('shuffle')"
                     @repeat="$emit('repeat')" @add-to-playlist="$emit('add-to-playlist')"
-                    @queue="$emit('queue')" />
+                    @queue="$emit('queue')" @background-mode-change="$emit('background-mode-change', $event)" />
                 </MotionDiv>
             </AnimatePresence>
         </MotionDiv>
@@ -33,7 +34,8 @@
                 :initial="{ opacity: 0 }" :animate="{ opacity: 1 }" :exit="{ opacity: 0 }"
                 :transition="contentTransition">
                 <PlayerControls :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
-                    :total-time="totalTime" :progress="progress" @toggle-play="$emit('toggle-play')"
+                    :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress"
+                    :lyrics="lyrics" :lyrics-loading="lyricsLoading" @toggle-play="$emit('toggle-play')"
                     @previous="$emit('previous')" @next="$emit('next')" @progress-change="$emit('progress-change', $event)"
                     @repeat="$emit('repeat')" @menu="$emit('menu')" @add="$emit('add')"
                     @expand-player="$emit('expand-player')" />
@@ -82,6 +84,14 @@ const props = defineProps({
         type: Boolean,
         default: false
     },
+    channelId: {
+        type: Number,
+        default: null
+    },
+    backgroundMode: {
+        type: String,
+        default: 'flowing'
+    },
     isFullscreen: {
         type: Boolean,
         default: false
@@ -99,6 +109,7 @@ defineEmits([
     'repeat',
     'add-to-playlist',
     'queue',
+    'background-mode-change',
     'menu',
     'add',
     'expand-player'

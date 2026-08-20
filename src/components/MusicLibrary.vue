@@ -1,31 +1,32 @@
 <template>
     <PageLayout>
         <template #header>
-        <!-- Banner 区域 -->
-        <div class="music-banner" @click="showAlbumDetail">
-            <div class="image-container">
-                <MotionTransition variant="banner">
-                    <img :key="bannerImage" class="background-image" :src="bannerImage" referrerpolicy="no-referrer">
-                </MotionTransition>
-            </div>
-            <div class="banner-content">
-                <div class="title">DROPIN MUSIC PLAYER</div>
-                <h2 class="library-title">库</h2>
-                <div class="description">{{ musicLibrary.totalSongs }} songs • {{ musicLibrary.totalDuration }}
+            <!-- Banner 区域 -->
+            <div class="music-banner" @click="showAlbumDetail">
+                <div class="image-container">
+                    <MotionTransition variant="banner">
+                        <img :key="bannerImage" class="background-image" :src="bannerImage"
+                            referrerpolicy="no-referrer">
+                    </MotionTransition>
+                </div>
+                <div class="banner-content">
+                    <div class="title">DROPIN MUSIC PLAYER</div>
+                    <h2 class="library-title">库</h2>
+                    <div class="description">{{ musicLibrary.totalSongs }} songs • {{ musicLibrary.totalDuration }}
+                    </div>
+                </div>
+                <div class="controls-row">
+                    <MotionButton v-for="control in headerControls" :key="control.id" class="control-btn"
+                        :while-hover="{ y: -1, backgroundColor: 'rgba(255,255,255, 0.1)', boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)' }"
+                        :while-press="{ scale: 0.96 }" :transition="microTransition"
+                        :class="{ selected: control.selected }" @click.stop="$emit('header-control-click', control)">
+
+                        <Icon :src="getIconPath(control.icon)" size="xs" />
+                        <span>{{ control.label }}</span>
+
+                    </MotionButton>
                 </div>
             </div>
-            <div class="controls-row">
-                <MotionButton v-for="control in headerControls" :key="control.id" class="control-btn"
-                    :while-hover="{ y: -1, backgroundColor: 'rgba(74, 74, 74, 0.9)', boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)' }"
-                    :while-press="{ scale: 0.96 }" :transition="microTransition" :class="{ selected: control.selected }"
-                    @click.stop="$emit('header-control-click', control)">
-
-                    <Icon :src="getIconPath(control.icon)" size="xs" />
-                    <span v-if="control.selected">{{ control.label }}</span>
-
-                </MotionButton>
-            </div>
-        </div>
         </template>
         <div class="song-list-container">
             <SongList :songs="musicLibrary.songs" @song-select="$emit('song-select', $event)"
@@ -149,7 +150,7 @@ const handleTrackPlay = (track) => {
     background: transparent;
     border: none;
     border-radius: 6px;
-    color: rgb(var(--text-color));
+    color: rgb(var(--primary-color), 0.5);
     padding: 8px 12px;
     font-size: 12px;
     cursor: pointer;

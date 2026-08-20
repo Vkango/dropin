@@ -1,7 +1,8 @@
 <template>
     <div class="fullscreen-player" @click.self="$emit('close')">
-        <div class="player-background" aria-hidden="true">
-            <div class="backdrop-image" :style="{ backgroundImage: `url(${currentSong.cover})` }"></div>
+        <div class="player-background" :class="`background-mode-${backgroundMode}`" aria-hidden="true">
+            <FlowingBackground v-if="backgroundMode === 'flowing'" :cover="currentSong.cover" :bands="audioBands" />
+            <div v-else class="backdrop-image" :style="{ backgroundImage: `url(${currentSong.cover})` }"></div>
             <div class="backdrop-wash"></div>
             <div class="backdrop-vignette"></div>
         </div>
@@ -49,7 +50,11 @@
 
                 <section class="lyrics-column" aria-label="歌词">
                     <div ref="lyricsWindowRef" class="lyrics-window">
-                        <MotionDiv v-if="syncedLyrics.length" class="lyrics-track" :animate="{ y: lyricOffset }"
+                        <MotionDiv v-if="isInterlude" class="lyric-interlude" :initial="{ opacity: 0.4 }"
+                            :animate="{ opacity: 1 }" :transition="microTransition" aria-label="间奏">
+                            <span v-for="dot in 3" :key="dot" class="lyric-interlude-dot"></span>
+                        </MotionDiv>
+                        <MotionDiv v-else-if="syncedLyrics.length" class="lyrics-track" :animate="{ y: lyricOffset }"
                             :transition="contentTransition">
                             <MotionDiv v-for="(line, index) in syncedLyrics" :ref="setLyricLineRef(index)"
                                 :key="currentSong.title + '-' + line.startTimeMs + '-' + index" class="lyric-line"
@@ -91,6 +96,13 @@
                         <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
                             :transition="microTransition" aria-label="编辑播放页">
                             <SquarePen :size="18" :stroke-width="1.5" />
+                        </MotionButton>
+                        <MotionButton class="footer-button background-mode-button"
+                            :class="{ active: backgroundMode === 'flowing' }" :while-hover="buttonHover"
+                            :while-press="buttonPress" :transition="microTransition"
+                            :aria-label="backgroundMode === 'flowing' ? '切换为纯模糊背景' : '切换为流沙背景'"
+                            :aria-pressed="backgroundMode === 'flowing'" @click="toggleBackgroundMode">
+                            <span class="background-mode-glyph">{{ backgroundMode === 'flowing' ? '流' : '糊' }}</span>
                         </MotionButton>
                     </div>
 
@@ -169,6 +181,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ChevronDown, ListMusic, Maximize2, MoreHorizontal, PanelTop, Pause, Play, Shuffle, SkipBack, SkipForward, SlidersHorizontal, SquarePen, Volume2 } from '@lucide/vue'
 import { motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
+import FlowingBackground from './FlowingBackground.vue'
+import { bassCall } from '../services/bassApi.js'
 import { INSTANT_MOTION, LINEAR_LOOP, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
 import { User2Icon } from '@lucide/vue'
 import { DiscAlbum } from '@lucide/vue'
@@ -209,6 +223,14 @@ const props = defineProps({
     lyricsLoading: {
         type: Boolean,
         default: false
+    },
+    channelId: {
+        type: Number,
+        default: null
+    },
+    backgroundMode: {
+        type: String,
+        default: 'flowing'
     }
 })
 
@@ -222,7 +244,8 @@ const emit = defineEmits([
     'shuffle',
     'repeat',
     'add-to-playlist',
-    'queue'
+    'queue',
+    'background-mode-change'
 ])
 
 const MotionDiv = motion.div
@@ -236,6 +259,50 @@ const progressTransition = computed(() => isProgressDragging.value ? INSTANT_MOT
 const loopTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : LINEAR_LOOP)
 const buttonHover = { scale: 1.08 }
 const buttonPress = { scale: 0.92 }
+
+const ZERO_BANDS = { bass: 0, mid: 0, treble: 0, level: 0 }
+const audioBands = ref({ ...ZERO_BANDS })
+let audioBandsTimer
+let audioBandsRequest = 0
+let audioBandsInFlight = false
+
+const normalizedBackgroundMode = computed(() => props.backgroundMode === 'blur' ? 'blur' : 'flowing')
+
+const stopAudioBands = () => {
+    if (audioBandsTimer) window.clearInterval(audioBandsTimer)
+    audioBandsTimer = undefined
+    audioBandsRequest++
+    audioBandsInFlight = false
+    audioBands.value = { ...ZERO_BANDS }
+}
+
+const refreshAudioBands = async () => {
+    if (!props.isVisible || normalizedBackgroundMode.value !== 'flowing' || !props.channelId || audioBandsInFlight) return
+    const requestId = ++audioBandsRequest
+    const channelId = props.channelId
+    audioBandsInFlight = true
+    try {
+        const result = await bassCall('bass_channel_fft', { channelId, fftSize: 512 })
+        if (requestId === audioBandsRequest && channelId === props.channelId) {
+            audioBands.value = result?.bands ? { ...ZERO_BANDS, ...result.bands } : { ...ZERO_BANDS }
+        }
+    } catch (error) {
+        if (requestId === audioBandsRequest) audioBands.value = { ...ZERO_BANDS }
+    } finally {
+        audioBandsInFlight = false
+    }
+}
+
+const startAudioBands = () => {
+    stopAudioBands()
+    if (!props.isVisible || normalizedBackgroundMode.value !== 'flowing' || !props.channelId) return
+    refreshAudioBands()
+    audioBandsTimer = window.setInterval(refreshAudioBands, 100)
+}
+
+const toggleBackgroundMode = () => {
+    emit('background-mode-change', normalizedBackgroundMode.value === 'flowing' ? 'blur' : 'flowing')
+}
 
 const volume = ref(75)
 const albumStageRef = ref(null)
@@ -251,14 +318,11 @@ const plainLyrics = computed(() => props.lyrics?.plainLines || [])
 const activeLyricIndex = computed(() => {
     if (!syncedLyrics.value.length) return -1
 
-    const index = syncedLyrics.value.findIndex((line) =>
+    return syncedLyrics.value.findIndex((line) =>
         props.currentTimeMs >= line.startTimeMs && props.currentTimeMs < line.endTimeMs
     )
-    if (index >= 0) return index
-    return props.currentTimeMs >= syncedLyrics.value[0].startTimeMs
-        ? syncedLyrics.value.length - 1
-        : -1
 })
+const isInterlude = computed(() => syncedLyrics.value.length > 0 && activeLyricIndex.value < 0)
 const lyricOffset = ref(0)
 
 const setLyricLineRef = (index) => (value) => {
@@ -378,15 +442,18 @@ onMounted(() => {
     if (lyricsWindowRef.value) lyricsResizeObserver.observe(lyricsWindowRef.value)
     requestAnimationFrame(updateAlbumSize)
     measureLyrics()
+    startAudioBands()
 })
 
 onUnmounted(() => {
     document.removeEventListener('keydown', handleKeydown)
     albumResizeObserver?.disconnect()
     lyricsResizeObserver?.disconnect()
+    stopAudioBands()
 })
 
 watch([syncedLyrics, activeLyricIndex], measureLyrics, { deep: true, flush: 'post' })
+watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], startAudioBands)
 </script>
 
 <style scoped>
@@ -421,6 +488,10 @@ watch([syncedLyrics, activeLyricIndex], measureLyrics, { deep: true, flush: 'pos
     filter: blur(48px) saturate(1.15) brightness(0.65);
     opacity: 0.62;
     transform: scale(1.14);
+}
+
+.backdrop-wash {
+    background: rgba(7, 5, 5, 0.18);
 }
 
 .backdrop-vignette {
@@ -496,10 +567,10 @@ watch([syncedLyrics, activeLyricIndex], measureLyrics, { deep: true, flush: 'pos
     height: 100%;
     display: grid;
     place-items: center;
-    border: clamp(7px, 0.7vw, 13px) solid rgba(119, 109, 102, 0.62);
+    border: clamp(7px, 0.7vw, 13px) solid rgba(0, 0, 0, 0.1);
     border-radius: 50%;
-    background: rgba(217, 207, 200, 0.74);
-    box-shadow: 0 18px 38px rgba(66, 45, 39, 0.22);
+    background: rgba(255, 255, 255, 0.2);
+    /* box-shadow: 0 18px 38px rgba(66, 45, 39, 0.22); */
 }
 
 .disc-shell::before {
@@ -642,7 +713,8 @@ watch([syncedLyrics, activeLyricIndex], measureLyrics, { deep: true, flush: 'pos
 }
 
 .lyrics-status,
-.plain-lyrics {
+.plain-lyrics,
+.lyric-interlude {
     width: 100%;
     color: rgba(255, 255, 255, 0.52);
     text-align: left;
@@ -652,6 +724,46 @@ watch([syncedLyrics, activeLyricIndex], measureLyrics, { deep: true, flush: 'pos
     align-self: center;
     padding: 0 8%;
     font-size: 22px;
+}
+
+.lyric-interlude {
+    align-self: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+}
+
+.lyric-interlude-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: lyric-interlude-pulse 1.2s ease-in-out infinite;
+}
+
+.lyric-interlude-dot:nth-child(2) {
+    animation-delay: 0.16s;
+}
+
+.lyric-interlude-dot:nth-child(3) {
+    animation-delay: 0.32s;
+}
+
+@keyframes lyric-interlude-pulse {
+
+    0%,
+    60%,
+    100% {
+        opacity: 0.35;
+        transform: scale(0.75);
+    }
+
+    30% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 .plain-lyrics {
@@ -670,21 +782,9 @@ watch([syncedLyrics, activeLyricIndex], measureLyrics, { deep: true, flush: 'pos
 }
 
 @media (max-height: 820px) and (min-width: 721px) {
-    .visual-column {
-        padding: 28px 6vw 0;
-    }
 
     .album-visual {
         width: min(460px, 42vh, 36vw);
-    }
-
-    .song-details {
-        margin-top: 14px;
-    }
-
-    .song-artist,
-    .song-album {
-        margin-top: 10px;
     }
 
     .song-tags {
@@ -757,6 +857,22 @@ watch([syncedLyrics, activeLyricIndex], measureLyrics, { deep: true, flush: 'pos
 .footer-button {
     width: 32px;
     height: 32px;
+}
+
+.background-mode-button {
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.background-mode-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 1px solid currentColor;
+    border-radius: 5px;
+    line-height: 1;
 }
 
 .footer-button.active {

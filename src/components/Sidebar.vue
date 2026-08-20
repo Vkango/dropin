@@ -1,8 +1,8 @@
 <template>
     <aside class="sidebar">
         <div class="search-container">
-            <input type="text" placeholder="Search Everywhere" class="search-input" :value="searchQuery"
-                @input="$emit('search-update', $event.target.value)" />
+            <!-- <input type="text" placeholder="Search Everywhere" class="search-input" :value="searchQuery"
+                @input="$emit('search-update', $event.target.value)" /> -->
         </div>
 
         <nav class="nav-menu">
@@ -22,8 +22,8 @@
                 @click="toggleSection('tags')" @keydown.enter="toggleSection('tags')"
                 @keydown.space.prevent="toggleSection('tags')">
                 <Icon class="section-chevron" :class="{ collapsed: !sections.tags }" src="/assets/chevrondown.svg"
-                    size="sm" :color="iconColor" />
-                <Icon class="section-icon" src="/assets/bookmark.svg" size="sm" :color="iconColor" />
+                    :color="iconColor" />
+                <Icon class="section-icon" src="/assets/bookmark.svg" :color="iconColor" />
                 <span class="section-title">我的标签</span>
                 <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
                     :transition="microTransition" @click.stop="$emit('add-tag')">+</MotionButton>
@@ -31,8 +31,8 @@
             <div v-if="sections.tags" class="section-content">
                 <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
                     :transition="microTransition">
-                    <span class="nav-icon">
-                        <Icon src="/assets/bookmark-item.svg" size="sm" :color="iconColor" />
+                    <span class="section-icon">
+                        <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
                     </span>
                     <span class="nav-label">未分类标签001</span>
                 </MotionDiv>
@@ -45,8 +45,8 @@
                 @click="toggleSection('playlists')" @keydown.enter="toggleSection('playlists')"
                 @keydown.space.prevent="toggleSection('playlists')">
                 <Icon class="section-chevron" :class="{ collapsed: !sections.playlists }" src="/assets/chevrondown.svg"
-                    size="sm" :color="iconColor" />
-                <Icon class="section-icon" src="/assets/playlist.svg" size="sm" :color="iconColor" />
+                    :color="iconColor" />
+                <Icon class="section-icon" src="/assets/playlist.svg" style="scale: 0.8" :color="iconColor" />
                 <span class="section-title">播放列表</span>
                 <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
                     :transition="microTransition" @click.stop="$emit('add-playlist')">+</MotionButton>
@@ -59,8 +59,8 @@
                 @click="toggleSection('plugins')" @keydown.enter="toggleSection('plugins')"
                 @keydown.space.prevent="toggleSection('plugins')">
                 <Icon class="section-chevron" :class="{ collapsed: !sections.plugins }" src="/assets/chevrondown.svg"
-                    size="sm" :color="iconColor" />
-                <Icon class="section-icon" src="/assets/plugin.svg" size="sm" :color="iconColor" />
+                    :color="iconColor" />
+                <Icon class="section-icon" src="/assets/plugin.svg" :color="iconColor" />
                 <span class="section-title">扩展插件</span>
                 <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
                     :transition="microTransition" @click.stop="$emit('add-plugin')">+</MotionButton>
@@ -115,7 +115,7 @@ const MotionDiv = motion.div
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
-const iconColor = computed(() => props.isDark ? '#e8edf0' : '#565b5f')
+const iconColor = computed(() => props.isDark ? 'rgba(255, 255, 255)' : 'rgba(0, 0, 0)')
 const sections = reactive({
     tags: true,
     playlists: true,
@@ -130,7 +130,7 @@ const toggleSection = (sectionName) => {
 <style scoped>
 .sidebar {
     grid-area: sidebar;
-    padding: 20px;
+    padding: 40px 20px;
     overflow-y: auto;
 }
 
@@ -168,9 +168,8 @@ const toggleSection = (sectionName) => {
 }
 
 .nav-item.active {
-    background: rgba(var(--text-color), 0.06);
-    border-radius: 10px;
-    box-shadow: 0 0 10px rgba(var(--text-color), 0.08);
+    background: rgba(var(--text-color), 0.1);
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.08);
 }
 
 .nav-icon {
@@ -212,12 +211,15 @@ const toggleSection = (sectionName) => {
 .section-icon {
     flex: 0 0 22px;
     margin-right: 14px;
+    scale: 0.9;
+    opacity: 0.5;
 }
 
 .section-chevron {
     flex: 0 0 18px;
     margin-right: 8px;
     transition: transform 180ms ease;
+    opacity: 0.5;
 }
 
 .section-chevron.collapsed {
@@ -230,8 +232,7 @@ const toggleSection = (sectionName) => {
 
 .section-title {
     flex: 1;
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13px;
 }
 
 .add-btn {

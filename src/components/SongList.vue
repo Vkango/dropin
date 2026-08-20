@@ -1,11 +1,15 @@
 <template>
     <div class="song-list">
-        <!-- <div class="list-header">
-            <div class="col-play">▶️</div>
-            <div class="col-title"></div>
-            <div class="col-equals">=</div>
-            <div class="col-artist">音源</div>
-        </div> -->
+        <div class="list-header">
+            <div class="col-play">
+                <PlayIcon fill="white" color="white" size="12" />
+                添加到播放列表
+            </div>
+            <div class="col-play">
+                <ListFilter fill="white" color="white" size="12" />
+                筛选
+            </div>
+        </div>
 
         <div class="songs">
             <template v-for="(song, index) in songs" :key="song.id">
@@ -14,7 +18,7 @@
                 <div v-if="index === 1" class="group-label">#</div>
                 <div v-if="index === 2" class="group-label">A</div>
                 <div v-if="index === 4" class="group-label">A</div>
-                <MotionDiv class="song-item" :while-hover="{ backgroundColor: '#2a2a2a' }"
+                <MotionDiv class="song-item" :while-hover="{ backgroundColor: 'rgba(var(--surface-color), 0.5)' }"
                     :transition="microTransition" @click="$emit('song-select', song)">
 
                     <div class="col-info">
@@ -36,6 +40,8 @@
 import { defineProps, defineEmits, computed } from 'vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { PlayIcon } from '@lucide/vue'
+import { ListFilter } from '@lucide/vue'
 
 const props = defineProps({
     songs: {
@@ -52,39 +58,42 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
 
 <style scoped>
 .song-list {
-    background: rgba(var(--surface-color), 0.75);
     border-radius: 8px;
     overflow: hidden;
 }
 
 .list-header {
-    display: grid;
-    grid-template-columns: 60px 1fr 30px 200px;
-    padding: 16px 20px;
-    background: rgba(var(--surface-color), 0.9);
-    font-weight: 600;
-    border-bottom: 1px solid #3a3a3a;
+    display: flex;
+    gap: 20px;
+    padding: 16px;
 }
 
 .group-label {
-    background: rgba(var(--surface-color), 0.82);
-    padding: 12px 20px;
-    font-size: 18px;
+    background: rgba(var(--surface-color), 0.5);
+    width: fit-content;
+    padding: 6px 10px;
+    font-size: 13px;
     font-weight: 700;
-    border-bottom: 1px solid #3a3a3a;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    margin-top: 20px;
+    margin-left: 16px;
 }
 
 .song-item {
     display: grid;
     grid-template-columns: 1fr 200px 80px;
     padding: 12px 20px;
-    border-bottom: 1px solid #333;
     cursor: pointer;
+    border-radius: 10px;
 }
 
 .col-play {
     display: flex;
     align-items: center;
+    gap: 10px;
+    opacity: 0.5;
+    font-size: 12px;
 }
 
 .play-btn {
@@ -109,6 +118,7 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
 }
 
 .song-title {
+    font-size: 14px;
     font-weight: 500;
     margin-bottom: 4px;
 }

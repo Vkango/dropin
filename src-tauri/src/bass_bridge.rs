@@ -256,6 +256,7 @@ impl BassRuntime {
             "bass_channel_level_ex" => self.channel_level_ex(args),
             "bass_channel_read_data" => self.channel_read_data(args),
             "bass_channel_read_float_data" => self.channel_read_float_data(args),
+            "bass_channel_fft" => self.channel_fft(args),
             "bass_channel_tags" => self.channel_tags(args),
             "bass_channel_remote_progress" => self.channel_remote_progress(args),
             "bass_channel_add_sync" => self.channel_add_sync(args),
@@ -823,6 +824,43 @@ impl BassRuntime {
             .read_float_data(samples, flags)
             .map_err(|error| bass_error("bass_channel_read_float_data", error))?;
         Ok(json!({ "samples": data }))
+    }
+
+    fn channel_fft(&self, args: Value) -> Result<Value, BridgeError> {
+        let id = required_id(&args, "channelId", "bass_channel_fft")?;
+        let fft_size = optional_u32(&args, "fftSize")?.unwrap_or(512) as usize;
+        let channel = self.channel(id, "bass_channel_fft")?.as_channel();
+        let info = channel
+            .info()
+            .map_err(|error| bass_error("bass_channel_fft", error))?;
+        if info.frequency == 0 {
+            return Err(bridge_error("bass_channel_fft", "channel has no sample rate"));
+        }
+
+        let spectrum = channel
+            .read_fft_data(fft_size, raw::BASS_DATA_FFT_REMOVEDC)
+            .map_err(|error| bass_error("bass_channel_fft", error))?;
+        if spectrum.len() < 2 {
+            return Err(bridge_error("bass_channel_fft", "BASS returned an empty FFT"));
+        }
+
+        let bass = fft_band(&spectrum, fft_size, info.frequency, 20.0, 250.0);
+        let mid = fft_band(&spectrum, fft_size, info.frequency, 250.0, 2000.0);
+        let treble = fft_band(&spectrum, fft_size, info.frequency, 2000.0, 12000.0);
+        let level = (bass * 0.45 + mid * 0.4 + treble * 0.15).clamp(0.0, 1.0);
+
+        Ok(json!({
+            "channelId": id,
+            "fftSize": fft_size,
+            "sampleRate": info.frequency,
+            "available": true,
+            "bands": {
+                "bass": bass,
+                "mid": mid,
+                "treble": treble,
+                "level": level,
+            }
+        }))
     }
 
     fn channel_tags(&self, args: Value) -> Result<Value, BridgeError> {
@@ -1533,6 +1571,23 @@ fn device_json(device: bass_rs::DeviceInfo) -> Value {
         "initialized": device.is_initialized(),
         "loopback": device.is_loopback(),
     })
+}
+
+fn fft_band(spectrum: &[f32], fft_size: usize, sample_rate: u32, low_hz: f32, high_hz: f32) -> f32 {
+    let bin_hz = sample_rate as f32 / fft_size as f32;
+    let first = (low_hz / bin_hz).ceil().max(1.0) as usize;
+    let last = (high_hz / bin_hz).floor() as usize;
+    let last = last.min(spectrum.len().saturating_sub(1));
+    if first > last {
+        return 0.0;
+    }
+
+    let average = spectrum[first..=last]
+        .iter()
+        .map(|value| value.max(0.0))
+        .sum::<f32>()
+        / (last - first + 1) as f32;
+    (average * 6.0).clamp(0.0, 1.0)
 }
 
 fn plugin_json(id: u64, plugin: &Plugin) -> Value {

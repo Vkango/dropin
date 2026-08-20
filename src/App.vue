@@ -55,6 +55,7 @@ const currentTimeMs = ref(0)
 const totalTime = ref('00:00')
 const progress = ref(0)
 const activeChannelId = ref(null)
+const fullscreenBackgroundMode = ref('flowing')
 let snapshotTimer = null
 const lyricsPayload = ref(null)
 const lyricsLoading = ref(false)
@@ -453,8 +454,8 @@ const startPlaybackSnapshot = () => {
 const playSong = async (song) => {
   try {
     if (activeChannelId.value) {
-      await bassCall('bass_channel_stop', { channelId: activeChannelId.value }).catch(() => {})
-      await bassCall('bass_channel_close', { channelId: activeChannelId.value }).catch(() => {})
+      await bassCall('bass_channel_stop', { channelId: activeChannelId.value }).catch(() => { })
+      await bassCall('bass_channel_close', { channelId: activeChannelId.value }).catch(() => { })
       activeChannelId.value = null
     }
     const result = await libraryStore.openPlayback(song)
@@ -603,6 +604,10 @@ const handleCloseFullscreenPlayer = () => {
   showFullscreenPlayer.value = false
 }
 
+const handleBackgroundModeChange = (mode) => {
+  fullscreenBackgroundMode.value = mode === 'blur' ? 'blur' : 'flowing'
+}
+
 // 获取当前页面所需的props
 const getPageProps = () => {
   switch (currentPage.value) {
@@ -650,9 +655,8 @@ onBeforeUnmount(() => {
   <div class="music-player">
     <!-- 侧边栏 -->
     <Sidebar :sidebar-items="sidebarItems" :search-query="searchQuery" :is-dark="isDarkTheme"
-      @search-update="handleSearchUpdate"
-      @nav-item-click="handleNavItemClick" @add-tag="handleAddTag" @add-playlist="handleAddPlaylist"
-      @add-plugin="handleAddPlugin" />
+      @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick" @add-tag="handleAddTag"
+      @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin" />
 
     <!-- 主内容区 -->
     <div class="main-content-wrapper">
@@ -662,8 +666,7 @@ onBeforeUnmount(() => {
             @song-select="handleSongSelect" @song-play="handleSongPlay" @album-select="handleAlbumSelect"
             @album-play="handleAlbumPlay" @artist-select="handleArtistSelect" @artist-play="handleArtistPlay"
             @artist-follow="handleArtistFollow" @playlist-play="handlePlaylistPlay" @navigate="handleNavigate"
-            @header-control-click="handleHeaderControlClick" @effects-change="handleEffectsChange"
-            />
+            @header-control-click="handleHeaderControlClick" @effects-change="handleEffectsChange" />
         </KeepAlive>
       </MotionTransition>
     </div>
@@ -673,12 +676,15 @@ onBeforeUnmount(() => {
 
     <!-- 共享播放卡片：迷你播放器和全屏内容在同一张卡片内替换 -->
     <PlayerSurface :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
-      :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress"
-      :lyrics="lyricsPayload" :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer"
-      @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay" @previous="handlePrevious" @next="handleNext"
+      :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress" :lyrics="lyricsPayload"
+      :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer"
+      :channel-id="activeChannelId" :background-mode="fullscreenBackgroundMode"
+      @close="handleCloseFullscreenPlayer"
+      @toggle-play="handleTogglePlay" @previous="handlePrevious" @next="handleNext"
       @progress-change="handleProgressChange" @volume-change="(volume) => console.log('音量变化:', volume)"
       @shuffle="() => console.log('随机播放')" @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')"
-      @queue="() => console.log('播放队列')" @menu="handleMenu" @add="handleAdd" @expand-player="handleExpandPlayer" />
+      @queue="() => console.log('播放队列')" @menu="handleMenu" @add="handleAdd"
+      @background-mode-change="handleBackgroundModeChange" @expand-player="handleExpandPlayer" />
   </div>
 </template>
 
@@ -760,24 +766,22 @@ body {
 .banner-content .title {
   font-size: 14px;
   font-weight: bold;
-  color: #ffffff;
+  color: rgb(var(--text-color), 0.4);
   opacity: 0.5;
   margin-bottom: 8px;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
 }
 
 .library-title {
-  font-size: 32px;
+  font-size: 24px;
   font-weight: 700;
   margin: 0 0 8px 0;
 }
 
 .banner-content .description {
   margin-bottom: 15px;
-  opacity: 0.8;
-  color: #ffffff;
+  color: rgb(var(--text-color), 0.4);
   font-size: 14px;
-  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.7);
+  /* text-shadow: 0 1px 5px rgba(0, 0, 0, 0.7); */
 }
 
 /* 滚动条样式 */
@@ -819,8 +823,13 @@ body {
 
 .main-content-wrapper {
   grid-area: main;
-  position: relative;
+  position: absolute;
   min-width: 0;
+  left: 300px;
+  width: calc(100% - 300px);
+  top: 60px;
+  height: calc(100% - 60px);
+  border-radius: 10px 0 0 0;
   overflow: hidden;
 }
 </style>

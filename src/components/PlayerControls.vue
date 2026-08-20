@@ -11,26 +11,35 @@
             <MotionDiv class="song-info-section" :while-hover="{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }"
                 :transition="microTransition" @click="$emit('expand-player')">
                 <div class="playing-info">
-                    <div class="playing-title">纯音乐 请欣赏</div>
+                    <div class="playing-title" :title="miniLyricText">{{ miniLyricText }}</div>
                     <div class="playing-artist">{{ currentSong.title }} - {{ currentSong.artist }}</div>
                 </div>
                 <div class="controls">
-                    <MotionButton class="control-button" :while-hover="{ scale: 1.08, backgroundColor: '#3a3a3a' }"
-                        :while-press="{ scale: 0.92 }" :transition="microTransition" @click.stop="$emit('previous')">⏮️
+                    <MotionButton class="control-button" :while-hover="buttonHover"
+                        :while-press="buttonPress" :transition="microTransition" aria-label="上一首"
+                        @click.stop="$emit('previous')">
+                        <SkipBack :size="17" :stroke-width="1.8" />
                     </MotionButton>
                     <MotionButton class="control-button play-pause"
-                        :while-hover="{ scale: 1.08, backgroundColor: '#3a3a3a' }" :while-press="{ scale: 0.92 }"
-                        :transition="microTransition" @click.stop="$emit('toggle-play')">
-                        {{ isPlaying ? '⏸️' : '▶️' }}
+                        :while-hover="buttonHover" :while-press="buttonPress" :transition="microTransition"
+                        :aria-label="isPlaying ? '暂停' : '播放'" @click.stop="$emit('toggle-play')">
+                        <Pause v-if="isPlaying" :size="17" :stroke-width="1.8" />
+                        <Play v-else :size="17" :stroke-width="1.8" />
                     </MotionButton>
-                    <MotionButton class="control-button" :while-hover="{ scale: 1.08, backgroundColor: '#3a3a3a' }"
-                        :while-press="{ scale: 0.92 }" :transition="microTransition" @click.stop="$emit('next')">⏭️
+                    <MotionButton class="control-button" :while-hover="buttonHover"
+                        :while-press="buttonPress" :transition="microTransition" aria-label="下一首"
+                        @click.stop="$emit('next')">
+                        <SkipForward :size="17" :stroke-width="1.8" />
                     </MotionButton>
-                    <MotionButton class="control-button" :while-hover="{ scale: 1.08, backgroundColor: '#3a3a3a' }"
-                        :while-press="{ scale: 0.92 }" :transition="microTransition" @click.stop="$emit('repeat')">🔁
+                    <MotionButton class="control-button" :while-hover="buttonHover"
+                        :while-press="buttonPress" :transition="microTransition" aria-label="循环播放"
+                        @click.stop="$emit('repeat')">
+                        <Repeat2 :size="17" :stroke-width="1.8" />
                     </MotionButton>
-                    <MotionButton class="control-button" :while-hover="{ scale: 1.08, backgroundColor: '#3a3a3a' }"
-                        :while-press="{ scale: 0.92 }" :transition="microTransition" @click.stop="$emit('menu')">≡
+                    <MotionButton class="control-button" :while-hover="buttonHover"
+                        :while-press="buttonPress" :transition="microTransition" aria-label="更多操作"
+                        @click.stop="$emit('menu')">
+                        <Menu :size="17" :stroke-width="1.8" />
                     </MotionButton>
                 </div>
             </MotionDiv>
@@ -41,6 +50,7 @@
 <script setup>
 import { computed } from 'vue'
 import { motion, useReducedMotion } from 'motion-v'
+import { Menu, Pause, Play, Repeat2, SkipBack, SkipForward } from '@lucide/vue'
 import MotionTransition from './MotionTransition.vue'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 const props = defineProps({
@@ -56,6 +66,10 @@ const props = defineProps({
         type: String,
         default: '00:00'
     },
+    currentTimeMs: {
+        type: Number,
+        default: 0
+    },
     totalTime: {
         type: String,
         default: '00:00'
@@ -63,6 +77,14 @@ const props = defineProps({
     progress: {
         type: Number,
         default: 0
+    },
+    lyrics: {
+        type: Object,
+        default: null
+    },
+    lyricsLoading: {
+        type: Boolean,
+        default: false
     },
 })
 
@@ -72,6 +94,22 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
 const MotionDiv = motion.div
 const MotionImg = motion.img
 const MotionButton = motion.button
+
+const syncedLyrics = computed(() => props.lyrics?.lines || [])
+const plainLyrics = computed(() => props.lyrics?.plainLines || [])
+const activeLyric = computed(() => syncedLyrics.value.find((line) =>
+    props.currentTimeMs >= line.startTimeMs && props.currentTimeMs < line.endTimeMs
+))
+const miniLyricText = computed(() => {
+    if (props.lyricsLoading) return '正在读取歌词...'
+    if (activeLyric.value?.text) return activeLyric.value.text
+    if (syncedLyrics.value.length) return '...'
+    if (plainLyrics.value.length) return plainLyrics.value[0]
+    return '暂无歌词'
+})
+
+const buttonHover = { scale: 1.08, color: 'rgb(var(--primary-color))', backgroundColor: 'rgba(var(--primary-color), 0.14)' }
+const buttonPress = { scale: 0.92 }
 
 const emit = defineEmits([
     'previous',
@@ -95,8 +133,8 @@ const handleProgressClick = (event) => {
 .player-controls {
     display: flex;
     align-items: center;
-    padding: 0 15px;
-    gap: 20px;
+    padding: 0 18px;
+    gap: 22px;
     width: fit-content;
     max-width: 100%;
     height: 100%;
@@ -108,7 +146,7 @@ const handleProgressClick = (event) => {
 .current-playing {
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 20px;
     flex: 0 1 auto;
     min-width: 0;
     max-width: 100%;
@@ -128,7 +166,7 @@ const handleProgressClick = (event) => {
     max-width: calc(100vw - 123px);
     cursor: pointer;
     border-radius: 4px;
-    padding: 4px 8px;
+    padding: 7px 10px 8px;
 }
 
 .mini-cover {
@@ -141,8 +179,11 @@ const handleProgressClick = (event) => {
 .playing-title {
     font-size: 14px;
     font-weight: 500;
-    margin-bottom: 4px;
+    margin-bottom: 5px;
     font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .playing-artist {
@@ -156,7 +197,7 @@ const handleProgressClick = (event) => {
 .controls {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 10px;
 }
 
 .control-button {
@@ -164,11 +205,10 @@ const handleProgressClick = (event) => {
     border: none;
     color: rgb(var(--text-color));
     cursor: pointer;
-    font-size: 16px;
-    padding: 8px;
+    padding: 7px;
     border-radius: 50%;
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
     display: flex;
     align-items: center;
     justify-content: center;

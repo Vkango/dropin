@@ -16,13 +16,12 @@
     min-width: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    background: rgb(var(--background-color));
+    background: rgba(var(--surface-color), 0.1);
     color: rgb(var(--text-color));
 }
 
 .page-layout-header {
     width: 100%;
-    padding: 0 clamp(24px, 3vw, 48px);
 }
 
 .page-layout-content {
