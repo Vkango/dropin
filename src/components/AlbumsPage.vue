@@ -2,7 +2,7 @@
     <PageLayout>
         <template #header>
         <!-- 页面标题 -->
-        <div class="music-banner" @click="showAlbumDetail">
+        <div class="music-banner">
             <div class="image-container">
                 <MotionTransition variant="banner">
                     <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
@@ -54,7 +54,7 @@
                     <div class="albums-grid">
                         <MotionDiv v-for="album in group.items" :key="album.id" class="album-card" initial="rest"
                             while-hover="hover" :variants="cardVariants"
-                            @click="$emit('album-select', album)">
+                            @click="showAlbumDetail(album)">
                             <div class="album-cover">
                                 <MotionTransition variant="cover" mode="out-in">
                                     <MotionImg :key="album.cover" :src="album.cover" :alt="album.title"
@@ -92,7 +92,7 @@
                         @click="handleGroupLabelClick(group.initial)" />
                     <MotionDiv v-for="album in group.items" :key="album.id" class="album-row" initial="rest"
                         while-hover="hover" :variants="rowVariants"
-                        @click="$emit('album-select', album)">
+                        @click="showAlbumDetail(album)">
                         <div class="row-cover">
                             <img :src="album.cover" :alt="album.title" />
                         </div>
@@ -116,6 +116,8 @@
             :available-initials="availableInitials"
             @select="handleAlphabetSelect" />
         </div>
+        <AlbumDetailCard :visible="albumDetailVisible" :album="currentAlbumDetail" @close="hideAlbumDetail"
+            @play-all="handlePlayAll" @track-select="handleTrackSelect" @track-play="handleTrackPlay" />
     </PageLayout>
 </template>
 
@@ -125,6 +127,7 @@ import Icon from './Icon.vue'
 import Combobox from './Combobox.vue'
 import AlphabetFilter from './AlphabetFilter.vue'
 import GroupLabel from './GroupLabel.vue'
+import AlbumDetailCard from './AlbumDetailCard.vue'
 import MotionTransition from './MotionTransition.vue'
 import PageLayout from './PageLayout.vue'
 import { motion, useReducedMotion } from 'motion-v'
@@ -134,6 +137,10 @@ import { useAlphabetNavigation } from '../utils/useAlphabetNavigation.js'
 
 const props = defineProps({
     albums: {
+        type: Array,
+        default: () => []
+    },
+    songs: {
         type: Array,
         default: () => []
     }
@@ -222,6 +229,49 @@ const { activeInitial, alphabetTopOffset, handleAlphabetSelect, handleGroupLabel
     pageRef,
     availableInitials
 )
+
+const albumDetailVisible = ref(false)
+const currentAlbumDetail = ref(null)
+const currentAlbum = ref(null)
+
+const showAlbumDetail = (album) => {
+    currentAlbum.value = album
+    const tracks = props.songs.filter((song) => song.album === album.title)
+    currentAlbumDetail.value = {
+        ...album,
+        coverUrl: album.cover,
+        type: '音乐专辑',
+        tracks: tracks.map((song, index) => ({
+            id: song.id,
+            number: index + 1,
+            title: song.title,
+            artist: song.artist,
+            duration: song.duration,
+            url: song.url
+        }))
+    }
+    albumDetailVisible.value = true
+}
+
+const hideAlbumDetail = () => {
+    albumDetailVisible.value = false
+}
+
+const handlePlayAll = () => {
+    if (currentAlbum.value) emit('album-play', currentAlbum.value)
+}
+
+const resolveTrack = (track) => props.songs.find((song) => song.id === track.id || song.title === track.title)
+
+const handleTrackSelect = (track) => {
+    const song = resolveTrack(track)
+    if (song) emit('song-select', song)
+}
+
+const handleTrackPlay = (track) => {
+    const song = resolveTrack(track)
+    if (song) emit('song-play', song)
+}
 </script>
 
 <style scoped>

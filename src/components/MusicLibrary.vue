@@ -76,7 +76,7 @@ const props = defineProps({
     }
 })
 
-const emit = defineEmits(['header-control-click', 'song-select', 'song-play'])
+const emit = defineEmits(['header-control-click', 'song-select', 'song-play', 'album-play'])
 
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
@@ -112,6 +112,7 @@ const showAlbumDetail = () => {
         genres: ["Electronic", "Ambient", "Pop"],
         description: "A curated collection of modern electronic and ambient music pieces featuring artists from around the world.",
         tracks: props.musicLibrary.songs.map((song, index) => ({
+            id: song.id,
             number: index + 1,
             title: song.title,
             artist: song.artist,
@@ -129,7 +130,7 @@ const hideAlbumDetail = () => {
 
 // 播放专辑所有歌曲
 const handlePlayAll = () => {
-    emit('song-play', props.musicLibrary.songs[0])
+    if (currentAlbumDetail.value) emit('album-play', currentAlbumDetail.value)
 }
 
 // 选择曲目

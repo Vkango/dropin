@@ -2,7 +2,7 @@
     <PageLayout>
         <template #header>
         <!-- 页面标题 -->
-        <div class="music-banner" @click="showAlbumDetail">
+        <div class="music-banner">
             <div class="image-container">
                 <MotionTransition variant="banner">
                     <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
@@ -53,8 +53,7 @@
                         @click="handleGroupLabelClick(group.initial)" />
                     <div class="artists-grid">
                         <MotionDiv v-for="artist in group.items" :key="artist.id" class="artist-card" initial="rest"
-                            while-hover="hover" :variants="cardVariants"
-                            @click="$emit('artist-select', artist)">
+                            while-hover="hover" :variants="cardVariants">
                             <div class="artist-avatar">
                                 <MotionTransition variant="cover" mode="out-in">
                                     <MotionImg :key="artist.avatar || artist.cover" :src="artist.avatar || artist.cover"
@@ -95,8 +94,7 @@
                     <GroupLabel v-if="group.initial" :label="group.initial"
                         @click="handleGroupLabelClick(group.initial)" />
                     <MotionDiv v-for="artist in group.items" :key="artist.id" class="artist-row" initial="rest"
-                        while-hover="hover" :variants="rowVariants"
-                        @click="$emit('artist-select', artist)">
+                        while-hover="hover" :variants="rowVariants">
                         <div class="row-avatar">
                             <img :src="artist.avatar || artist.cover" :alt="artist.name" />
                         </div>

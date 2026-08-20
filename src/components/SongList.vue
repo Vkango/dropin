@@ -2,11 +2,12 @@
     <div class="song-list">
         <div class="list-header">
             <div class="col-play">
-                <PlayIcon fill="white" color="white" size="12" />
+                <PlayIcon fill="rgb(var(--global-inverse-color))" color="rgb(var(--global-inverse-color))" size="12" />
                 添加到播放列表
             </div>
             <div class="col-play">
-                <ListFilter fill="white" color="white" size="12" />
+                <ListFilter fill="rgb(var(--global-inverse-color))" color="rgb(var(--global-inverse-color))"
+                    size="12" />
                 筛选
             </div>
         </div>
@@ -15,8 +16,8 @@
             <template v-for="group in groupedSongs" :key="group.initial">
                 <GroupLabel :label="group.initial" @click="$emit('group-label-click', group.initial)" />
                 <MotionDiv v-for="song in group.items" :key="song.id" class="song-item"
-                    :while-hover="{ backgroundColor: 'rgba(var(--surface-color), 0.5)' }"
-                    :transition="microTransition" @click="$emit('song-select', song)">
+                    :while-hover="{ backgroundColor: 'rgba(var(--surface-color), 0.5)' }" :transition="microTransition"
+                    @click="$emit('song-play', song)">
                     <div class="col-info">
                         <img :src="song.cover" :alt="song.title" class="song-cover" />
                         <div class="song-details">

@@ -37,8 +37,7 @@
                         <div class="track-list">
                             <MotionDiv v-for="(track, index) in album.tracks" :key="track.id" class="track-item"
                                 :while-hover="{ backgroundColor: 'rgba(var(--primary-color), 0.08)' }"
-                                :transition="microTransition"
-                                @click="$emit('track-select', track)" @dblclick="$emit('track-play', track)">
+                                :transition="microTransition" @click="$emit('track-play', track)">
                                 <div class="track-number">{{ index + 1 }}</div>
                                 <div class="track-info">
                                     <div class="track-title">{{ track.title }}</div>
@@ -107,17 +106,20 @@ const handleOverlayClick = () => {
     justify-content: center;
     z-index: 100;
     padding: 20px;
+    overflow: hidden;
 }
 
 /* 卡片本体 - 3D动画效果 */
 .album-card {
-    background: rgba(var(--surface-color), 0.05);
+    background: rgba(var(--global-color), 0.8);
     border: 1px solid rgba(var(--outline-color), 0.2);
     border-radius: 5px;
     box-shadow:
         0 24px 48px rgba(0, 0, 0, 0.4),
         0 8px 24px rgba(0, 0, 0, 0.2);
-    max-height: 90%;
+    height: min(600px, calc(100vh - 40px));
+    max-height: calc(100vh - 40px);
+    min-height: 0;
     width: 1100px;
     display: grid;
     grid-template-columns: 600px 1fr;
@@ -162,9 +164,10 @@ const handleOverlayClick = () => {
     flex-direction: column;
     gap: 24px;
     overflow-y: auto;
-    max-height: 100%;
-    padding-right: 8px;
-    margin-top: 20px;
+    min-height: 0;
+    height: 100%;
+    padding: 20px 8px 20px 0;
+    margin: 0;
 }
 
 .album-header {
@@ -273,6 +276,7 @@ const handleOverlayClick = () => {
         grid-template-columns: 1fr;
         grid-template-rows: auto 1fr;
         max-width: 95vw;
+        height: min(90vh, calc(100vh - 40px));
         padding: 20px;
         gap: 20px;
     }
@@ -281,6 +285,11 @@ const handleOverlayClick = () => {
         height: 250px;
         justify-self: center;
         max-width: 250px;
+    }
+
+    .album-info {
+        height: 100%;
+        padding: 0 8px 0 0;
     }
 
     .album-title {

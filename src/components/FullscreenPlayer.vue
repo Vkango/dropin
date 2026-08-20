@@ -102,8 +102,11 @@
                                     <SquarePen :size="18" :stroke-width="1.5" />
                                 </MotionButton>
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
-                                    :while-press="buttonPress" :transition="microTransition" aria-label="全屏显示">
-                                    <Maximize2 :size="18" :stroke-width="1.5" />
+                                    :while-press="buttonPress" :transition="microTransition"
+                                    :aria-label="isBrowserFullscreen ? '退出全屏' : '全屏显示'"
+                                    @click="toggleBrowserFullscreen">
+                                    <Minimize2 v-if="isBrowserFullscreen" :size="18" :stroke-width="1.5" />
+                                    <Maximize2 v-else :size="18" :stroke-width="1.5" />
                                 </MotionButton>
 
                             </div>
@@ -242,7 +245,8 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowLeft, ChevronDown, ListMusic, Maximize2, MoreHorizontal, PanelTop, Pause, Play, Shuffle, SkipBack, SkipForward, SlidersHorizontal, SquarePen, Volume2 } from '@lucide/vue'
+import { ArrowLeft, ChevronDown, ListMusic, Maximize2, Minimize2, MoreHorizontal, PanelTop, Pause, Play, Shuffle, SkipBack, SkipForward, SlidersHorizontal, SquarePen, Volume2 } from '@lucide/vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
 import FlowingBackground from './FlowingBackground.vue'
@@ -333,6 +337,41 @@ const settingsItemTransition = (index) => reducedMotion.value
     : { ...APPLE_SPRING, delay: index * 0.06 }
 const buttonHover = { scale: 1.08 }
 const buttonPress = { scale: 0.92 }
+const isBrowserFullscreen = ref(false)
+const appWindow = getCurrentWindow()
+
+const syncBrowserFullscreen = async () => {
+    if (document.fullscreenElement) {
+        isBrowserFullscreen.value = true
+        return
+    }
+    try {
+        isBrowserFullscreen.value = await appWindow.isFullscreen()
+    } catch {
+        isBrowserFullscreen.value = false
+    }
+}
+
+const toggleBrowserFullscreen = async () => {
+    try {
+        if (document.fullscreenElement) {
+            await document.exitFullscreen()
+        } else {
+            const isWindowFullscreen = await appWindow.isFullscreen()
+            await appWindow.setFullscreen(!isWindowFullscreen)
+        }
+        await syncBrowserFullscreen()
+    } catch (error) {
+        try {
+            if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+                await document.documentElement.requestFullscreen()
+                await syncBrowserFullscreen()
+            }
+        } catch (fallbackError) {
+            console.warn('切换全屏失败:', fallbackError || error)
+        }
+    }
+}
 
 const isPlaybackOptionsOpen = ref(false)
 const compactViewport = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
@@ -663,6 +702,8 @@ const updateAlbumSize = () => {
 
 onMounted(() => {
     document.addEventListener('keydown', handleKeydown)
+    document.addEventListener('fullscreenchange', syncBrowserFullscreen)
+    syncBrowserFullscreen()
     window.addEventListener('resize', updateCompactViewport)
     albumResizeObserver = new ResizeObserver(updateAlbumSize)
     if (albumStageRef.value) albumResizeObserver.observe(albumStageRef.value)
@@ -675,12 +716,15 @@ onMounted(() => {
 
 onUnmounted(() => {
     document.removeEventListener('keydown', handleKeydown)
+    document.removeEventListener('fullscreenchange', syncBrowserFullscreen)
     window.removeEventListener('resize', updateCompactViewport)
     albumResizeObserver?.disconnect()
     lyricsResizeObserver?.disconnect()
     lyricRowRefs.clear()
     stopAudioBands()
     stopBassTrackInfo()
+    if (document.fullscreenElement === document.documentElement) document.exitFullscreen().catch(() => { })
+    appWindow.setFullscreen(false).catch(() => { })
 })
 
 watch([lyricRows, activeLyricRowIndex, activeLyricTimelineRow], measureLyrics, { deep: true, flush: 'post' })

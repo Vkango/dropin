@@ -55,6 +55,7 @@ const currentTimeMs = ref(0)
 const totalTime = ref('00:00')
 const progress = ref(0)
 const activeChannelId = ref(null)
+const playbackQueue = ref(null)
 const fullscreenBackgroundMode = ref('flowing')
 let snapshotTimer = null
 let seekTimer = null
@@ -482,8 +483,9 @@ const startPlaybackSnapshot = () => {
   refreshPlaybackSnapshot()
 }
 
-const playSong = async (song) => {
+const playSong = async (song, queue = null) => {
   try {
+    playbackQueue.value = queue?.length ? queue : null
     if (seekTimer !== null) {
       window.clearTimeout(seekTimer)
       seekTimer = null
@@ -498,6 +500,9 @@ const playSong = async (song) => {
     const result = await libraryStore.openPlayback(song)
     currentSong.value = { ...song }
     activeChannelId.value = result?.channel?.channelId || null
+    if (activeChannelId.value) {
+      await bassCall('bass_channel_play', { channelId: activeChannelId.value, restart: true })
+    }
     isPlaying.value = true
     currentTimeMs.value = 0
     currentTime.value = '00:00'
@@ -519,8 +524,12 @@ const handleAlbumSelect = (album) => {
 }
 
 const handleAlbumPlay = (album) => {
-  const song = libraryStore.tracks.value.find((track) => track.album === album.title)
-  if (song) playSong(song)
+  const tracks = album?.tracks?.length
+    ? album.tracks
+        .map((track) => libraryStore.tracks.value.find((song) => song.id === track.id || song.title === track.title))
+        .filter(Boolean)
+    : libraryStore.tracks.value.filter((track) => track.album === album?.title)
+  if (tracks.length) playSong(tracks[0], tracks)
 }
 
 const handleArtistSelect = (artist) => {
@@ -539,8 +548,8 @@ const handleArtistFollow = (artist) => {
 }
 
 const handlePlaylistPlay = (playlist) => {
-  const song = libraryStore.tracks.value.find((track) => track.album === playlist.name)
-  if (song) playSong(song)
+  const tracks = libraryStore.tracks.value.filter((track) => track.album === playlist.name)
+  if (tracks.length) playSong(tracks[0], tracks)
 }
 
 const handleNavigate = (pageId) => {
@@ -584,15 +593,15 @@ const handleTogglePlay = async () => {
 }
 
 const handlePrevious = () => {
-  const songs = libraryStore.tracks.value
+  const songs = playbackQueue.value || libraryStore.tracks.value
   const index = songs.findIndex((song) => song.id === currentSong.value.id)
-  if (index >= 0 && songs.length) playSong(songs[(index - 1 + songs.length) % songs.length])
+  if (index >= 0 && songs.length) playSong(songs[(index - 1 + songs.length) % songs.length], playbackQueue.value)
 }
 
 const handleNext = () => {
-  const songs = libraryStore.tracks.value
+  const songs = playbackQueue.value || libraryStore.tracks.value
   const index = songs.findIndex((song) => song.id === currentSong.value.id)
-  if (index >= 0 && songs.length) playSong(songs[(index + 1) % songs.length])
+  if (index >= 0 && songs.length) playSong(songs[(index + 1) % songs.length], playbackQueue.value)
 }
 
 const handleProgressChange = (percent) => {
@@ -689,7 +698,7 @@ const getPageProps = () => {
     case 'library':
       return { musicLibrary }
     case 'albums':
-      return { albums: albumsData }
+      return { albums: albumsData, songs: musicLibrary.songs }
     case 'artists':
       return { artists: artistsData }
     case 'effects':
@@ -738,9 +747,9 @@ onBeforeUnmount(() => {
       @progress-commit="handleProgressCommit" @expand-player="handleExpandPlayer" />
 
     <!-- 侧边栏 -->
-    <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery" :is-dark="isDarkTheme"
-      @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick" @add-tag="handleAddTag"
-      @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin" />
+    <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
+      :is-dark="isDarkTheme" @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
+      @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin" />
 
     <!-- 主内容区 -->
     <div class="main-content-wrapper">
@@ -764,10 +773,9 @@ onBeforeUnmount(() => {
       :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer" :channel-id="activeChannelId"
       :background-mode="fullscreenBackgroundMode" @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay"
       @previous="handlePrevious" @next="handleNext" @progress-change="handleProgressChange"
-      @progress-commit="handleProgressCommit"
-      @volume-change="(volume) => console.log('音量变化:', volume)" @shuffle="() => console.log('随机播放')"
-      @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')" @queue="handleQueue"
-      @background-mode-change="handleBackgroundModeChange" />
+      @progress-commit="handleProgressCommit" @volume-change="(volume) => console.log('音量变化:', volume)"
+      @shuffle="() => console.log('随机播放')" @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')"
+      @queue="handleQueue" @background-mode-change="handleBackgroundModeChange" />
   </div>
 </template>
 
@@ -920,7 +928,7 @@ body {
   grid-template-rows: 1fr;
   grid-template-areas: "sidebar main";
   height: 100vh;
-  background: color-mix(in srgb, rgba(var(--background-color)), black 40%);
+  background: color-mix(in srgb, rgba(var(--background-color)), rgb(var(--global-color)) 40%);
   color: rgb(var(--text-color));
   font-family: MiSans, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
