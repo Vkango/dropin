@@ -17,7 +17,8 @@
                 :exit="fullLayerClosed"
                 :transition="contentTransition">
                 <FullscreenPlayer :is-visible="isFullscreen" :current-song="currentSong" :is-playing="isPlaying"
-                    :current-time="currentTime" :total-time="totalTime" :progress="progress"
+                    :current-time="currentTime" :current-time-ms="currentTimeMs" :total-time="totalTime"
+                    :progress="progress" :lyrics="lyrics" :lyrics-loading="lyricsLoading"
                     @close="$emit('close')" @toggle-play="$emit('toggle-play')" @previous="$emit('previous')"
                     @next="$emit('next')" @progress-change="$emit('progress-change', $event)"
                     @volume-change="$emit('volume-change', $event)" @shuffle="$emit('shuffle')"
@@ -61,6 +62,10 @@ const props = defineProps({
         type: String,
         default: '00:00'
     },
+    currentTimeMs: {
+        type: Number,
+        default: 0
+    },
     totalTime: {
         type: String,
         default: '00:00'
@@ -68,6 +73,14 @@ const props = defineProps({
     progress: {
         type: Number,
         default: 0
+    },
+    lyrics: {
+        type: Object,
+        default: null
+    },
+    lyricsLoading: {
+        type: Boolean,
+        default: false
     },
     isFullscreen: {
         type: Boolean,

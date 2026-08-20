@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted, provide, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, provide, computed, watch } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import MusicLibrary from './components/MusicLibrary.vue'
 import HomePage from './components/HomePage.vue'
@@ -13,6 +13,10 @@ import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
 import MotionTransition from './components/MotionTransition.vue'
 import { themeManager } from './utils/themeManager.js'
+import { bassCall } from './services/bassApi.js'
+import { useLibraryStore } from './stores/libraryStore.js'
+
+const libraryStore = useLibraryStore()
 
 // 当前页面状态
 const currentPage = ref('home')
@@ -35,20 +39,26 @@ const pageComponents = {
 
 // 当前播放的歌曲
 const currentSong = ref({
-  title: '僕たち、やっと行けるんだね!',
-  artist: '菅野祐悟',
-  album: 'TVアニメ『はたらく細胞BLACK』Original Soundtrack',
-  duration: '02:04',
-  cover: '/assets/cover1.jpg'
+  title: '未选择歌曲',
+  artist: '请先导入音乐目录',
+  album: '',
+  duration: '00:00',
+  cover: '/assets/cover.jpg'
 })
 
 provide('currentSong', currentSong)
 
 // 播放状态
 const isPlaying = ref(false)
-const currentTime = ref('00:32')
-const totalTime = ref('04:19')
-const progress = ref(32)
+const currentTime = ref('00:00')
+const currentTimeMs = ref(0)
+const totalTime = ref('00:00')
+const progress = ref(0)
+const activeChannelId = ref(null)
+let snapshotTimer = null
+const lyricsPayload = ref(null)
+const lyricsLoading = ref(false)
+let lyricsRequestId = 0
 
 // 搜索查询
 const searchQuery = ref('')
@@ -267,6 +277,49 @@ const homePageData = reactive({
   ]
 })
 
+const formatLibraryDuration = (tracks) => {
+  const durationMs = tracks.reduce((total, track) => total + (Number(track.durationMs) || 0), 0)
+  const totalSeconds = Math.floor(durationMs / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  return hours > 0
+    ? `${hours}h ${minutes}m ${seconds}s`
+    : `${minutes}m ${seconds}s`
+}
+
+const syncLibraryState = () => {
+  const tracks = libraryStore.state.tracks
+  const songs = libraryStore.tracks.value
+  musicLibrary.totalSongs = libraryStore.state.total
+  musicLibrary.totalDuration = formatLibraryDuration(tracks)
+  musicLibrary.songs.splice(0, musicLibrary.songs.length, ...songs)
+  albumsData.splice(0, albumsData.length, ...libraryStore.albums.value)
+  artistsData.splice(0, artistsData.length, ...libraryStore.artists.value)
+  homePageData.recentlyPlayed.splice(0, homePageData.recentlyPlayed.length, ...songs.slice(0, 6))
+  homePageData.recommendedPlaylists.splice(
+    0,
+    homePageData.recommendedPlaylists.length,
+    ...libraryStore.albums.value.slice(0, 4).map((album) => ({
+      id: album.id,
+      name: album.title,
+      description: album.artist || '本地音乐专辑',
+      cover: album.cover,
+      trackCount: album.trackCount
+    }))
+  )
+  if (songs.length && (!activeChannelId.value || currentSong.value.title === '未选择歌曲')) {
+    currentSong.value = { ...songs[0] }
+    totalTime.value = songs[0].duration || '00:00'
+  }
+}
+
+watch(
+  [libraryStore.tracks, libraryStore.albums, libraryStore.artists],
+  syncLibraryState,
+  { deep: true }
+)
+
 // 页面切换逻辑
 const navigateToPage = (pageId) => {
   if (pageId === currentPage.value) return
@@ -317,19 +370,109 @@ const handleNavItemClick = (item) => {
   console.log('导航点击:', item.label)
 }
 
-const handleHeaderControlClick = (control) => {
-  console.log('头部控制点击:', control.label)
+const handleHeaderControlClick = async (control) => {
+  if (!['system', 'local', 'import'].includes(control.id)) return
+  try {
+    const result = await libraryStore.mediaApi.pickFolder()
+    if (result?.path) await libraryStore.addRootAndScan(result.path)
+  } catch (error) {
+    console.error('导入音乐目录失败:', error)
+  }
 }
 
 const handleSongSelect = (song) => {
   currentSong.value = { ...song }
+  totalTime.value = song.duration || '00:00'
   updateThemeFromSong(song)
 }
 
+const formatSeconds = (seconds) => {
+  const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0))
+  const minutes = Math.floor(totalSeconds / 60)
+  return `${String(minutes).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`
+}
+
+const activeLengthSeconds = ref(0)
+
+const loadLyricsForSong = async (song) => {
+  const requestId = ++lyricsRequestId
+  lyricsPayload.value = null
+
+  if (!song?.id) {
+    lyricsLoading.value = false
+    return
+  }
+
+  lyricsLoading.value = true
+  try {
+    const payload = await libraryStore.mediaApi.lyrics(song.id)
+    if (requestId === lyricsRequestId && currentSong.value.id === song.id) {
+      lyricsPayload.value = payload
+    }
+  } catch (error) {
+    if (requestId === lyricsRequestId) {
+      lyricsPayload.value = {
+        source: 'none',
+        lines: [],
+        plainLines: [],
+        warnings: [error?.message || '歌词读取失败']
+      }
+    }
+  } finally {
+    if (requestId === lyricsRequestId) lyricsLoading.value = false
+  }
+}
+
+watch(
+  () => currentSong.value.id,
+  () => loadLyricsForSong(currentSong.value)
+)
+
+const refreshPlaybackSnapshot = async () => {
+  if (!activeChannelId.value) return
+  try {
+    const snapshot = await bassCall('bass_channel_snapshot', { channelId: activeChannelId.value })
+    const position = Number(snapshot.positionSeconds || 0)
+    activeLengthSeconds.value = Number(snapshot.lengthSeconds || activeLengthSeconds.value || 0)
+    currentTimeMs.value = Math.max(0, Math.round(position * 1000))
+    currentTime.value = formatSeconds(position)
+    totalTime.value = formatSeconds(activeLengthSeconds.value)
+    progress.value = activeLengthSeconds.value > 0 ? (position / activeLengthSeconds.value) * 100 : 0
+    isPlaying.value = snapshot.state === 'playing'
+  } catch (error) {
+    if (activeChannelId.value) console.debug('播放状态更新失败:', error)
+  }
+}
+
+const startPlaybackSnapshot = () => {
+  if (snapshotTimer) clearInterval(snapshotTimer)
+  snapshotTimer = setInterval(refreshPlaybackSnapshot, 500)
+  refreshPlaybackSnapshot()
+}
+
+const playSong = async (song) => {
+  try {
+    if (activeChannelId.value) {
+      await bassCall('bass_channel_stop', { channelId: activeChannelId.value }).catch(() => {})
+      await bassCall('bass_channel_close', { channelId: activeChannelId.value }).catch(() => {})
+      activeChannelId.value = null
+    }
+    const result = await libraryStore.openPlayback(song)
+    currentSong.value = { ...song }
+    activeChannelId.value = result?.channel?.channelId || null
+    isPlaying.value = true
+    currentTimeMs.value = 0
+    currentTime.value = '00:00'
+    totalTime.value = song.duration || '00:00'
+    updateThemeFromSong(song)
+    startPlaybackSnapshot()
+  } catch (error) {
+    console.error('播放歌曲失败:', error)
+  }
+}
+
 const handleSongPlay = (song) => {
-  currentSong.value = { ...song }
-  isPlaying.value = true
-  updateThemeFromSong(song)
+  playSong(song)
 }
 
 const handleAlbumSelect = (album) => {
@@ -338,8 +481,8 @@ const handleAlbumSelect = (album) => {
 }
 
 const handleAlbumPlay = (album) => {
-  console.log('播放专辑:', album.title)
-  // 播放专辑第一首歌
+  const song = libraryStore.tracks.value.find((track) => track.album === album.title)
+  if (song) playSong(song)
 }
 
 const handleArtistSelect = (artist) => {
@@ -348,8 +491,8 @@ const handleArtistSelect = (artist) => {
 }
 
 const handleArtistPlay = (artist) => {
-  console.log('播放艺术家:', artist.name)
-  // 播放艺术家的热门歌曲
+  const song = libraryStore.tracks.value.find((track) => track.artist === artist.name)
+  if (song) playSong(song)
 }
 
 const handleArtistFollow = (artist) => {
@@ -358,7 +501,8 @@ const handleArtistFollow = (artist) => {
 }
 
 const handlePlaylistPlay = (playlist) => {
-  console.log('播放播放列表:', playlist.name)
+  const song = libraryStore.tracks.value.find((track) => track.album === playlist.name)
+  if (song) playSong(song)
 }
 
 const handleNavigate = (pageId) => {
@@ -384,21 +528,47 @@ const updateThemeFromSong = async (song) => {
   }
 }
 
-const handleTogglePlay = () => {
-  isPlaying.value = !isPlaying.value
+const handleTogglePlay = async () => {
+  if (!activeChannelId.value) {
+    if (libraryStore.tracks.value[0]) await playSong(libraryStore.tracks.value[0])
+    return
+  }
+  try {
+    if (isPlaying.value) {
+      await bassCall('bass_channel_pause', { channelId: activeChannelId.value })
+    } else {
+      await bassCall('bass_channel_play', { channelId: activeChannelId.value, restart: false })
+    }
+    await refreshPlaybackSnapshot()
+  } catch (error) {
+    console.error('切换播放状态失败:', error)
+  }
 }
 
 const handlePrevious = () => {
-  console.log('播放上一首')
+  const songs = libraryStore.tracks.value
+  const index = songs.findIndex((song) => song.id === currentSong.value.id)
+  if (index >= 0 && songs.length) playSong(songs[(index - 1 + songs.length) % songs.length])
 }
 
 const handleNext = () => {
-  console.log('播放下一首')
+  const songs = libraryStore.tracks.value
+  const index = songs.findIndex((song) => song.id === currentSong.value.id)
+  if (index >= 0 && songs.length) playSong(songs[(index + 1) % songs.length])
 }
 
 const handleProgressChange = (percent) => {
-  progress.value = percent
-  console.log('进度更改:', percent + '%')
+  const boundedPercent = Math.max(0, Math.min(100, percent))
+  progress.value = boundedPercent
+  if (activeChannelId.value && activeLengthSeconds.value > 0) {
+    const targetSeconds = activeLengthSeconds.value * boundedPercent / 100
+    currentTimeMs.value = Math.round(targetSeconds * 1000)
+    currentTime.value = formatSeconds(targetSeconds)
+    bassCall('bass_channel_seek', {
+      channelId: activeChannelId.value,
+      seconds: targetSeconds
+    }).catch((error) => console.error('调整播放进度失败:', error))
+  }
 }
 
 const handleAddTag = () => {
@@ -463,6 +633,16 @@ onMounted(async () => {
   if (currentSong.value.cover) {
     await updateThemeFromSong(currentSong.value)
   }
+
+  await libraryStore.installListeners()
+  await libraryStore.refresh()
+  await libraryStore.hydrateCovers()
+  syncLibraryState()
+})
+
+onBeforeUnmount(() => {
+  if (snapshotTimer) clearInterval(snapshotTimer)
+  libraryStore.dispose()
 })
 </script>
 
@@ -493,7 +673,8 @@ onMounted(async () => {
 
     <!-- 共享播放卡片：迷你播放器和全屏内容在同一张卡片内替换 -->
     <PlayerSurface :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
-      :total-time="totalTime" :progress="progress" :is-fullscreen="showFullscreenPlayer"
+      :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress"
+      :lyrics="lyricsPayload" :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer"
       @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay" @previous="handlePrevious" @next="handleNext"
       @progress-change="handleProgressChange" @volume-change="(volume) => console.log('音量变化:', volume)"
       @shuffle="() => console.log('随机播放')" @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')"

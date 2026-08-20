@@ -13,14 +13,15 @@
                         <MotionDiv class="album-visual" :style="albumVisualStyle"
                             :animate="{ rotate: isPlaying ? 360 : 0 }"
                             :transition="isPlaying ? loopTransition : instantTransition">
-                            <div class="tick-ring" aria-hidden="true">
+                            <!--<div class="tick-ring" aria-hidden="true">
                                 <span v-for="tick in ticks" :key="tick" class="tick"
                                     :style="{ transform: `translate(-50%, -50%) rotate(${tick}deg) translateY(calc(-1 * var(--tick-radius)))` }"></span>
-                            </div>
+                            </div>-->
                             <div class="disc-shell">
                                 <MotionTransition variant="albumCover" mode="out-in">
-                                    <img :key="currentSong.cover" :src="currentSong.cover" :alt="currentSong.title"
-                                        class="album-cover" />
+                                    <div :key="currentSong.cover" class="album-cover-frame">
+                                        <img :src="currentSong.cover" :alt="currentSong.title" class="album-cover" />
+                                    </div>
                                 </MotionTransition>
                             </div>
                         </MotionDiv>
@@ -47,12 +48,30 @@
                 </section>
 
                 <section class="lyrics-column" aria-label="歌词">
-                    <div class="lyrics-window">
-                        <MotionDiv class="lyrics-track" :animate="{ y: lyricOffset }" :transition="contentTransition">
-                            <MotionDiv v-for="(line, index) in displayLyrics" :key="`${currentSong.title}-${index}`"
-                                class="lyric-line" :animate="getLyricState(index)" :transition="contentTransition">
-                                {{ line }}
+                    <div ref="lyricsWindowRef" class="lyrics-window">
+                        <MotionDiv v-if="syncedLyrics.length" class="lyrics-track" :animate="{ y: lyricOffset }"
+                            :transition="contentTransition">
+                            <MotionDiv v-for="(line, index) in syncedLyrics" :ref="setLyricLineRef(index)"
+                                :key="currentSong.title + '-' + line.startTimeMs + '-' + index" class="lyric-line"
+                                :animate="getLyricState(index)" :transition="contentTransition">
+                                <div class="lyric-primary">{{ line.text }}</div>
+                                <div v-for="secondary in line.secondary" :key="secondary" class="lyric-secondary">
+                                    {{ secondary }}
+                                </div>
                             </MotionDiv>
+                        </MotionDiv>
+                        <MotionDiv v-else-if="lyricsLoading" class="lyrics-status" :initial="{ opacity: 0 }"
+                            :animate="{ opacity: 1 }" :transition="microTransition">
+                            正在读取歌词...
+                        </MotionDiv>
+                        <div v-else-if="plainLyrics.length" class="plain-lyrics">
+                            <div v-for="line in plainLyrics" :key="line" class="plain-lyric-line">
+                                {{ line }}
+                            </div>
+                        </div>
+                        <MotionDiv v-else class="lyrics-status" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
+                            :transition="microTransition">
+                            暂无同步歌词
                         </MotionDiv>
                     </div>
                 </section>
@@ -104,13 +123,16 @@
 
                         <div class="progress-section">
                             <span class="time-display">{{ currentTime }}</span>
-                            <div class="progress-container" role="slider" :aria-valuenow="progress" aria-valuemin="0"
-                                aria-valuemax="100" tabindex="0" @click="handleProgressClick">
+                            <div class="progress-container" :class="{ 'is-dragging': isProgressDragging }" role="slider"
+                                :aria-valuenow="Math.round(progress)" aria-valuemin="0" aria-valuemax="100" tabindex="0"
+                                @keydown="handleProgressKeydown" @pointerdown="handleProgressPointerDown"
+                                @pointermove="handleProgressPointerMove" @pointerup="handleProgressPointerUp"
+                                @pointercancel="handleProgressPointerUp">
                                 <div class="progress-track">
                                     <MotionDiv class="progress-fill" :animate="{ width: `${progress}%` }"
-                                        :transition="microTransition"></MotionDiv>
+                                        :transition="progressTransition"></MotionDiv>
                                     <MotionDiv class="progress-thumb" :animate="{ left: `${progress}%` }"
-                                        :transition="microTransition"></MotionDiv>
+                                        :transition="progressTransition"></MotionDiv>
                                 </div>
                             </div>
                             <span class="time-display">{{ totalTime }}</span>
@@ -143,7 +165,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ChevronDown, ListMusic, Maximize2, MoreHorizontal, PanelTop, Pause, Play, Shuffle, SkipBack, SkipForward, SlidersHorizontal, SquarePen, Volume2 } from '@lucide/vue'
 import { motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
@@ -168,6 +190,10 @@ const props = defineProps({
         type: String,
         default: '00:00'
     },
+    currentTimeMs: {
+        type: Number,
+        default: 0
+    },
     totalTime: {
         type: String,
         default: '00:00'
@@ -175,6 +201,14 @@ const props = defineProps({
     progress: {
         type: Number,
         default: 0
+    },
+    lyrics: {
+        type: Object,
+        default: null
+    },
+    lyricsLoading: {
+        type: Boolean,
+        default: false
     }
 })
 
@@ -194,47 +228,56 @@ const emit = defineEmits([
 const MotionDiv = motion.div
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
+const isProgressDragging = ref(false)
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const contentTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : SOFT_SPRING)
 const instantTransition = computed(() => INSTANT_MOTION)
+const progressTransition = computed(() => isProgressDragging.value ? INSTANT_MOTION : microTransition.value)
 const loopTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : LINEAR_LOOP)
 const buttonHover = { scale: 1.08 }
 const buttonPress = { scale: 0.92 }
 
 const volume = ref(75)
 const albumStageRef = ref(null)
+const lyricsWindowRef = ref(null)
+const lyricLineRefs = ref([])
 const albumSize = ref(0)
 let albumResizeObserver
+let lyricsResizeObserver
 const tickCount = 52
 const ticks = Array.from({ length: tickCount }, (_, index) => (index * 360) / tickCount)
-const lyricStep = 62
-
-const createTestLyrics = () => [
-    { startTime: 0, endTime: 3000, words: [{ word: '申必' }, { word: '申必比' }, { word: '我' }] },
-    { startTime: 3000, endTime: 6000, words: [{ word: '能够' }, { word: '遇见' }, { word: '你' }] },
-    { startTime: 6000, endTime: 9000, words: [{ word: '在最美好的' }, { word: '时光' }, { word: '里' }] },
-    { startTime: 9000, endTime: 12000, words: [{ word: '音乐' }, { word: '播放着' }, { word: '一点光彩' }] },
-    { startTime: 12000, endTime: 15000, words: [{ word: '感觉' }, { word: '是' }, { word: '特别的美' }] },
-    { startTime: 15000, endTime: 18000, words: [{ word: '曾尝' }, { word: '遗失' }, { word: '意时' }] },
-    { startTime: 18000, endTime: 21000, words: [{ word: '却找到' }, { word: '快乐' }, { word: '点' }] },
-    { startTime: 21000, endTime: 24000, words: [{ word: '联想' }, { word: '会' }, { word: '知' }] },
-    { startTime: 24000, endTime: 27000, words: [{ word: '就是' }, { word: '自己' }] },
-    { startTime: 27000, endTime: 30000, words: [{ word: '原来是个' }, { word: '幸运儿' }] },
-    { startTime: 30000, endTime: 33000, words: [{ word: '每人' }, { word: '命中' }, { word: '都有责' }] },
-    { startTime: 33000, endTime: 36000, words: [{ word: '每一刻' }, { word: '都' }, { word: '计算着' }] }
-]
-
-const lyricLines = ref(createTestLyrics())
-const currentTimeMs = computed(() => {
-    const [minutes, seconds] = props.currentTime.split(':').map(Number)
-    return (minutes * 60 + seconds) * 1000
-})
-const displayLyrics = computed(() => lyricLines.value.map(line => line.words.map(word => word.word).join(' ')))
+const syncedLyrics = computed(() => props.lyrics?.lines || [])
+const plainLyrics = computed(() => props.lyrics?.plainLines || [])
 const activeLyricIndex = computed(() => {
-    const index = lyricLines.value.findIndex(line => currentTimeMs.value >= line.startTime && currentTimeMs.value < line.endTime)
-    return index >= 0 ? index : Math.max(0, lyricLines.value.length - 1)
+    if (!syncedLyrics.value.length) return -1
+
+    const index = syncedLyrics.value.findIndex((line) =>
+        props.currentTimeMs >= line.startTimeMs && props.currentTimeMs < line.endTimeMs
+    )
+    if (index >= 0) return index
+    return props.currentTimeMs >= syncedLyrics.value[0].startTimeMs
+        ? syncedLyrics.value.length - 1
+        : -1
 })
-const lyricOffset = computed(() => -(activeLyricIndex.value * lyricStep + 22))
+const lyricOffset = ref(0)
+
+const setLyricLineRef = (index) => (value) => {
+    lyricLineRefs.value[index] = value?.$el ?? value
+}
+
+const measureLyrics = async () => {
+    await nextTick()
+    const windowElement = lyricsWindowRef.value
+    const lineElement = lyricLineRefs.value[activeLyricIndex.value]
+    if (!windowElement || !lineElement || activeLyricIndex.value < 0) {
+        lyricOffset.value = 0
+        return
+    }
+
+    lyricOffset.value = windowElement.clientHeight / 2
+        - lineElement.offsetTop
+        - lineElement.offsetHeight / 2
+}
 const albumVisualStyle = computed(() => {
     const size = albumSize.value || 300
     return {
@@ -249,7 +292,9 @@ const albumVisualStyle = computed(() => {
 })
 
 const getLyricState = (index) => {
-    const distance = Math.abs(index - activeLyricIndex.value)
+    const distance = activeLyricIndex.value < 0
+        ? index + 1
+        : Math.abs(index - activeLyricIndex.value)
     return {
         opacity: distance === 0 ? 1 : Math.max(0.22, 0.7 - distance * 0.13),
         scale: distance === 0 ? 1 : Math.max(0.88, 1 - distance * 0.035),
@@ -259,10 +304,42 @@ const getLyricState = (index) => {
     }
 }
 
-const handleProgressClick = (event) => {
+const progressFromPointer = (event) => {
     const rect = event.currentTarget.getBoundingClientRect()
     const percent = ((event.clientX - rect.left) / rect.width) * 100
-    emit('progress-change', Math.max(0, Math.min(100, percent)))
+    return Math.max(0, Math.min(100, percent))
+}
+
+const handleProgressPointerDown = (event) => {
+    if (event.button !== 0) return
+    isProgressDragging.value = true
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    emit('progress-change', progressFromPointer(event))
+}
+
+const handleProgressPointerMove = (event) => {
+    if (!isProgressDragging.value) return
+    emit('progress-change', progressFromPointer(event))
+}
+
+const handleProgressPointerUp = (event) => {
+    if (!isProgressDragging.value) return
+    emit('progress-change', progressFromPointer(event))
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    isProgressDragging.value = false
+}
+
+const handleProgressKeydown = (event) => {
+    let nextProgress = props.progress
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') nextProgress -= 5
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') nextProgress += 5
+    else if (event.key === 'Home') nextProgress = 0
+    else if (event.key === 'End') nextProgress = 100
+    else return
+
+    event.preventDefault()
+    event.stopPropagation()
+    emit('progress-change', Math.max(0, Math.min(100, nextProgress)))
 }
 
 const handleKeydown = (event) => {
@@ -297,17 +374,19 @@ onMounted(() => {
     document.addEventListener('keydown', handleKeydown)
     albumResizeObserver = new ResizeObserver(updateAlbumSize)
     if (albumStageRef.value) albumResizeObserver.observe(albumStageRef.value)
+    lyricsResizeObserver = new ResizeObserver(measureLyrics)
+    if (lyricsWindowRef.value) lyricsResizeObserver.observe(lyricsWindowRef.value)
     requestAnimationFrame(updateAlbumSize)
+    measureLyrics()
 })
 
 onUnmounted(() => {
     document.removeEventListener('keydown', handleKeydown)
     albumResizeObserver?.disconnect()
+    lyricsResizeObserver?.disconnect()
 })
 
-watch(() => props.currentSong.title, () => {
-    lyricLines.value = createTestLyrics()
-})
+watch([syncedLyrics, activeLyricIndex], measureLyrics, { deep: true, flush: 'post' })
 </script>
 
 <style scoped>
@@ -342,12 +421,6 @@ watch(() => props.currentSong.title, () => {
     filter: blur(48px) saturate(1.15) brightness(0.65);
     opacity: 0.62;
     transform: scale(1.14);
-}
-
-.backdrop-wash {
-    background:
-        linear-gradient(112deg, rgba(0, 0, 0, 0.48) 0%, rgba(39, 11, 7, 0.28) 45%, rgba(0, 0, 0, 0.52) 100%),
-        linear-gradient(180deg, rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.4));
 }
 
 .backdrop-vignette {
@@ -419,8 +492,8 @@ watch(() => props.currentSong.title, () => {
 
 .disc-shell {
     position: relative;
-    width: 77%;
-    height: 77%;
+    width: 100%;
+    height: 100%;
     display: grid;
     place-items: center;
     border: clamp(7px, 0.7vw, 13px) solid rgba(119, 109, 102, 0.62);
@@ -438,20 +511,29 @@ watch(() => props.currentSong.title, () => {
     pointer-events: none;
 }
 
+.album-cover-frame {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    transform-origin: 50% 50%;
+}
+
 .album-cover {
     position: absolute;
-    inset: 7%;
-    width: 86%;
-    height: 86%;
+    inset: 2.5%;
+    width: 95%;
+    height: 95%;
     border-radius: 50%;
     object-fit: cover;
+    transform-origin: 50% 50%;
     box-shadow: 0 8px 20px rgba(48, 31, 26, 0.28);
 }
 
 .song-details {
     flex: 0 0 auto;
     width: min(100%, 500px);
-    margin: 28px 0 52px clamp(0px, 3vw, 75px);
+    margin: 50px 0 52px clamp(0px, 3vw, 75px);
     text-align: left;
 }
 
@@ -511,25 +593,32 @@ watch(() => props.currentSong.title, () => {
     position: absolute;
     inset: 6% 8% 10% 2%;
     overflow: hidden;
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
     mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
+    height: 95%
 }
 
 .lyrics-track {
     position: absolute;
-    top: 50%;
+    top: 0;
     left: 0;
     width: 100%;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     gap: 18px;
+    padding: 38% 0;
     transform-origin: center;
+    padding-left: 10px;
 }
 
 .lyric-line {
     width: 100%;
     min-height: 44px;
+    padding: 5px 0;
     color: rgba(255, 255, 255, 0.5);
     font-size: 32px;
     line-height: 1.18;
@@ -539,8 +628,45 @@ watch(() => props.currentSong.title, () => {
     will-change: transform, opacity, filter;
 }
 
-.lyric-line:first-child {
-    margin-top: -32px;
+.lyric-primary {
+    font-weight: inherit;
+}
+
+.lyric-secondary {
+    margin-top: 8px;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 1em;
+    font-weight: 550;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+}
+
+.lyrics-status,
+.plain-lyrics {
+    width: 100%;
+    color: rgba(255, 255, 255, 0.52);
+    text-align: left;
+}
+
+.lyrics-status {
+    align-self: center;
+    padding: 0 8%;
+    font-size: 22px;
+}
+
+.plain-lyrics {
+    align-self: center;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    max-height: 76%;
+    overflow: hidden;
+    padding: 0 4%;
+}
+
+.plain-lyric-line {
+    font-size: 26px;
+    line-height: 1.35;
 }
 
 @media (max-height: 820px) and (min-width: 721px) {
@@ -554,10 +680,6 @@ watch(() => props.currentSong.title, () => {
 
     .song-details {
         margin-top: 14px;
-    }
-
-    .song-title {
-        font-size: 30px;
     }
 
     .song-artist,
@@ -660,21 +782,27 @@ watch(() => props.currentSong.title, () => {
     min-width: 42px;
     color: rgba(255, 255, 255, 0.68);
     font-size: 12px;
-    font-weight: 600;
     text-align: center;
 }
 
 .progress-container {
     flex: 1;
     min-width: 0;
-    cursor: pointer;
+    padding: 9px 0;
+    cursor: grab;
     outline: none;
+    touch-action: none;
+    user-select: none;
+}
+
+.progress-container.is-dragging {
+    cursor: grabbing;
 }
 
 .progress-track {
     position: relative;
     width: 100%;
-    height: 5px;
+    height: 3px;
     overflow: visible;
     border-radius: 99px;
     background: rgba(255, 255, 255, 0.3);
@@ -683,7 +811,7 @@ watch(() => props.currentSong.title, () => {
 .progress-fill {
     height: 100%;
     border-radius: inherit;
-    background: #d65a32;
+    background: rgb(var(--primary-color));
 }
 
 .progress-thumb {
@@ -692,9 +820,19 @@ watch(() => props.currentSong.title, () => {
     width: 11px;
     height: 11px;
     border-radius: 50%;
-    background: #d65a32;
+    background: rgb(var(--primary-color));
     box-shadow: 0 2px 7px rgba(0, 0, 0, 0.4);
-    transform: translate(-50%, -50%);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -50%) scale(0.5);
+    transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.progress-container:hover .progress-thumb,
+.progress-container:focus-visible .progress-thumb,
+.progress-container.is-dragging .progress-thumb {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
 }
 
 @media (max-width: 1050px) {

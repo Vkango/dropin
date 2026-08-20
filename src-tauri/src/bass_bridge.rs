@@ -7,10 +7,9 @@ use std::{
 };
 
 use bass_rs::{
-    raw, ActiveState, BassEngine, BassEngineOptions, BassError, BassFxEffect, Channel,
-    ChannelKind, DspCallback, DspInfo, Effect, EffectKind, InitOptions, OutputBackend,
-    Plugin, RemoteProgress, SourceOptions, SyncEvent, SyncKind, TagKind, TempoChannel,
-    UrlOptions,
+    raw, ActiveState, BassEngine, BassEngineOptions, BassError, BassFxEffect, Channel, ChannelKind,
+    DspCallback, DspInfo, Effect, EffectKind, InitOptions, OutputBackend, Plugin, RemoteProgress,
+    SourceOptions, SyncEvent, SyncKind, TagKind, TempoChannel, UrlOptions,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -99,18 +98,22 @@ impl BassService {
         Self { sender }
     }
 
-    fn call(&self, operation: String, args: Value) -> Result<Value, BridgeError> {
+    pub(crate) fn call_operation(
+        &self,
+        operation: &str,
+        args: Value,
+    ) -> Result<Value, BridgeError> {
         let (reply, receiver) = mpsc::channel();
         self.sender
             .send(Request {
-                operation,
+                operation: operation.into(),
                 args,
                 reply,
             })
-            .map_err(|_| bridge_error("bass_call", "BASS worker thread is not running"))?;
+            .map_err(|_| bridge_error(operation, "BASS worker thread is not running"))?;
         receiver
             .recv()
-            .map_err(|_| bridge_error("bass_call", "BASS worker dropped the response"))?
+            .map_err(|_| bridge_error(operation, "BASS worker dropped the response"))?
     }
 }
 
@@ -120,7 +123,7 @@ pub fn bass_call(
     operation: String,
     args: Value,
 ) -> Result<Value, BridgeError> {
-    service.call(operation, args)
+    service.call_operation(&operation, args)
 }
 
 fn default_dll_directories(app: &AppHandle) -> Vec<PathBuf> {
@@ -468,20 +471,32 @@ impl BassRuntime {
 
     fn pick_file(&self) -> Result<Value, BridgeError> {
         let path = rfd::FileDialog::new()
-            .add_filter("Audio", &["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma", "mod", "xm", "it", "s3m"])
+            .add_filter(
+                "Audio",
+                &[
+                    "mp3", "wav", "flac", "ogg", "m4a", "aac", "wma", "mod", "xm", "it", "s3m",
+                ],
+            )
             .pick_file();
         Ok(json!({ "path": path.map(|value| value.to_string_lossy().into_owned()) }))
     }
 
     fn load_url(&mut self, args: Value) -> Result<Value, BridgeError> {
         let url = required_string(&args, "url", "bass_load_url")?;
-        let input: UrlInput = parse_args(normalize_object(args.get("options").cloned().unwrap_or_else(|| json!({}))), "bass_load_url")?;
+        let input: UrlInput = parse_args(
+            normalize_object(args.get("options").cloned().unwrap_or_else(|| json!({}))),
+            "bass_load_url",
+        )?;
         let id = self.next_id();
         let app = self.app.clone();
         let callback: bass_rs::DownloadCallback = Box::new(move |event| {
             let payload = match event {
-                bass_rs::DownloadEvent::Data { length } => json!({ "channelId": id, "kind": "data", "length": length }),
-                bass_rs::DownloadEvent::Status(status) => json!({ "channelId": id, "kind": "status", "status": status }),
+                bass_rs::DownloadEvent::Data { length } => {
+                    json!({ "channelId": id, "kind": "data", "length": length })
+                }
+                bass_rs::DownloadEvent::Status(status) => {
+                    json!({ "channelId": id, "kind": "status", "status": status })
+                }
                 bass_rs::DownloadEvent::Finished => json!({ "channelId": id, "kind": "finished" }),
             };
             let _ = app.emit(EVENT_DOWNLOAD, payload);
@@ -516,13 +531,17 @@ impl BassRuntime {
     }
 
     fn load_plugins(&mut self, args: Value) -> Result<Value, BridgeError> {
-        let paths = args
-            .get("paths")
-            .and_then(Value::as_array)
-            .ok_or_else(|| bridge_error("bass_load_plugins", "paths must be an array"))?
-            .iter()
-            .map(|value| value.as_str().map(ToOwned::to_owned).ok_or_else(|| bridge_error("bass_load_plugins", "paths must contain strings")))
-            .collect::<Result<Vec<_>, _>>()?;
+        let paths =
+            args.get("paths")
+                .and_then(Value::as_array)
+                .ok_or_else(|| bridge_error("bass_load_plugins", "paths must be an array"))?
+                .iter()
+                .map(|value| {
+                    value.as_str().map(ToOwned::to_owned).ok_or_else(|| {
+                        bridge_error("bass_load_plugins", "paths must contain strings")
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
         let plugins = self
             .engine("bass_load_plugins")?
             .load_plugins(paths)
@@ -538,7 +557,10 @@ impl BassRuntime {
 
     fn plugin_info(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "pluginId", "bass_plugin_info")?;
-        let plugin = self.plugins.get(&id).ok_or_else(|| missing_handle("plugin", id))?;
+        let plugin = self
+            .plugins
+            .get(&id)
+            .ok_or_else(|| missing_handle("plugin", id))?;
         Ok(plugin_json(id, plugin))
     }
 
@@ -566,7 +588,9 @@ impl BassRuntime {
         let sync_ids = self
             .syncs
             .iter()
-            .filter_map(|(registration_id, registration)| (registration.channel_id == id).then_some(*registration_id))
+            .filter_map(|(registration_id, registration)| {
+                (registration.channel_id == id).then_some(*registration_id)
+            })
             .collect::<Vec<_>>();
         for registration_id in sync_ids {
             self.syncs.remove(&registration_id);
@@ -574,7 +598,9 @@ impl BassRuntime {
         let dsp_ids = self
             .dsps
             .iter()
-            .filter_map(|(registration_id, registration)| (registration.channel_id == id).then_some(*registration_id))
+            .filter_map(|(registration_id, registration)| {
+                (registration.channel_id == id).then_some(*registration_id)
+            })
             .collect::<Vec<_>>();
         for registration_id in dsp_ids {
             self.dsps.remove(&registration_id);
@@ -590,7 +616,9 @@ impl BassRuntime {
         self.channels
             .remove(&id)
             .ok_or_else(|| missing_handle("channel", id))?;
-        let _ = self.app.emit(EVENT_STATE, json!({ "channelId": id, "state": "closed" }));
+        let _ = self
+            .app
+            .emit(EVENT_STATE, json!({ "channelId": id, "state": "closed" }));
         Ok(json!({ "channelId": id, "closed": true }))
     }
 
@@ -598,8 +626,12 @@ impl BassRuntime {
         let id = required_id(&args, "channelId", "bass_channel_snapshot")?;
         let object = self.channel(id, "bass_channel_snapshot")?;
         let channel = object.as_channel();
-        let position = channel.position().map_err(|error| bass_error("bass_channel_snapshot", error))?;
-        let length = channel.length().map_err(|error| bass_error("bass_channel_snapshot", error))?;
+        let position = channel
+            .position()
+            .map_err(|error| bass_error("bass_channel_snapshot", error))?;
+        let length = channel
+            .length()
+            .map_err(|error| bass_error("bass_channel_snapshot", error))?;
         Ok(json!({
             "channelId": id,
             "rawHandle": channel.raw_handle(),
@@ -616,7 +648,10 @@ impl BassRuntime {
 
     fn channel_play(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "channelId", "bass_channel_play")?;
-        let restart = args.get("restart").and_then(Value::as_bool).unwrap_or(false);
+        let restart = args
+            .get("restart")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         self.channel(id, "bass_channel_play")?
             .as_channel()
             .play(restart)
@@ -676,17 +711,27 @@ impl BassRuntime {
     }
 
     fn channel_set_frequency(&self, args: Value) -> Result<Value, BridgeError> {
-        self.channel_attribute_shortcut(args, "frequency", |channel, value| channel.set_frequency(value))
+        self.channel_attribute_shortcut(args, "frequency", |channel, value| {
+            channel.set_frequency(value)
+        })
     }
 
-    fn channel_attribute_shortcut<F>(&self, args: Value, field: &str, call: F) -> Result<Value, BridgeError>
+    fn channel_attribute_shortcut<F>(
+        &self,
+        args: Value,
+        field: &str,
+        call: F,
+    ) -> Result<Value, BridgeError>
     where
         F: FnOnce(&Channel, f32) -> bass_rs::Result<()>,
     {
         let id = required_id(&args, "channelId", "bass_channel_set_attribute")?;
         let value = required_f32(&args, field, "bass_channel_set_attribute")?;
-        call(self.channel(id, "bass_channel_set_attribute")?.as_channel(), value)
-            .map_err(|error| bass_error("bass_channel_set_attribute", error))?;
+        call(
+            self.channel(id, "bass_channel_set_attribute")?.as_channel(),
+            value,
+        )
+        .map_err(|error| bass_error("bass_channel_set_attribute", error))?;
         Ok(json!({ "channelId": id, field: value }))
     }
 
@@ -818,7 +863,13 @@ impl BassRuntime {
             .as_channel()
             .set_sync(kind, callback)
             .map_err(|error| bass_error("bass_channel_add_sync", error))?;
-        self.syncs.insert(registration_id, Registration { channel_id, registration });
+        self.syncs.insert(
+            registration_id,
+            Registration {
+                channel_id,
+                registration,
+            },
+        );
         Ok(json!({ "registrationId": registration_id }))
     }
 
@@ -866,7 +917,13 @@ impl BassRuntime {
             .as_channel()
             .add_dsp_ex(callback, priority, flags)
             .map_err(|error| bass_error("bass_channel_add_dsp", error))?;
-        self.dsps.insert(registration_id, Registration { channel_id, registration });
+        self.dsps.insert(
+            registration_id,
+            Registration {
+                channel_id,
+                registration,
+            },
+        );
         Ok(json!({ "registrationId": registration_id, "mode": mode }))
     }
 
@@ -887,7 +944,10 @@ impl BassRuntime {
             .remove(&id)
             .ok_or_else(|| missing_handle("channel", id))?;
         let ChannelObject::Plain(channel) = object else {
-            return Err(bridge_error("bass_channel_to_tempo", "only a plain channel can become tempo"));
+            return Err(bridge_error(
+                "bass_channel_to_tempo",
+                "only a plain channel can become tempo",
+            ));
         };
         let tempo = channel
             .into_tempo(flags)
@@ -908,7 +968,10 @@ impl BassRuntime {
             .remove(&id)
             .ok_or_else(|| missing_handle("channel", id))?;
         let ChannelObject::Plain(channel) = object else {
-            return Err(bridge_error("bass_channel_to_reverse", "only a plain channel can become reverse"));
+            return Err(bridge_error(
+                "bass_channel_to_reverse",
+                "only a plain channel can become reverse",
+            ));
         };
         let reverse = channel
             .into_reverse(dec_block, flags)
@@ -922,9 +985,14 @@ impl BassRuntime {
     fn tempo_get(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "channelId", "bass_tempo_get")?;
         let ChannelObject::Tempo(channel) = self.channel(id, "bass_tempo_get")? else {
-            return Err(bridge_error("bass_tempo_get", "channel is not a tempo channel"));
+            return Err(bridge_error(
+                "bass_tempo_get",
+                "channel is not a tempo channel",
+            ));
         };
-        Ok(json!({ "tempo": channel.tempo().map_err(|error| bass_error("bass_tempo_get", error))?, "pitch": channel.pitch().map_err(|error| bass_error("bass_tempo_get", error))?, "frequency": channel.tempo_frequency().map_err(|error| bass_error("bass_tempo_get", error))?, "rateRatio": channel.rate_ratio(), "sourceHandle": channel.source_handle() }))
+        Ok(
+            json!({ "tempo": channel.tempo().map_err(|error| bass_error("bass_tempo_get", error))?, "pitch": channel.pitch().map_err(|error| bass_error("bass_tempo_get", error))?, "frequency": channel.tempo_frequency().map_err(|error| bass_error("bass_tempo_get", error))?, "rateRatio": channel.rate_ratio(), "sourceHandle": channel.source_handle() }),
+        )
     }
 
     fn tempo_set(&self, args: Value) -> Result<Value, BridgeError> {
@@ -932,13 +1000,21 @@ impl BassRuntime {
         let field = required_string(&args, "field", "bass_tempo_set")?;
         let value = required_f32(&args, "value", "bass_tempo_set")?;
         let ChannelObject::Tempo(channel) = self.channel(id, "bass_tempo_set")? else {
-            return Err(bridge_error("bass_tempo_set", "channel is not a tempo channel"));
+            return Err(bridge_error(
+                "bass_tempo_set",
+                "channel is not a tempo channel",
+            ));
         };
         match field.as_str() {
             "tempo" => channel.set_tempo(value),
             "pitch" => channel.set_pitch(value),
             "frequency" => channel.set_tempo_frequency(value),
-            _ => return Err(bridge_error("bass_tempo_set", "field must be tempo, pitch, or frequency")),
+            _ => {
+                return Err(bridge_error(
+                    "bass_tempo_set",
+                    "field must be tempo, pitch, or frequency",
+                ))
+            }
         }
         .map_err(|error| bass_error("bass_tempo_set", error))?;
         Ok(json!({ "channelId": id, "field": field, "value": value }))
@@ -947,16 +1023,24 @@ impl BassRuntime {
     fn reverse_get(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "channelId", "bass_reverse_get")?;
         let ChannelObject::Reverse(channel) = self.channel(id, "bass_reverse_get")? else {
-            return Err(bridge_error("bass_reverse_get", "channel is not a reverse channel"));
+            return Err(bridge_error(
+                "bass_reverse_get",
+                "channel is not a reverse channel",
+            ));
         };
-        Ok(json!({ "direction": channel.direction().map_err(|error| bass_error("bass_reverse_get", error))?, "sourceHandle": channel.source_handle() }))
+        Ok(
+            json!({ "direction": channel.direction().map_err(|error| bass_error("bass_reverse_get", error))?, "sourceHandle": channel.source_handle() }),
+        )
     }
 
     fn reverse_set(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "channelId", "bass_reverse_set")?;
         let direction = required_f32(&args, "direction", "bass_reverse_set")?;
         let ChannelObject::Reverse(channel) = self.channel(id, "bass_reverse_set")? else {
-            return Err(bridge_error("bass_reverse_set", "channel is not a reverse channel"));
+            return Err(bridge_error(
+                "bass_reverse_set",
+                "channel is not a reverse channel",
+            ));
         };
         channel
             .set_direction(direction)
@@ -975,14 +1059,24 @@ impl BassRuntime {
             .map_err(|error| bass_error("bass_add_effect", error))?;
         let effect_id = self.next_id();
         let response = json!({ "effectId": effect_id, "channelId": channel_id, "kind": effect_kind_name(kind), "rawHandle": effect.raw_handle() });
-        self.effects.insert(effect_id, EffectRecord { effect, channel_id, kind });
+        self.effects.insert(
+            effect_id,
+            EffectRecord {
+                effect,
+                channel_id,
+                kind,
+            },
+        );
         Ok(response)
     }
 
     fn add_loudness(&mut self, args: Value) -> Result<Value, BridgeError> {
         let channel_id = required_id(&args, "channelId", "bass_add_loudness")?;
         let priority = optional_i32(&args, "priority")?.unwrap_or(0);
-        let input: LoudnessInput = parse_args(normalize_object(args.get("options").cloned().unwrap_or_else(|| json!({}))), "bass_add_loudness")?;
+        let input: LoudnessInput = parse_args(
+            normalize_object(args.get("options").cloned().unwrap_or_else(|| json!({}))),
+            "bass_add_loudness",
+        )?;
         let options = bass_rs::LoudnessOptions {
             gain_db: input.gain_db,
             threshold_db: input.threshold_db,
@@ -999,7 +1093,14 @@ impl BassRuntime {
         let kind = EffectKind::BassFx(BassFxEffect::Compressor2);
         let effect = chain.compressor;
         let response = json!({ "effectId": effect_id, "channelId": channel_id, "kind": effect_kind_name(kind), "rawHandle": effect.raw_handle() });
-        self.effects.insert(effect_id, EffectRecord { effect, channel_id, kind });
+        self.effects.insert(
+            effect_id,
+            EffectRecord {
+                effect,
+                channel_id,
+                kind,
+            },
+        );
         Ok(response)
     }
 
@@ -1013,19 +1114,29 @@ impl BassRuntime {
 
     fn effect_set_parameters(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "effectId", "bass_effect_set_parameters")?;
-        let record = self.effects.get(&id).ok_or_else(|| missing_handle("effect", id))?;
+        let record = self
+            .effects
+            .get(&id)
+            .ok_or_else(|| missing_handle("effect", id))?;
         let parameters = args.get("parameters").cloned().unwrap_or_default();
         set_effect_parameters(&record.effect, record.kind, &parameters)
             .map_err(|error| bass_error("bass_effect_set_parameters", error))?;
-        Ok(json!({ "effectId": id, "kind": effect_kind_name(record.kind), "parameters": parameters }))
+        Ok(
+            json!({ "effectId": id, "kind": effect_kind_name(record.kind), "parameters": parameters }),
+        )
     }
 
     fn effect_get_parameters(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "effectId", "bass_effect_get_parameters")?;
-        let record = self.effects.get(&id).ok_or_else(|| missing_handle("effect", id))?;
+        let record = self
+            .effects
+            .get(&id)
+            .ok_or_else(|| missing_handle("effect", id))?;
         let parameters = get_effect_parameters(&record.effect, record.kind)
             .map_err(|error| bass_error("bass_effect_get_parameters", error))?;
-        Ok(json!({ "effectId": id, "kind": effect_kind_name(record.kind), "parameters": parameters }))
+        Ok(
+            json!({ "effectId": id, "kind": effect_kind_name(record.kind), "parameters": parameters }),
+        )
     }
 
     fn effect_set_priority(&self, args: Value) -> Result<Value, BridgeError> {
@@ -1083,23 +1194,35 @@ impl BassRuntime {
         let addon = bass_rs::midi::MidiAddon::load(path)
             .map_err(|error| bass_error("bass_midi_set_max_polyphony", error))?;
         addon
-            .set_max_polyphony(bass_rs::midi::MidiOptions { max_polyphony: Some(max_polyphony) })
+            .set_max_polyphony(bass_rs::midi::MidiOptions {
+                max_polyphony: Some(max_polyphony),
+            })
             .map(|_| json!({ "maxPolyphony": max_polyphony }))
             .map_err(|error| bass_error("bass_midi_set_max_polyphony", error))
     }
 
     fn channel(&self, id: u64, operation: &str) -> Result<&ChannelObject, BridgeError> {
-        self.channels
-            .get(&id)
-            .ok_or_else(|| BridgeError { operation: operation.into(), ..missing_handle("channel", id) })
+        self.channels.get(&id).ok_or_else(|| BridgeError {
+            operation: operation.into(),
+            ..missing_handle("channel", id)
+        })
     }
 
     fn ensure_no_dependents(&self, id: u64, operation: &str) -> Result<(), BridgeError> {
         if self.effects.values().any(|effect| effect.channel_id == id)
-            || self.syncs.values().any(|registration| registration.channel_id == id)
-            || self.dsps.values().any(|registration| registration.channel_id == id)
+            || self
+                .syncs
+                .values()
+                .any(|registration| registration.channel_id == id)
+            || self
+                .dsps
+                .values()
+                .any(|registration| registration.channel_id == id)
         {
-            return Err(bridge_error(operation, "remove effects and callbacks before transforming the channel"));
+            return Err(bridge_error(
+                operation,
+                "remove effects and callbacks before transforming the channel",
+            ));
         }
         Ok(())
     }
@@ -1139,7 +1262,10 @@ fn optional_string(args: &Value, field: &str) -> Result<Option<String>, BridgeEr
     match args.get(field) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
-        _ => Err(bridge_error("bass_call", format!("field {field} must be a string"))),
+        _ => Err(bridge_error(
+            "bass_call",
+            format!("field {field} must be a string"),
+        )),
     }
 }
 
@@ -1155,7 +1281,8 @@ fn required_u64(args: &Value, field: &str, operation: &str) -> Result<u64, Bridg
 
 fn required_usize(args: &Value, field: &str, operation: &str) -> Result<usize, BridgeError> {
     let value = required_u64(args, field, operation)?;
-    usize::try_from(value).map_err(|_| bridge_error(operation, format!("field {field} is too large")))
+    usize::try_from(value)
+        .map_err(|_| bridge_error(operation, format!("field {field} is too large")))
 }
 
 fn optional_u32(args: &Value, field: &str) -> Result<Option<u32>, BridgeError> {
@@ -1170,7 +1297,8 @@ fn optional_u32(args: &Value, field: &str) -> Result<Option<u32>, BridgeError> {
 }
 
 fn required_u32(args: &Value, field: &str, operation: &str) -> Result<u32, BridgeError> {
-    optional_u32(args, field)?.ok_or_else(|| bridge_error(operation, format!("missing u32 field: {field}")))
+    optional_u32(args, field)?
+        .ok_or_else(|| bridge_error(operation, format!("missing u32 field: {field}")))
 }
 
 fn optional_i32(args: &Value, field: &str) -> Result<Option<i32>, BridgeError> {
@@ -1185,7 +1313,8 @@ fn optional_i32(args: &Value, field: &str) -> Result<Option<i32>, BridgeError> {
 }
 
 fn required_i32(args: &Value, field: &str, operation: &str) -> Result<i32, BridgeError> {
-    optional_i32(args, field)?.ok_or_else(|| bridge_error(operation, format!("missing i32 field: {field}")))
+    optional_i32(args, field)?
+        .ok_or_else(|| bridge_error(operation, format!("missing i32 field: {field}")))
 }
 
 fn optional_f32(args: &Value, field: &str) -> Result<Option<f32>, BridgeError> {
@@ -1200,7 +1329,8 @@ fn optional_f32(args: &Value, field: &str) -> Result<Option<f32>, BridgeError> {
 }
 
 fn required_f32(args: &Value, field: &str, operation: &str) -> Result<f32, BridgeError> {
-    optional_f32(args, field)?.ok_or_else(|| bridge_error(operation, format!("missing number field: {field}")))
+    optional_f32(args, field)?
+        .ok_or_else(|| bridge_error(operation, format!("missing number field: {field}")))
 }
 
 fn required_f64(args: &Value, field: &str, operation: &str) -> Result<f64, BridgeError> {
@@ -1217,7 +1347,10 @@ fn parse_backend(value: &str) -> Result<OutputBackend, BridgeError> {
     match value.to_ascii_lowercase().as_str() {
         "wasapi" => Ok(OutputBackend::Wasapi),
         "directsound" | "dsound" => Ok(OutputBackend::DirectSound),
-        _ => Err(bridge_error("bass_initialize", "backend must be wasapi or directSound")),
+        _ => Err(bridge_error(
+            "bass_initialize",
+            "backend must be wasapi or directSound",
+        )),
     }
 }
 
@@ -1241,14 +1374,21 @@ fn parse_tag_kind(value: &str) -> Result<TagKind, BridgeError> {
 fn parse_sync_kind(args: &Value) -> Result<SyncKind, BridgeError> {
     let kind = required_string(args, "kind", "bass_channel_add_sync")?;
     match kind.to_ascii_lowercase().as_str() {
-        "position" => Ok(SyncKind::Position(required_u64(args, "parameter", "bass_channel_add_sync")?)),
+        "position" => Ok(SyncKind::Position(required_u64(
+            args,
+            "parameter",
+            "bass_channel_add_sync",
+        )?)),
         "end" => Ok(SyncKind::End),
         "meta" => Ok(SyncKind::Meta),
         "stall" => Ok(SyncKind::Stall),
         "download" => Ok(SyncKind::Download),
         "free" => Ok(SyncKind::Free),
         "oggChange" | "oggchange" => Ok(SyncKind::OggChange),
-        "other" => Ok(SyncKind::Other { kind: required_u32(args, "syncType", "bass_channel_add_sync")?, parameter: optional_u64(args, "parameter")?.unwrap_or(0) }),
+        "other" => Ok(SyncKind::Other {
+            kind: required_u32(args, "syncType", "bass_channel_add_sync")?,
+            parameter: optional_u64(args, "parameter")?.unwrap_or(0),
+        }),
         _ => Err(bridge_error("bass_channel_add_sync", "unknown sync kind")),
     }
 }
@@ -1256,7 +1396,10 @@ fn parse_sync_kind(args: &Value) -> Result<SyncKind, BridgeError> {
 fn optional_u64(args: &Value, field: &str) -> Result<Option<u64>, BridgeError> {
     match args.get(field) {
         None | Some(Value::Null) => Ok(None),
-        Some(value) => value.as_u64().map(Some).ok_or_else(|| bridge_error("bass_call", format!("field {field} must be a u64"))),
+        Some(value) => value
+            .as_u64()
+            .map(Some)
+            .ok_or_else(|| bridge_error("bass_call", format!("field {field} must be a u64"))),
     }
 }
 
@@ -1275,7 +1418,11 @@ fn source_options(value: Value) -> Result<SourceOptions, BridgeError> {
 }
 
 fn normalize_object(value: Value) -> Value {
-    if value.is_null() { json!({}) } else { value }
+    if value.is_null() {
+        json!({})
+    } else {
+        value
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1477,7 +1624,12 @@ fn parse_effect_kind(value: &str) -> Result<EffectKind, BridgeError> {
         "bassfx.echo4" => EffectKind::BassFx(BassFxEffect::Echo4),
         "bassfx.pitchshift" => EffectKind::BassFx(BassFxEffect::PitchShift),
         "bassfx.freeverb" => EffectKind::BassFx(BassFxEffect::Freeverb),
-        _ => return Err(bridge_error("bass_add_effect", format!("unknown effect kind: {value}"))),
+        _ => {
+            return Err(bridge_error(
+                "bass_add_effect",
+                format!("unknown effect kind: {value}"),
+            ))
+        }
     };
     Ok(value)
 }
@@ -1487,22 +1639,34 @@ fn raw_catalog() -> Value {
     constants.insert("BASSVERSION".into(), json!(raw::BASSVERSION));
     constants.insert("BASS_OK".into(), json!(raw::BASS_OK));
     constants.insert("BASS_ERROR_MEM".into(), json!(raw::BASS_ERROR_MEM));
-    constants.insert("BASS_ERROR_FILEOPEN".into(), json!(raw::BASS_ERROR_FILEOPEN));
+    constants.insert(
+        "BASS_ERROR_FILEOPEN".into(),
+        json!(raw::BASS_ERROR_FILEOPEN),
+    );
     constants.insert("BASS_ERROR_DRIVER".into(), json!(raw::BASS_ERROR_DRIVER));
     constants.insert("BASS_ERROR_BUFLOST".into(), json!(raw::BASS_ERROR_BUFLOST));
     constants.insert("BASS_ERROR_HANDLE".into(), json!(raw::BASS_ERROR_HANDLE));
     constants.insert("BASS_ERROR_FORMAT".into(), json!(raw::BASS_ERROR_FORMAT));
-    constants.insert("BASS_ERROR_POSITION".into(), json!(raw::BASS_ERROR_POSITION));
+    constants.insert(
+        "BASS_ERROR_POSITION".into(),
+        json!(raw::BASS_ERROR_POSITION),
+    );
     constants.insert("BASS_ERROR_INIT".into(), json!(raw::BASS_ERROR_INIT));
     constants.insert("BASS_ERROR_START".into(), json!(raw::BASS_ERROR_START));
     constants.insert("BASS_ERROR_SSL".into(), json!(raw::BASS_ERROR_SSL));
     constants.insert("BASS_ERROR_REINIT".into(), json!(raw::BASS_ERROR_REINIT));
     constants.insert("BASS_ERROR_TRACK".into(), json!(raw::BASS_ERROR_TRACK));
     constants.insert("BASS_ERROR_ALREADY".into(), json!(raw::BASS_ERROR_ALREADY));
-    constants.insert("BASS_ERROR_NOTAUDIO".into(), json!(raw::BASS_ERROR_NOTAUDIO));
+    constants.insert(
+        "BASS_ERROR_NOTAUDIO".into(),
+        json!(raw::BASS_ERROR_NOTAUDIO),
+    );
     constants.insert("BASS_ERROR_NOCHAN".into(), json!(raw::BASS_ERROR_NOCHAN));
     constants.insert("BASS_ERROR_ILLTYPE".into(), json!(raw::BASS_ERROR_ILLTYPE));
-    constants.insert("BASS_ERROR_ILLPARAM".into(), json!(raw::BASS_ERROR_ILLPARAM));
+    constants.insert(
+        "BASS_ERROR_ILLPARAM".into(),
+        json!(raw::BASS_ERROR_ILLPARAM),
+    );
     constants.insert("BASS_ERROR_NO3D".into(), json!(raw::BASS_ERROR_NO3D));
     constants.insert("BASS_ERROR_NOEAX".into(), json!(raw::BASS_ERROR_NOEAX));
     constants.insert("BASS_ERROR_DEVICE".into(), json!(raw::BASS_ERROR_DEVICE));
@@ -1514,100 +1678,307 @@ fn raw_catalog() -> Value {
     constants.insert("BASS_ERROR_NONET".into(), json!(raw::BASS_ERROR_NONET));
     constants.insert("BASS_ERROR_CREATE".into(), json!(raw::BASS_ERROR_CREATE));
     constants.insert("BASS_ERROR_NOFX".into(), json!(raw::BASS_ERROR_NOFX));
-    constants.insert("BASS_ERROR_NOTAVAIL".into(), json!(raw::BASS_ERROR_NOTAVAIL));
+    constants.insert(
+        "BASS_ERROR_NOTAVAIL".into(),
+        json!(raw::BASS_ERROR_NOTAVAIL),
+    );
     constants.insert("BASS_ERROR_DECODE".into(), json!(raw::BASS_ERROR_DECODE));
     constants.insert("BASS_ERROR_DX".into(), json!(raw::BASS_ERROR_DX));
     constants.insert("BASS_ERROR_TIMEOUT".into(), json!(raw::BASS_ERROR_TIMEOUT));
-    constants.insert("BASS_ERROR_FILEFORM".into(), json!(raw::BASS_ERROR_FILEFORM));
+    constants.insert(
+        "BASS_ERROR_FILEFORM".into(),
+        json!(raw::BASS_ERROR_FILEFORM),
+    );
     constants.insert("BASS_ERROR_SPEAKER".into(), json!(raw::BASS_ERROR_SPEAKER));
     constants.insert("BASS_ERROR_VERSION".into(), json!(raw::BASS_ERROR_VERSION));
     constants.insert("BASS_ERROR_CODEC".into(), json!(raw::BASS_ERROR_CODEC));
     constants.insert("BASS_ERROR_ENDED".into(), json!(raw::BASS_ERROR_ENDED));
     constants.insert("BASS_ERROR_BUSY".into(), json!(raw::BASS_ERROR_BUSY));
-    constants.insert("BASS_ERROR_UNSTREAMABLE".into(), json!(raw::BASS_ERROR_UNSTREAMABLE));
-    constants.insert("BASS_ERROR_PROTOCOL".into(), json!(raw::BASS_ERROR_PROTOCOL));
+    constants.insert(
+        "BASS_ERROR_UNSTREAMABLE".into(),
+        json!(raw::BASS_ERROR_UNSTREAMABLE),
+    );
+    constants.insert(
+        "BASS_ERROR_PROTOCOL".into(),
+        json!(raw::BASS_ERROR_PROTOCOL),
+    );
     constants.insert("BASS_ERROR_DENIED".into(), json!(raw::BASS_ERROR_DENIED));
     constants.insert("BASS_ERROR_FREEING".into(), json!(raw::BASS_ERROR_FREEING));
     constants.insert("BASS_ERROR_CANCEL".into(), json!(raw::BASS_ERROR_CANCEL));
     constants.insert("BASS_CONFIG_BUFFER".into(), json!(raw::BASS_CONFIG_BUFFER));
-    constants.insert("BASS_CONFIG_UPDATEPERIOD".into(), json!(raw::BASS_CONFIG_UPDATEPERIOD));
-    constants.insert("BASS_CONFIG_GVOL_SAMPLE".into(), json!(raw::BASS_CONFIG_GVOL_SAMPLE));
-    constants.insert("BASS_CONFIG_GVOL_STREAM".into(), json!(raw::BASS_CONFIG_GVOL_STREAM));
-    constants.insert("BASS_CONFIG_GVOL_MUSIC".into(), json!(raw::BASS_CONFIG_GVOL_MUSIC));
-    constants.insert("BASS_CONFIG_CURVE_VOL".into(), json!(raw::BASS_CONFIG_CURVE_VOL));
-    constants.insert("BASS_CONFIG_CURVE_PAN".into(), json!(raw::BASS_CONFIG_CURVE_PAN));
-    constants.insert("BASS_CONFIG_FLOATDSP".into(), json!(raw::BASS_CONFIG_FLOATDSP));
-    constants.insert("BASS_CONFIG_3DALGORITHM".into(), json!(raw::BASS_CONFIG_3DALGORITHM));
-    constants.insert("BASS_CONFIG_NET_TIMEOUT".into(), json!(raw::BASS_CONFIG_NET_TIMEOUT));
-    constants.insert("BASS_CONFIG_NET_BUFFER".into(), json!(raw::BASS_CONFIG_NET_BUFFER));
-    constants.insert("BASS_CONFIG_PAUSE_NOPLAY".into(), json!(raw::BASS_CONFIG_PAUSE_NOPLAY));
-    constants.insert("BASS_CONFIG_NET_PREBUF".into(), json!(raw::BASS_CONFIG_NET_PREBUF));
-    constants.insert("BASS_CONFIG_NET_PASSIVE".into(), json!(raw::BASS_CONFIG_NET_PASSIVE));
-    constants.insert("BASS_CONFIG_REC_BUFFER".into(), json!(raw::BASS_CONFIG_REC_BUFFER));
-    constants.insert("BASS_CONFIG_NET_PLAYLIST".into(), json!(raw::BASS_CONFIG_NET_PLAYLIST));
-    constants.insert("BASS_CONFIG_MUSIC_VIRTUAL".into(), json!(raw::BASS_CONFIG_MUSIC_VIRTUAL));
+    constants.insert(
+        "BASS_CONFIG_UPDATEPERIOD".into(),
+        json!(raw::BASS_CONFIG_UPDATEPERIOD),
+    );
+    constants.insert(
+        "BASS_CONFIG_GVOL_SAMPLE".into(),
+        json!(raw::BASS_CONFIG_GVOL_SAMPLE),
+    );
+    constants.insert(
+        "BASS_CONFIG_GVOL_STREAM".into(),
+        json!(raw::BASS_CONFIG_GVOL_STREAM),
+    );
+    constants.insert(
+        "BASS_CONFIG_GVOL_MUSIC".into(),
+        json!(raw::BASS_CONFIG_GVOL_MUSIC),
+    );
+    constants.insert(
+        "BASS_CONFIG_CURVE_VOL".into(),
+        json!(raw::BASS_CONFIG_CURVE_VOL),
+    );
+    constants.insert(
+        "BASS_CONFIG_CURVE_PAN".into(),
+        json!(raw::BASS_CONFIG_CURVE_PAN),
+    );
+    constants.insert(
+        "BASS_CONFIG_FLOATDSP".into(),
+        json!(raw::BASS_CONFIG_FLOATDSP),
+    );
+    constants.insert(
+        "BASS_CONFIG_3DALGORITHM".into(),
+        json!(raw::BASS_CONFIG_3DALGORITHM),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_TIMEOUT".into(),
+        json!(raw::BASS_CONFIG_NET_TIMEOUT),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_BUFFER".into(),
+        json!(raw::BASS_CONFIG_NET_BUFFER),
+    );
+    constants.insert(
+        "BASS_CONFIG_PAUSE_NOPLAY".into(),
+        json!(raw::BASS_CONFIG_PAUSE_NOPLAY),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_PREBUF".into(),
+        json!(raw::BASS_CONFIG_NET_PREBUF),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_PASSIVE".into(),
+        json!(raw::BASS_CONFIG_NET_PASSIVE),
+    );
+    constants.insert(
+        "BASS_CONFIG_REC_BUFFER".into(),
+        json!(raw::BASS_CONFIG_REC_BUFFER),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_PLAYLIST".into(),
+        json!(raw::BASS_CONFIG_NET_PLAYLIST),
+    );
+    constants.insert(
+        "BASS_CONFIG_MUSIC_VIRTUAL".into(),
+        json!(raw::BASS_CONFIG_MUSIC_VIRTUAL),
+    );
     constants.insert("BASS_CONFIG_VERIFY".into(), json!(raw::BASS_CONFIG_VERIFY));
-    constants.insert("BASS_CONFIG_UPDATETHREADS".into(), json!(raw::BASS_CONFIG_UPDATETHREADS));
-    constants.insert("BASS_CONFIG_DEV_BUFFER".into(), json!(raw::BASS_CONFIG_DEV_BUFFER));
-    constants.insert("BASS_CONFIG_REC_LOOPBACK".into(), json!(raw::BASS_CONFIG_REC_LOOPBACK));
-    constants.insert("BASS_CONFIG_DEV_DEFAULT".into(), json!(raw::BASS_CONFIG_DEV_DEFAULT));
-    constants.insert("BASS_CONFIG_NET_READTIMEOUT".into(), json!(raw::BASS_CONFIG_NET_READTIMEOUT));
-    constants.insert("BASS_CONFIG_VISTA_SPEAKERS".into(), json!(raw::BASS_CONFIG_VISTA_SPEAKERS));
-    constants.insert("BASS_CONFIG_MF_DISABLE".into(), json!(raw::BASS_CONFIG_MF_DISABLE));
-    constants.insert("BASS_CONFIG_HANDLES".into(), json!(raw::BASS_CONFIG_HANDLES));
-    constants.insert("BASS_CONFIG_UNICODE".into(), json!(raw::BASS_CONFIG_UNICODE));
+    constants.insert(
+        "BASS_CONFIG_UPDATETHREADS".into(),
+        json!(raw::BASS_CONFIG_UPDATETHREADS),
+    );
+    constants.insert(
+        "BASS_CONFIG_DEV_BUFFER".into(),
+        json!(raw::BASS_CONFIG_DEV_BUFFER),
+    );
+    constants.insert(
+        "BASS_CONFIG_REC_LOOPBACK".into(),
+        json!(raw::BASS_CONFIG_REC_LOOPBACK),
+    );
+    constants.insert(
+        "BASS_CONFIG_DEV_DEFAULT".into(),
+        json!(raw::BASS_CONFIG_DEV_DEFAULT),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_READTIMEOUT".into(),
+        json!(raw::BASS_CONFIG_NET_READTIMEOUT),
+    );
+    constants.insert(
+        "BASS_CONFIG_VISTA_SPEAKERS".into(),
+        json!(raw::BASS_CONFIG_VISTA_SPEAKERS),
+    );
+    constants.insert(
+        "BASS_CONFIG_MF_DISABLE".into(),
+        json!(raw::BASS_CONFIG_MF_DISABLE),
+    );
+    constants.insert(
+        "BASS_CONFIG_HANDLES".into(),
+        json!(raw::BASS_CONFIG_HANDLES),
+    );
+    constants.insert(
+        "BASS_CONFIG_UNICODE".into(),
+        json!(raw::BASS_CONFIG_UNICODE),
+    );
     constants.insert("BASS_CONFIG_SRC".into(), json!(raw::BASS_CONFIG_SRC));
-    constants.insert("BASS_CONFIG_SRC_SAMPLE".into(), json!(raw::BASS_CONFIG_SRC_SAMPLE));
-    constants.insert("BASS_CONFIG_ASYNCFILE_BUFFER".into(), json!(raw::BASS_CONFIG_ASYNCFILE_BUFFER));
-    constants.insert("BASS_CONFIG_OGG_PRESCAN".into(), json!(raw::BASS_CONFIG_OGG_PRESCAN));
+    constants.insert(
+        "BASS_CONFIG_SRC_SAMPLE".into(),
+        json!(raw::BASS_CONFIG_SRC_SAMPLE),
+    );
+    constants.insert(
+        "BASS_CONFIG_ASYNCFILE_BUFFER".into(),
+        json!(raw::BASS_CONFIG_ASYNCFILE_BUFFER),
+    );
+    constants.insert(
+        "BASS_CONFIG_OGG_PRESCAN".into(),
+        json!(raw::BASS_CONFIG_OGG_PRESCAN),
+    );
     constants.insert("BASS_CONFIG_VIDEO".into(), json!(raw::BASS_CONFIG_VIDEO));
-    constants.insert("BASS_CONFIG_DEV_NONSTOP".into(), json!(raw::BASS_CONFIG_DEV_NONSTOP));
-    constants.insert("BASS_CONFIG_VERIFY_NET".into(), json!(raw::BASS_CONFIG_VERIFY_NET));
-    constants.insert("BASS_CONFIG_DEV_PERIOD".into(), json!(raw::BASS_CONFIG_DEV_PERIOD));
+    constants.insert(
+        "BASS_CONFIG_DEV_NONSTOP".into(),
+        json!(raw::BASS_CONFIG_DEV_NONSTOP),
+    );
+    constants.insert(
+        "BASS_CONFIG_VERIFY_NET".into(),
+        json!(raw::BASS_CONFIG_VERIFY_NET),
+    );
+    constants.insert(
+        "BASS_CONFIG_DEV_PERIOD".into(),
+        json!(raw::BASS_CONFIG_DEV_PERIOD),
+    );
     constants.insert("BASS_CONFIG_FLOAT".into(), json!(raw::BASS_CONFIG_FLOAT));
-    constants.insert("BASS_CONFIG_NET_SEEK".into(), json!(raw::BASS_CONFIG_NET_SEEK));
-    constants.insert("BASS_CONFIG_NET_PLAYLIST_DEPTH".into(), json!(raw::BASS_CONFIG_NET_PLAYLIST_DEPTH));
-    constants.insert("BASS_CONFIG_NET_PREBUF_WAIT".into(), json!(raw::BASS_CONFIG_NET_PREBUF_WAIT));
-    constants.insert("BASS_CONFIG_WASAPI_PERSIST".into(), json!(raw::BASS_CONFIG_WASAPI_PERSIST));
-    constants.insert("BASS_CONFIG_REC_WASAPI".into(), json!(raw::BASS_CONFIG_REC_WASAPI));
-    constants.insert("BASS_CONFIG_SAMPLE_ONEHANDLE".into(), json!(raw::BASS_CONFIG_SAMPLE_ONEHANDLE));
-    constants.insert("BASS_CONFIG_NET_META".into(), json!(raw::BASS_CONFIG_NET_META));
-    constants.insert("BASS_CONFIG_NET_RESTRATE".into(), json!(raw::BASS_CONFIG_NET_RESTRATE));
-    constants.insert("BASS_CONFIG_REC_DEFAULT".into(), json!(raw::BASS_CONFIG_REC_DEFAULT));
+    constants.insert(
+        "BASS_CONFIG_NET_SEEK".into(),
+        json!(raw::BASS_CONFIG_NET_SEEK),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_PLAYLIST_DEPTH".into(),
+        json!(raw::BASS_CONFIG_NET_PLAYLIST_DEPTH),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_PREBUF_WAIT".into(),
+        json!(raw::BASS_CONFIG_NET_PREBUF_WAIT),
+    );
+    constants.insert(
+        "BASS_CONFIG_WASAPI_PERSIST".into(),
+        json!(raw::BASS_CONFIG_WASAPI_PERSIST),
+    );
+    constants.insert(
+        "BASS_CONFIG_REC_WASAPI".into(),
+        json!(raw::BASS_CONFIG_REC_WASAPI),
+    );
+    constants.insert(
+        "BASS_CONFIG_SAMPLE_ONEHANDLE".into(),
+        json!(raw::BASS_CONFIG_SAMPLE_ONEHANDLE),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_META".into(),
+        json!(raw::BASS_CONFIG_NET_META),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_RESTRATE".into(),
+        json!(raw::BASS_CONFIG_NET_RESTRATE),
+    );
+    constants.insert(
+        "BASS_CONFIG_REC_DEFAULT".into(),
+        json!(raw::BASS_CONFIG_REC_DEFAULT),
+    );
     constants.insert("BASS_CONFIG_NORAMP".into(), json!(raw::BASS_CONFIG_NORAMP));
-    constants.insert("BASS_CONFIG_NOSOUND_MAXDELAY".into(), json!(raw::BASS_CONFIG_NOSOUND_MAXDELAY));
-    constants.insert("BASS_CONFIG_DOWNMIX".into(), json!(raw::BASS_CONFIG_DOWNMIX));
-    constants.insert("BASS_CONFIG_NET_AGENT".into(), json!(raw::BASS_CONFIG_NET_AGENT));
-    constants.insert("BASS_CONFIG_NET_PROXY".into(), json!(raw::BASS_CONFIG_NET_PROXY));
-    constants.insert("BASS_CONFIG_DEV_NOTIFY".into(), json!(raw::BASS_CONFIG_DEV_NOTIFY));
-    constants.insert("BASS_CONFIG_FILENAME".into(), json!(raw::BASS_CONFIG_FILENAME));
+    constants.insert(
+        "BASS_CONFIG_NOSOUND_MAXDELAY".into(),
+        json!(raw::BASS_CONFIG_NOSOUND_MAXDELAY),
+    );
+    constants.insert(
+        "BASS_CONFIG_DOWNMIX".into(),
+        json!(raw::BASS_CONFIG_DOWNMIX),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_AGENT".into(),
+        json!(raw::BASS_CONFIG_NET_AGENT),
+    );
+    constants.insert(
+        "BASS_CONFIG_NET_PROXY".into(),
+        json!(raw::BASS_CONFIG_NET_PROXY),
+    );
+    constants.insert(
+        "BASS_CONFIG_DEV_NOTIFY".into(),
+        json!(raw::BASS_CONFIG_DEV_NOTIFY),
+    );
+    constants.insert(
+        "BASS_CONFIG_FILENAME".into(),
+        json!(raw::BASS_CONFIG_FILENAME),
+    );
     constants.insert("BASS_CONFIG_THREAD".into(), json!(raw::BASS_CONFIG_THREAD));
     constants.insert("BASS_DEVICE_MONO".into(), json!(raw::BASS_DEVICE_MONO));
     constants.insert("BASS_DEVICE_REINIT".into(), json!(raw::BASS_DEVICE_REINIT));
-    constants.insert("BASS_DEVICE_SPEAKERS".into(), json!(raw::BASS_DEVICE_SPEAKERS));
-    constants.insert("BASS_DEVICE_NOSPEAKER".into(), json!(raw::BASS_DEVICE_NOSPEAKER));
+    constants.insert(
+        "BASS_DEVICE_SPEAKERS".into(),
+        json!(raw::BASS_DEVICE_SPEAKERS),
+    );
+    constants.insert(
+        "BASS_DEVICE_NOSPEAKER".into(),
+        json!(raw::BASS_DEVICE_NOSPEAKER),
+    );
     constants.insert("BASS_DEVICE_FREQ".into(), json!(raw::BASS_DEVICE_FREQ));
     constants.insert("BASS_DEVICE_STEREO".into(), json!(raw::BASS_DEVICE_STEREO));
     constants.insert("BASS_DEVICE_HOG".into(), json!(raw::BASS_DEVICE_HOG));
     constants.insert("BASS_DEVICE_DSOUND".into(), json!(raw::BASS_DEVICE_DSOUND));
-    constants.insert("BASS_DEVICE_SOFTWARE".into(), json!(raw::BASS_DEVICE_SOFTWARE));
-    constants.insert("BASS_DEVICE_ENABLED".into(), json!(raw::BASS_DEVICE_ENABLED));
-    constants.insert("BASS_DEVICE_DEFAULT".into(), json!(raw::BASS_DEVICE_DEFAULT));
+    constants.insert(
+        "BASS_DEVICE_SOFTWARE".into(),
+        json!(raw::BASS_DEVICE_SOFTWARE),
+    );
+    constants.insert(
+        "BASS_DEVICE_ENABLED".into(),
+        json!(raw::BASS_DEVICE_ENABLED),
+    );
+    constants.insert(
+        "BASS_DEVICE_DEFAULT".into(),
+        json!(raw::BASS_DEVICE_DEFAULT),
+    );
     constants.insert("BASS_DEVICE_INIT".into(), json!(raw::BASS_DEVICE_INIT));
-    constants.insert("BASS_DEVICE_LOOPBACK".into(), json!(raw::BASS_DEVICE_LOOPBACK));
-    constants.insert("BASS_DEVICE_DEFAULTCOM".into(), json!(raw::BASS_DEVICE_DEFAULTCOM));
-    constants.insert("BASS_DEVICE_TYPE_MASK".into(), json!(raw::BASS_DEVICE_TYPE_MASK));
-    constants.insert("BASS_DEVICE_TYPE_NETWORK".into(), json!(raw::BASS_DEVICE_TYPE_NETWORK));
-    constants.insert("BASS_DEVICE_TYPE_SPEAKERS".into(), json!(raw::BASS_DEVICE_TYPE_SPEAKERS));
-    constants.insert("BASS_DEVICE_TYPE_LINE".into(), json!(raw::BASS_DEVICE_TYPE_LINE));
-    constants.insert("BASS_DEVICE_TYPE_HEADPHONES".into(), json!(raw::BASS_DEVICE_TYPE_HEADPHONES));
-    constants.insert("BASS_DEVICE_TYPE_MICROPHONE".into(), json!(raw::BASS_DEVICE_TYPE_MICROPHONE));
-    constants.insert("BASS_DEVICE_TYPE_HEADSET".into(), json!(raw::BASS_DEVICE_TYPE_HEADSET));
-    constants.insert("BASS_DEVICE_TYPE_HANDSET".into(), json!(raw::BASS_DEVICE_TYPE_HANDSET));
-    constants.insert("BASS_DEVICE_TYPE_DIGITAL".into(), json!(raw::BASS_DEVICE_TYPE_DIGITAL));
-    constants.insert("BASS_DEVICE_TYPE_SPDIF".into(), json!(raw::BASS_DEVICE_TYPE_SPDIF));
-    constants.insert("BASS_DEVICE_TYPE_HDMI".into(), json!(raw::BASS_DEVICE_TYPE_HDMI));
-    constants.insert("BASS_DEVICE_TYPE_DISPLAYPORT".into(), json!(raw::BASS_DEVICE_TYPE_DISPLAYPORT));
+    constants.insert(
+        "BASS_DEVICE_LOOPBACK".into(),
+        json!(raw::BASS_DEVICE_LOOPBACK),
+    );
+    constants.insert(
+        "BASS_DEVICE_DEFAULTCOM".into(),
+        json!(raw::BASS_DEVICE_DEFAULTCOM),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_MASK".into(),
+        json!(raw::BASS_DEVICE_TYPE_MASK),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_NETWORK".into(),
+        json!(raw::BASS_DEVICE_TYPE_NETWORK),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_SPEAKERS".into(),
+        json!(raw::BASS_DEVICE_TYPE_SPEAKERS),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_LINE".into(),
+        json!(raw::BASS_DEVICE_TYPE_LINE),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_HEADPHONES".into(),
+        json!(raw::BASS_DEVICE_TYPE_HEADPHONES),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_MICROPHONE".into(),
+        json!(raw::BASS_DEVICE_TYPE_MICROPHONE),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_HEADSET".into(),
+        json!(raw::BASS_DEVICE_TYPE_HEADSET),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_HANDSET".into(),
+        json!(raw::BASS_DEVICE_TYPE_HANDSET),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_DIGITAL".into(),
+        json!(raw::BASS_DEVICE_TYPE_DIGITAL),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_SPDIF".into(),
+        json!(raw::BASS_DEVICE_TYPE_SPDIF),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_HDMI".into(),
+        json!(raw::BASS_DEVICE_TYPE_HDMI),
+    );
+    constants.insert(
+        "BASS_DEVICE_TYPE_DISPLAYPORT".into(),
+        json!(raw::BASS_DEVICE_TYPE_DISPLAYPORT),
+    );
     constants.insert("BASS_FILE_NAME".into(), json!(raw::BASS_FILE_NAME));
     constants.insert("BASS_FILE_MEM".into(), json!(raw::BASS_FILE_MEM));
     constants.insert("BASS_FILE_MEMCOPY".into(), json!(raw::BASS_FILE_MEMCOPY));
@@ -1616,9 +1987,18 @@ fn raw_catalog() -> Value {
     constants.insert("BASS_SAMPLE_LOOP".into(), json!(raw::BASS_SAMPLE_LOOP));
     constants.insert("BASS_SAMPLE_FLOAT".into(), json!(raw::BASS_SAMPLE_FLOAT));
     constants.insert("BASS_SAMPLE_FX".into(), json!(raw::BASS_SAMPLE_FX));
-    constants.insert("BASS_STREAM_PRESCAN".into(), json!(raw::BASS_STREAM_PRESCAN));
-    constants.insert("BASS_STREAM_AUTOFREE".into(), json!(raw::BASS_STREAM_AUTOFREE));
-    constants.insert("BASS_STREAM_RESTRATE".into(), json!(raw::BASS_STREAM_RESTRATE));
+    constants.insert(
+        "BASS_STREAM_PRESCAN".into(),
+        json!(raw::BASS_STREAM_PRESCAN),
+    );
+    constants.insert(
+        "BASS_STREAM_AUTOFREE".into(),
+        json!(raw::BASS_STREAM_AUTOFREE),
+    );
+    constants.insert(
+        "BASS_STREAM_RESTRATE".into(),
+        json!(raw::BASS_STREAM_RESTRATE),
+    );
     constants.insert("BASS_STREAM_BLOCK".into(), json!(raw::BASS_STREAM_BLOCK));
     constants.insert("BASS_STREAM_DECODE".into(), json!(raw::BASS_STREAM_DECODE));
     constants.insert("BASS_STREAM_STATUS".into(), json!(raw::BASS_STREAM_STATUS));
@@ -1629,56 +2009,128 @@ fn raw_catalog() -> Value {
     constants.insert("BASS_MUSIC_PRESCAN".into(), json!(raw::BASS_MUSIC_PRESCAN));
     constants.insert("BASS_MUSIC_RAMP".into(), json!(raw::BASS_MUSIC_RAMP));
     constants.insert("BASS_MUSIC_RAMPS".into(), json!(raw::BASS_MUSIC_RAMPS));
-    constants.insert("BASS_MUSIC_SURROUND".into(), json!(raw::BASS_MUSIC_SURROUND));
-    constants.insert("BASS_MUSIC_SURROUND2".into(), json!(raw::BASS_MUSIC_SURROUND2));
-    constants.insert("BASS_MUSIC_SINCINTER".into(), json!(raw::BASS_MUSIC_SINCINTER));
-    constants.insert("BASS_MUSIC_AUTOFREE".into(), json!(raw::BASS_MUSIC_AUTOFREE));
+    constants.insert(
+        "BASS_MUSIC_SURROUND".into(),
+        json!(raw::BASS_MUSIC_SURROUND),
+    );
+    constants.insert(
+        "BASS_MUSIC_SURROUND2".into(),
+        json!(raw::BASS_MUSIC_SURROUND2),
+    );
+    constants.insert(
+        "BASS_MUSIC_SINCINTER".into(),
+        json!(raw::BASS_MUSIC_SINCINTER),
+    );
+    constants.insert(
+        "BASS_MUSIC_AUTOFREE".into(),
+        json!(raw::BASS_MUSIC_AUTOFREE),
+    );
     constants.insert("BASS_UNICODE".into(), json!(raw::BASS_UNICODE));
     constants.insert("BASS_FX_FREESOURCE".into(), json!(raw::BASS_FX_FREESOURCE));
-    constants.insert("BASS_FILEPOS_CURRENT".into(), json!(raw::BASS_FILEPOS_CURRENT));
-    constants.insert("BASS_FILEPOS_DOWNLOAD".into(), json!(raw::BASS_FILEPOS_DOWNLOAD));
+    constants.insert(
+        "BASS_FILEPOS_CURRENT".into(),
+        json!(raw::BASS_FILEPOS_CURRENT),
+    );
+    constants.insert(
+        "BASS_FILEPOS_DOWNLOAD".into(),
+        json!(raw::BASS_FILEPOS_DOWNLOAD),
+    );
     constants.insert("BASS_FILEPOS_END".into(), json!(raw::BASS_FILEPOS_END));
     constants.insert("BASS_FILEPOS_START".into(), json!(raw::BASS_FILEPOS_START));
-    constants.insert("BASS_FILEPOS_CONNECTED".into(), json!(raw::BASS_FILEPOS_CONNECTED));
-    constants.insert("BASS_FILEPOS_BUFFER".into(), json!(raw::BASS_FILEPOS_BUFFER));
-    constants.insert("BASS_FILEPOS_SOCKET".into(), json!(raw::BASS_FILEPOS_SOCKET));
-    constants.insert("BASS_FILEPOS_ASYNCBUF".into(), json!(raw::BASS_FILEPOS_ASYNCBUF));
+    constants.insert(
+        "BASS_FILEPOS_CONNECTED".into(),
+        json!(raw::BASS_FILEPOS_CONNECTED),
+    );
+    constants.insert(
+        "BASS_FILEPOS_BUFFER".into(),
+        json!(raw::BASS_FILEPOS_BUFFER),
+    );
+    constants.insert(
+        "BASS_FILEPOS_SOCKET".into(),
+        json!(raw::BASS_FILEPOS_SOCKET),
+    );
+    constants.insert(
+        "BASS_FILEPOS_ASYNCBUF".into(),
+        json!(raw::BASS_FILEPOS_ASYNCBUF),
+    );
     constants.insert("BASS_FILEPOS_SIZE".into(), json!(raw::BASS_FILEPOS_SIZE));
-    constants.insert("BASS_FILEPOS_BUFFERING".into(), json!(raw::BASS_FILEPOS_BUFFERING));
-    constants.insert("BASS_FILEPOS_AVAILABLE".into(), json!(raw::BASS_FILEPOS_AVAILABLE));
+    constants.insert(
+        "BASS_FILEPOS_BUFFERING".into(),
+        json!(raw::BASS_FILEPOS_BUFFERING),
+    );
+    constants.insert(
+        "BASS_FILEPOS_AVAILABLE".into(),
+        json!(raw::BASS_FILEPOS_AVAILABLE),
+    );
     constants.insert("BASS_SYNC_POS".into(), json!(raw::BASS_SYNC_POS));
     constants.insert("BASS_SYNC_END".into(), json!(raw::BASS_SYNC_END));
     constants.insert("BASS_SYNC_META".into(), json!(raw::BASS_SYNC_META));
     constants.insert("BASS_SYNC_STALL".into(), json!(raw::BASS_SYNC_STALL));
     constants.insert("BASS_SYNC_DOWNLOAD".into(), json!(raw::BASS_SYNC_DOWNLOAD));
     constants.insert("BASS_SYNC_FREE".into(), json!(raw::BASS_SYNC_FREE));
-    constants.insert("BASS_SYNC_OGG_CHANGE".into(), json!(raw::BASS_SYNC_OGG_CHANGE));
+    constants.insert(
+        "BASS_SYNC_OGG_CHANGE".into(),
+        json!(raw::BASS_SYNC_OGG_CHANGE),
+    );
     constants.insert("BASS_SYNC_THREAD".into(), json!(raw::BASS_SYNC_THREAD));
     constants.insert("BASS_SYNC_MIXTIME".into(), json!(raw::BASS_SYNC_MIXTIME));
     constants.insert("BASS_SYNC_ONETIME".into(), json!(raw::BASS_SYNC_ONETIME));
-    constants.insert("BASS_ACTIVE_STOPPED".into(), json!(raw::BASS_ACTIVE_STOPPED));
-    constants.insert("BASS_ACTIVE_PLAYING".into(), json!(raw::BASS_ACTIVE_PLAYING));
-    constants.insert("BASS_ACTIVE_STALLED".into(), json!(raw::BASS_ACTIVE_STALLED));
+    constants.insert(
+        "BASS_ACTIVE_STOPPED".into(),
+        json!(raw::BASS_ACTIVE_STOPPED),
+    );
+    constants.insert(
+        "BASS_ACTIVE_PLAYING".into(),
+        json!(raw::BASS_ACTIVE_PLAYING),
+    );
+    constants.insert(
+        "BASS_ACTIVE_STALLED".into(),
+        json!(raw::BASS_ACTIVE_STALLED),
+    );
     constants.insert("BASS_ACTIVE_PAUSED".into(), json!(raw::BASS_ACTIVE_PAUSED));
-    constants.insert("BASS_ACTIVE_PAUSED_DEVICE".into(), json!(raw::BASS_ACTIVE_PAUSED_DEVICE));
+    constants.insert(
+        "BASS_ACTIVE_PAUSED_DEVICE".into(),
+        json!(raw::BASS_ACTIVE_PAUSED_DEVICE),
+    );
     constants.insert("BASS_ATTRIB_FREQ".into(), json!(raw::BASS_ATTRIB_FREQ));
     constants.insert("BASS_ATTRIB_VOL".into(), json!(raw::BASS_ATTRIB_VOL));
     constants.insert("BASS_ATTRIB_PAN".into(), json!(raw::BASS_ATTRIB_PAN));
     constants.insert("BASS_ATTRIB_BUFFER".into(), json!(raw::BASS_ATTRIB_BUFFER));
-    constants.insert("BASS_ATTRIB_DOWNLOADPROC".into(), json!(raw::BASS_ATTRIB_DOWNLOADPROC));
-    constants.insert("BASS_ATTRIB_DOWNMIX".into(), json!(raw::BASS_ATTRIB_DOWNMIX));
+    constants.insert(
+        "BASS_ATTRIB_DOWNLOADPROC".into(),
+        json!(raw::BASS_ATTRIB_DOWNLOADPROC),
+    );
+    constants.insert(
+        "BASS_ATTRIB_DOWNMIX".into(),
+        json!(raw::BASS_ATTRIB_DOWNMIX),
+    );
     constants.insert("BASS_ATTRIB_TEMPO".into(), json!(raw::BASS_ATTRIB_TEMPO));
-    constants.insert("BASS_ATTRIB_TEMPO_PITCH".into(), json!(raw::BASS_ATTRIB_TEMPO_PITCH));
-    constants.insert("BASS_ATTRIB_TEMPO_FREQ".into(), json!(raw::BASS_ATTRIB_TEMPO_FREQ));
-    constants.insert("BASS_ATTRIB_REVERSE_DIR".into(), json!(raw::BASS_ATTRIB_REVERSE_DIR));
+    constants.insert(
+        "BASS_ATTRIB_TEMPO_PITCH".into(),
+        json!(raw::BASS_ATTRIB_TEMPO_PITCH),
+    );
+    constants.insert(
+        "BASS_ATTRIB_TEMPO_FREQ".into(),
+        json!(raw::BASS_ATTRIB_TEMPO_FREQ),
+    );
+    constants.insert(
+        "BASS_ATTRIB_REVERSE_DIR".into(),
+        json!(raw::BASS_ATTRIB_REVERSE_DIR),
+    );
     constants.insert("BASS_POS_BYTE".into(), json!(raw::BASS_POS_BYTE));
-    constants.insert("BASS_POS_MUSIC_ORDER".into(), json!(raw::BASS_POS_MUSIC_ORDER));
+    constants.insert(
+        "BASS_POS_MUSIC_ORDER".into(),
+        json!(raw::BASS_POS_MUSIC_ORDER),
+    );
     constants.insert("BASS_POS_DSP".into(), json!(raw::BASS_POS_DSP));
     constants.insert("BASS_POS_FLUSH".into(), json!(raw::BASS_POS_FLUSH));
     constants.insert("BASS_POS_RELATIVE".into(), json!(raw::BASS_POS_RELATIVE));
     constants.insert("BASS_POS_INEXACT".into(), json!(raw::BASS_POS_INEXACT));
     constants.insert("BASS_POS_DECODE".into(), json!(raw::BASS_POS_DECODE));
-    constants.insert("BASS_DATA_AVAILABLE".into(), json!(raw::BASS_DATA_AVAILABLE));
+    constants.insert(
+        "BASS_DATA_AVAILABLE".into(),
+        json!(raw::BASS_DATA_AVAILABLE),
+    );
     constants.insert("BASS_DATA_FLOAT".into(), json!(raw::BASS_DATA_FLOAT));
     constants.insert("BASS_DATA_FFT256".into(), json!(raw::BASS_DATA_FFT256));
     constants.insert("BASS_DATA_FFT512".into(), json!(raw::BASS_DATA_FFT512));
@@ -1686,11 +2138,26 @@ fn raw_catalog() -> Value {
     constants.insert("BASS_DATA_FFT2048".into(), json!(raw::BASS_DATA_FFT2048));
     constants.insert("BASS_DATA_FFT4096".into(), json!(raw::BASS_DATA_FFT4096));
     constants.insert("BASS_DATA_FFT8192".into(), json!(raw::BASS_DATA_FFT8192));
-    constants.insert("BASS_DATA_FFT_INDIVIDUAL".into(), json!(raw::BASS_DATA_FFT_INDIVIDUAL));
-    constants.insert("BASS_DATA_FFT_NOWINDOW".into(), json!(raw::BASS_DATA_FFT_NOWINDOW));
-    constants.insert("BASS_DATA_FFT_REMOVEDC".into(), json!(raw::BASS_DATA_FFT_REMOVEDC));
-    constants.insert("BASS_DATA_FFT_COMPLEX".into(), json!(raw::BASS_DATA_FFT_COMPLEX));
-    constants.insert("BASS_DATA_FFT_NYQUIST".into(), json!(raw::BASS_DATA_FFT_NYQUIST));
+    constants.insert(
+        "BASS_DATA_FFT_INDIVIDUAL".into(),
+        json!(raw::BASS_DATA_FFT_INDIVIDUAL),
+    );
+    constants.insert(
+        "BASS_DATA_FFT_NOWINDOW".into(),
+        json!(raw::BASS_DATA_FFT_NOWINDOW),
+    );
+    constants.insert(
+        "BASS_DATA_FFT_REMOVEDC".into(),
+        json!(raw::BASS_DATA_FFT_REMOVEDC),
+    );
+    constants.insert(
+        "BASS_DATA_FFT_COMPLEX".into(),
+        json!(raw::BASS_DATA_FFT_COMPLEX),
+    );
+    constants.insert(
+        "BASS_DATA_FFT_NYQUIST".into(),
+        json!(raw::BASS_DATA_FFT_NYQUIST),
+    );
     constants.insert("BASS_LEVEL_MONO".into(), json!(raw::BASS_LEVEL_MONO));
     constants.insert("BASS_LEVEL_STEREO".into(), json!(raw::BASS_LEVEL_STEREO));
     constants.insert("BASS_LEVEL_RMS".into(), json!(raw::BASS_LEVEL_RMS));
@@ -1711,38 +2178,77 @@ fn raw_catalog() -> Value {
     constants.insert("BASS_DSP_FREECALL".into(), json!(raw::BASS_DSP_FREECALL));
     constants.insert("BASS_DSP_BYPASS".into(), json!(raw::BASS_DSP_BYPASS));
     constants.insert("BASS_FX_DX8_CHORUS".into(), json!(raw::BASS_FX_DX8_CHORUS));
-    constants.insert("BASS_FX_DX8_COMPRESSOR".into(), json!(raw::BASS_FX_DX8_COMPRESSOR));
-    constants.insert("BASS_FX_DX8_DISTORTION".into(), json!(raw::BASS_FX_DX8_DISTORTION));
+    constants.insert(
+        "BASS_FX_DX8_COMPRESSOR".into(),
+        json!(raw::BASS_FX_DX8_COMPRESSOR),
+    );
+    constants.insert(
+        "BASS_FX_DX8_DISTORTION".into(),
+        json!(raw::BASS_FX_DX8_DISTORTION),
+    );
     constants.insert("BASS_FX_DX8_ECHO".into(), json!(raw::BASS_FX_DX8_ECHO));
-    constants.insert("BASS_FX_DX8_FLANGER".into(), json!(raw::BASS_FX_DX8_FLANGER));
+    constants.insert(
+        "BASS_FX_DX8_FLANGER".into(),
+        json!(raw::BASS_FX_DX8_FLANGER),
+    );
     constants.insert("BASS_FX_DX8_GARGLE".into(), json!(raw::BASS_FX_DX8_GARGLE));
-    constants.insert("BASS_FX_DX8_I3DL2REVERB".into(), json!(raw::BASS_FX_DX8_I3DL2REVERB));
-    constants.insert("BASS_FX_DX8_PARAMEQ".into(), json!(raw::BASS_FX_DX8_PARAMEQ));
+    constants.insert(
+        "BASS_FX_DX8_I3DL2REVERB".into(),
+        json!(raw::BASS_FX_DX8_I3DL2REVERB),
+    );
+    constants.insert(
+        "BASS_FX_DX8_PARAMEQ".into(),
+        json!(raw::BASS_FX_DX8_PARAMEQ),
+    );
     constants.insert("BASS_FX_DX8_REVERB".into(), json!(raw::BASS_FX_DX8_REVERB));
     constants.insert("BASS_FX_VOLUME".into(), json!(raw::BASS_FX_VOLUME));
     constants.insert("BASS_FX_BFX_ROTATE".into(), json!(raw::BASS_FX_BFX_ROTATE));
     constants.insert("BASS_FX_BFX_ECHO".into(), json!(raw::BASS_FX_BFX_ECHO));
-    constants.insert("BASS_FX_BFX_FLANGER".into(), json!(raw::BASS_FX_BFX_FLANGER));
+    constants.insert(
+        "BASS_FX_BFX_FLANGER".into(),
+        json!(raw::BASS_FX_BFX_FLANGER),
+    );
     constants.insert("BASS_FX_BFX_VOLUME".into(), json!(raw::BASS_FX_BFX_VOLUME));
     constants.insert("BASS_FX_BFX_PEAKEQ".into(), json!(raw::BASS_FX_BFX_PEAKEQ));
     constants.insert("BASS_FX_BFX_REVERB".into(), json!(raw::BASS_FX_BFX_REVERB));
     constants.insert("BASS_FX_BFX_LPF".into(), json!(raw::BASS_FX_BFX_LPF));
     constants.insert("BASS_FX_BFX_MIX".into(), json!(raw::BASS_FX_BFX_MIX));
     constants.insert("BASS_FX_BFX_DAMP".into(), json!(raw::BASS_FX_BFX_DAMP));
-    constants.insert("BASS_FX_BFX_AUTOWAH".into(), json!(raw::BASS_FX_BFX_AUTOWAH));
+    constants.insert(
+        "BASS_FX_BFX_AUTOWAH".into(),
+        json!(raw::BASS_FX_BFX_AUTOWAH),
+    );
     constants.insert("BASS_FX_BFX_ECHO2".into(), json!(raw::BASS_FX_BFX_ECHO2));
     constants.insert("BASS_FX_BFX_PHASER".into(), json!(raw::BASS_FX_BFX_PHASER));
     constants.insert("BASS_FX_BFX_ECHO3".into(), json!(raw::BASS_FX_BFX_ECHO3));
     constants.insert("BASS_FX_BFX_CHORUS".into(), json!(raw::BASS_FX_BFX_CHORUS));
     constants.insert("BASS_FX_BFX_APF".into(), json!(raw::BASS_FX_BFX_APF));
-    constants.insert("BASS_FX_BFX_COMPRESSOR".into(), json!(raw::BASS_FX_BFX_COMPRESSOR));
-    constants.insert("BASS_FX_BFX_DISTORTION".into(), json!(raw::BASS_FX_BFX_DISTORTION));
-    constants.insert("BASS_FX_BFX_COMPRESSOR2".into(), json!(raw::BASS_FX_BFX_COMPRESSOR2));
-    constants.insert("BASS_FX_BFX_VOLUME_ENV".into(), json!(raw::BASS_FX_BFX_VOLUME_ENV));
+    constants.insert(
+        "BASS_FX_BFX_COMPRESSOR".into(),
+        json!(raw::BASS_FX_BFX_COMPRESSOR),
+    );
+    constants.insert(
+        "BASS_FX_BFX_DISTORTION".into(),
+        json!(raw::BASS_FX_BFX_DISTORTION),
+    );
+    constants.insert(
+        "BASS_FX_BFX_COMPRESSOR2".into(),
+        json!(raw::BASS_FX_BFX_COMPRESSOR2),
+    );
+    constants.insert(
+        "BASS_FX_BFX_VOLUME_ENV".into(),
+        json!(raw::BASS_FX_BFX_VOLUME_ENV),
+    );
     constants.insert("BASS_FX_BFX_BQF".into(), json!(raw::BASS_FX_BFX_BQF));
     constants.insert("BASS_FX_BFX_ECHO4".into(), json!(raw::BASS_FX_BFX_ECHO4));
-    constants.insert("BASS_FX_BFX_PITCHSHIFT".into(), json!(raw::BASS_FX_BFX_PITCHSHIFT));
-    constants.insert("BASS_FX_BFX_FREEVERB".into(), json!(raw::BASS_FX_BFX_FREEVERB));
+    constants.insert(
+        "BASS_FX_BFX_PITCHSHIFT".into(),
+        json!(raw::BASS_FX_BFX_PITCHSHIFT),
+    );
+    constants.insert(
+        "BASS_FX_BFX_FREEVERB".into(),
+        json!(raw::BASS_FX_BFX_FREEVERB),
+    );
     constants.insert("BASS_BFX_CHANALL".into(), json!(raw::BASS_BFX_CHANALL));
     constants.insert("BASS_BFX_CHANNONE".into(), json!(raw::BASS_BFX_CHANNONE));
     constants.insert("BASS_BFX_CHAN1".into(), json!(raw::BASS_BFX_CHAN1));
@@ -1753,20 +2259,59 @@ fn raw_catalog() -> Value {
     constants.insert("BASS_BFX_CHAN6".into(), json!(raw::BASS_BFX_CHAN6));
     constants.insert("BASS_BFX_CHAN7".into(), json!(raw::BASS_BFX_CHAN7));
     constants.insert("BASS_BFX_CHAN8".into(), json!(raw::BASS_BFX_CHAN8));
-    constants.insert("BASS_BFX_BQF_LOWPASS".into(), json!(raw::BASS_BFX_BQF_LOWPASS));
-    constants.insert("BASS_BFX_BQF_HIGHPASS".into(), json!(raw::BASS_BFX_BQF_HIGHPASS));
-    constants.insert("BASS_BFX_BQF_BANDPASS".into(), json!(raw::BASS_BFX_BQF_BANDPASS));
-    constants.insert("BASS_BFX_BQF_BANDPASS_Q".into(), json!(raw::BASS_BFX_BQF_BANDPASS_Q));
+    constants.insert(
+        "BASS_BFX_BQF_LOWPASS".into(),
+        json!(raw::BASS_BFX_BQF_LOWPASS),
+    );
+    constants.insert(
+        "BASS_BFX_BQF_HIGHPASS".into(),
+        json!(raw::BASS_BFX_BQF_HIGHPASS),
+    );
+    constants.insert(
+        "BASS_BFX_BQF_BANDPASS".into(),
+        json!(raw::BASS_BFX_BQF_BANDPASS),
+    );
+    constants.insert(
+        "BASS_BFX_BQF_BANDPASS_Q".into(),
+        json!(raw::BASS_BFX_BQF_BANDPASS_Q),
+    );
     constants.insert("BASS_BFX_BQF_NOTCH".into(), json!(raw::BASS_BFX_BQF_NOTCH));
-    constants.insert("BASS_BFX_BQF_ALLPASS".into(), json!(raw::BASS_BFX_BQF_ALLPASS));
-    constants.insert("BASS_BFX_BQF_PEAKINGEQ".into(), json!(raw::BASS_BFX_BQF_PEAKINGEQ));
-    constants.insert("BASS_BFX_BQF_LOWSHELF".into(), json!(raw::BASS_BFX_BQF_LOWSHELF));
-    constants.insert("BASS_BFX_BQF_HIGHSHELF".into(), json!(raw::BASS_BFX_BQF_HIGHSHELF));
-    constants.insert("BASS_FX_TEMPO_ALGO_LINEAR".into(), json!(raw::BASS_FX_TEMPO_ALGO_LINEAR));
-    constants.insert("BASS_FX_TEMPO_ALGO_CUBIC".into(), json!(raw::BASS_FX_TEMPO_ALGO_CUBIC));
-    constants.insert("BASS_FX_TEMPO_ALGO_SHANNON".into(), json!(raw::BASS_FX_TEMPO_ALGO_SHANNON));
-    constants.insert("BASS_FX_RVS_REVERSE".into(), json!(raw::BASS_FX_RVS_REVERSE));
-    constants.insert("BASS_FX_RVS_FORWARD".into(), json!(raw::BASS_FX_RVS_FORWARD));
+    constants.insert(
+        "BASS_BFX_BQF_ALLPASS".into(),
+        json!(raw::BASS_BFX_BQF_ALLPASS),
+    );
+    constants.insert(
+        "BASS_BFX_BQF_PEAKINGEQ".into(),
+        json!(raw::BASS_BFX_BQF_PEAKINGEQ),
+    );
+    constants.insert(
+        "BASS_BFX_BQF_LOWSHELF".into(),
+        json!(raw::BASS_BFX_BQF_LOWSHELF),
+    );
+    constants.insert(
+        "BASS_BFX_BQF_HIGHSHELF".into(),
+        json!(raw::BASS_BFX_BQF_HIGHSHELF),
+    );
+    constants.insert(
+        "BASS_FX_TEMPO_ALGO_LINEAR".into(),
+        json!(raw::BASS_FX_TEMPO_ALGO_LINEAR),
+    );
+    constants.insert(
+        "BASS_FX_TEMPO_ALGO_CUBIC".into(),
+        json!(raw::BASS_FX_TEMPO_ALGO_CUBIC),
+    );
+    constants.insert(
+        "BASS_FX_TEMPO_ALGO_SHANNON".into(),
+        json!(raw::BASS_FX_TEMPO_ALGO_SHANNON),
+    );
+    constants.insert(
+        "BASS_FX_RVS_REVERSE".into(),
+        json!(raw::BASS_FX_RVS_REVERSE),
+    );
+    constants.insert(
+        "BASS_FX_RVS_FORWARD".into(),
+        json!(raw::BASS_FX_RVS_FORWARD),
+    );
     json!({
         "bassApiVersion": bass_rs::BASS_API_VERSION,
         "bassFxApiVersion": bass_rs::BASS_FX_API_VERSION,
@@ -1778,166 +2323,515 @@ fn raw_catalog() -> Value {
 fn set_effect_parameters(effect: &Effect, kind: EffectKind, value: &Value) -> bass_rs::Result<()> {
     match kind {
         EffectKind::Dx8(raw::BASS_FX_DX8_PARAMEQ) => {
-            effect.set_parameters(&raw::BASS_DX8_PARAMEQ { fCenter: number(value, "fCenter")?, fBandwidth: number(value, "fBandwidth")?, fGain: number(value, "fGain")? })
+            effect.set_parameters(&raw::BASS_DX8_PARAMEQ {
+                fCenter: number(value, "fCenter")?,
+                fBandwidth: number(value, "fBandwidth")?,
+                fGain: number(value, "fGain")?,
+            })
         }
-        EffectKind::Dx8(raw::BASS_FX_DX8_CHORUS) => {
-            effect.set_parameters(&raw::BASS_DX8_CHORUS { fWetDryMix: number(value, "fWetDryMix")?, fDepth: number(value, "fDepth")?, fFeedback: number(value, "fFeedback")?, fFrequency: number(value, "fFrequency")?, lWaveform: unsigned(value, "lWaveform")?, fDelay: number(value, "fDelay")?, lPhase: unsigned(value, "lPhase")? })
-        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_CHORUS) => effect.set_parameters(&raw::BASS_DX8_CHORUS {
+            fWetDryMix: number(value, "fWetDryMix")?,
+            fDepth: number(value, "fDepth")?,
+            fFeedback: number(value, "fFeedback")?,
+            fFrequency: number(value, "fFrequency")?,
+            lWaveform: unsigned(value, "lWaveform")?,
+            fDelay: number(value, "fDelay")?,
+            lPhase: unsigned(value, "lPhase")?,
+        }),
         EffectKind::Dx8(raw::BASS_FX_DX8_COMPRESSOR) => {
-            effect.set_parameters(&raw::BASS_DX8_COMPRESSOR { fGain: number(value, "fGain")?, fAttack: number(value, "fAttack")?, fRelease: number(value, "fRelease")?, fThreshold: number(value, "fThreshold")?, fRatio: number(value, "fRatio")?, fPredelay: number(value, "fPredelay")? })
+            effect.set_parameters(&raw::BASS_DX8_COMPRESSOR {
+                fGain: number(value, "fGain")?,
+                fAttack: number(value, "fAttack")?,
+                fRelease: number(value, "fRelease")?,
+                fThreshold: number(value, "fThreshold")?,
+                fRatio: number(value, "fRatio")?,
+                fPredelay: number(value, "fPredelay")?,
+            })
         }
         EffectKind::Dx8(raw::BASS_FX_DX8_DISTORTION) => {
-            effect.set_parameters(&raw::BASS_DX8_DISTORTION { fGain: number(value, "fGain")?, fEdge: number(value, "fEdge")?, fPostEQCenterFrequency: number(value, "fPostEQCenterFrequency")?, fPostEQBandwidth: number(value, "fPostEQBandwidth")?, fPreLowpassCutoff: number(value, "fPreLowpassCutoff")? })
+            effect.set_parameters(&raw::BASS_DX8_DISTORTION {
+                fGain: number(value, "fGain")?,
+                fEdge: number(value, "fEdge")?,
+                fPostEQCenterFrequency: number(value, "fPostEQCenterFrequency")?,
+                fPostEQBandwidth: number(value, "fPostEQBandwidth")?,
+                fPreLowpassCutoff: number(value, "fPreLowpassCutoff")?,
+            })
         }
-        EffectKind::Dx8(raw::BASS_FX_DX8_ECHO) => {
-            effect.set_parameters(&raw::BASS_DX8_ECHO { fWetDryMix: number(value, "fWetDryMix")?, fFeedback: number(value, "fFeedback")?, fLeftDelay: number(value, "fLeftDelay")?, fRightDelay: number(value, "fRightDelay")?, lPanDelay: integer(value, "lPanDelay")? })
-        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_ECHO) => effect.set_parameters(&raw::BASS_DX8_ECHO {
+            fWetDryMix: number(value, "fWetDryMix")?,
+            fFeedback: number(value, "fFeedback")?,
+            fLeftDelay: number(value, "fLeftDelay")?,
+            fRightDelay: number(value, "fRightDelay")?,
+            lPanDelay: integer(value, "lPanDelay")?,
+        }),
         EffectKind::Dx8(raw::BASS_FX_DX8_FLANGER) => {
-            effect.set_parameters(&raw::BASS_DX8_FLANGER { fWetDryMix: number(value, "fWetDryMix")?, fDepth: number(value, "fDepth")?, fFeedback: number(value, "fFeedback")?, fFrequency: number(value, "fFrequency")?, lWaveform: unsigned(value, "lWaveform")?, fDelay: number(value, "fDelay")?, lPhase: unsigned(value, "lPhase")? })
+            effect.set_parameters(&raw::BASS_DX8_FLANGER {
+                fWetDryMix: number(value, "fWetDryMix")?,
+                fDepth: number(value, "fDepth")?,
+                fFeedback: number(value, "fFeedback")?,
+                fFrequency: number(value, "fFrequency")?,
+                lWaveform: unsigned(value, "lWaveform")?,
+                fDelay: number(value, "fDelay")?,
+                lPhase: unsigned(value, "lPhase")?,
+            })
         }
-        EffectKind::Dx8(raw::BASS_FX_DX8_GARGLE) => {
-            effect.set_parameters(&raw::BASS_DX8_GARGLE { dwRateHz: unsigned(value, "dwRateHz")?, dwWaveShape: unsigned(value, "dwWaveShape")? })
-        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_GARGLE) => effect.set_parameters(&raw::BASS_DX8_GARGLE {
+            dwRateHz: unsigned(value, "dwRateHz")?,
+            dwWaveShape: unsigned(value, "dwWaveShape")?,
+        }),
         EffectKind::Dx8(raw::BASS_FX_DX8_I3DL2REVERB) => {
-            effect.set_parameters(&raw::BASS_DX8_I3DL2REVERB { lRoom: integer(value, "lRoom")?, lRoomHF: integer(value, "lRoomHF")?, flRoomRolloffFactor: number(value, "flRoomRolloffFactor")?, flDecayTime: number(value, "flDecayTime")?, flDecayHFRatio: number(value, "flDecayHFRatio")?, lReflections: integer(value, "lReflections")?, flReflectionsDelay: number(value, "flReflectionsDelay")?, lReverb: integer(value, "lReverb")?, flReverbDelay: number(value, "flReverbDelay")?, flDiffusion: number(value, "flDiffusion")?, flDensity: number(value, "flDensity")?, flHFReference: number(value, "flHFReference")? })
+            effect.set_parameters(&raw::BASS_DX8_I3DL2REVERB {
+                lRoom: integer(value, "lRoom")?,
+                lRoomHF: integer(value, "lRoomHF")?,
+                flRoomRolloffFactor: number(value, "flRoomRolloffFactor")?,
+                flDecayTime: number(value, "flDecayTime")?,
+                flDecayHFRatio: number(value, "flDecayHFRatio")?,
+                lReflections: integer(value, "lReflections")?,
+                flReflectionsDelay: number(value, "flReflectionsDelay")?,
+                lReverb: integer(value, "lReverb")?,
+                flReverbDelay: number(value, "flReverbDelay")?,
+                flDiffusion: number(value, "flDiffusion")?,
+                flDensity: number(value, "flDensity")?,
+                flHFReference: number(value, "flHFReference")?,
+            })
         }
-        EffectKind::Dx8(raw::BASS_FX_DX8_REVERB) => {
-            effect.set_parameters(&raw::BASS_DX8_REVERB { fInGain: number(value, "fInGain")?, fReverbMix: number(value, "fReverbMix")?, fReverbTime: number(value, "fReverbTime")?, fHighFreqRTRatio: number(value, "fHighFreqRTRatio")? })
-        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_REVERB) => effect.set_parameters(&raw::BASS_DX8_REVERB {
+            fInGain: number(value, "fInGain")?,
+            fReverbMix: number(value, "fReverbMix")?,
+            fReverbTime: number(value, "fReverbTime")?,
+            fHighFreqRTRatio: number(value, "fHighFreqRTRatio")?,
+        }),
         EffectKind::BassFx(BassFxEffect::Freeverb) => {
-            effect.set_parameters(&raw::BASS_BFX_FREEVERB { fDryMix: number(value, "fDryMix")?, fWetMix: number(value, "fWetMix")?, fRoomSize: number(value, "fRoomSize")?, fDamp: number(value, "fDamp")?, fWidth: number(value, "fWidth")?, lMode: unsigned(value, "lMode")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_FREEVERB {
+                fDryMix: number(value, "fDryMix")?,
+                fWetMix: number(value, "fWetMix")?,
+                fRoomSize: number(value, "fRoomSize")?,
+                fDamp: number(value, "fDamp")?,
+                fWidth: number(value, "fWidth")?,
+                lMode: unsigned(value, "lMode")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
-        EffectKind::BassFx(BassFxEffect::Rotate) => {
-            effect.set_parameters(&raw::BASS_BFX_ROTATE { fRate: number(value, "fRate")?, lChannel: integer(value, "lChannel")? })
-        }
-        EffectKind::BassFx(BassFxEffect::Echo) => {
-            effect.set_parameters(&raw::BASS_BFX_ECHO { fLevel: number(value, "fLevel")?, lDelay: integer(value, "lDelay")? })
-        }
+        EffectKind::BassFx(BassFxEffect::Rotate) => effect.set_parameters(&raw::BASS_BFX_ROTATE {
+            fRate: number(value, "fRate")?,
+            lChannel: integer(value, "lChannel")?,
+        }),
+        EffectKind::BassFx(BassFxEffect::Echo) => effect.set_parameters(&raw::BASS_BFX_ECHO {
+            fLevel: number(value, "fLevel")?,
+            lDelay: integer(value, "lDelay")?,
+        }),
         EffectKind::BassFx(BassFxEffect::Flanger) => {
-            effect.set_parameters(&raw::BASS_BFX_FLANGER { fWetDry: number(value, "fWetDry")?, fSpeed: number(value, "fSpeed")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_FLANGER {
+                fWetDry: number(value, "fWetDry")?,
+                fSpeed: number(value, "fSpeed")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
-        EffectKind::BassFx(BassFxEffect::Volume) => {
-            effect.set_parameters(&raw::BASS_BFX_VOLUME { lChannel: integer(value, "lChannel")?, fVolume: number(value, "fVolume")? })
-        }
-        EffectKind::BassFx(BassFxEffect::PeakEq) => {
-            effect.set_parameters(&raw::BASS_BFX_PEAKEQ { lBand: integer(value, "lBand")?, fBandwidth: number(value, "fBandwidth")?, fQ: number(value, "fQ")?, fCenter: number(value, "fCenter")?, fGain: number(value, "fGain")?, lChannel: integer(value, "lChannel")? })
-        }
-        EffectKind::BassFx(BassFxEffect::Reverb) => {
-            effect.set_parameters(&raw::BASS_BFX_REVERB { fLevel: number(value, "fLevel")?, lDelay: integer(value, "lDelay")? })
-        }
+        EffectKind::BassFx(BassFxEffect::Volume) => effect.set_parameters(&raw::BASS_BFX_VOLUME {
+            lChannel: integer(value, "lChannel")?,
+            fVolume: number(value, "fVolume")?,
+        }),
+        EffectKind::BassFx(BassFxEffect::PeakEq) => effect.set_parameters(&raw::BASS_BFX_PEAKEQ {
+            lBand: integer(value, "lBand")?,
+            fBandwidth: number(value, "fBandwidth")?,
+            fQ: number(value, "fQ")?,
+            fCenter: number(value, "fCenter")?,
+            fGain: number(value, "fGain")?,
+            lChannel: integer(value, "lChannel")?,
+        }),
+        EffectKind::BassFx(BassFxEffect::Reverb) => effect.set_parameters(&raw::BASS_BFX_REVERB {
+            fLevel: number(value, "fLevel")?,
+            lDelay: integer(value, "lDelay")?,
+        }),
         EffectKind::BassFx(BassFxEffect::LowPassFilter) => {
-            effect.set_parameters(&raw::BASS_BFX_LPF { fResonance: number(value, "fResonance")?, fCutOffFreq: number(value, "fCutOffFreq")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_LPF {
+                fResonance: number(value, "fResonance")?,
+                fCutOffFreq: number(value, "fCutOffFreq")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
         EffectKind::BassFx(BassFxEffect::Mix) => {
             let channels = integers(value, "lChannel")?;
-            let parameters = raw::BASS_BFX_MIX { lChannel: channels.as_ptr() };
+            let parameters = raw::BASS_BFX_MIX {
+                lChannel: channels.as_ptr(),
+            };
             effect.set_parameters(&parameters)
         }
-        EffectKind::BassFx(BassFxEffect::Damp) => {
-            effect.set_parameters(&raw::BASS_BFX_DAMP { fTarget: number(value, "fTarget")?, fQuiet: number(value, "fQuiet")?, fRate: number(value, "fRate")?, fGain: number(value, "fGain")?, fDelay: number(value, "fDelay")?, lChannel: integer(value, "lChannel")? })
-        }
+        EffectKind::BassFx(BassFxEffect::Damp) => effect.set_parameters(&raw::BASS_BFX_DAMP {
+            fTarget: number(value, "fTarget")?,
+            fQuiet: number(value, "fQuiet")?,
+            fRate: number(value, "fRate")?,
+            fGain: number(value, "fGain")?,
+            fDelay: number(value, "fDelay")?,
+            lChannel: integer(value, "lChannel")?,
+        }),
         EffectKind::BassFx(BassFxEffect::AutoWah) => {
-            effect.set_parameters(&raw::BASS_BFX_AUTOWAH { fDryMix: number(value, "fDryMix")?, fWetMix: number(value, "fWetMix")?, fFeedback: number(value, "fFeedback")?, fRate: number(value, "fRate")?, fRange: number(value, "fRange")?, fFreq: number(value, "fFreq")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_AUTOWAH {
+                fDryMix: number(value, "fDryMix")?,
+                fWetMix: number(value, "fWetMix")?,
+                fFeedback: number(value, "fFeedback")?,
+                fRate: number(value, "fRate")?,
+                fRange: number(value, "fRange")?,
+                fFreq: number(value, "fFreq")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
-        EffectKind::BassFx(BassFxEffect::Phaser) => {
-            effect.set_parameters(&raw::BASS_BFX_PHASER { fDryMix: number(value, "fDryMix")?, fWetMix: number(value, "fWetMix")?, fFeedback: number(value, "fFeedback")?, fRate: number(value, "fRate")?, fRange: number(value, "fRange")?, fFreq: number(value, "fFreq")?, lChannel: integer(value, "lChannel")? })
-        }
-        EffectKind::BassFx(BassFxEffect::Echo2) => {
-            effect.set_parameters(&raw::BASS_BFX_ECHO2 { fDryMix: number(value, "fDryMix")?, fWetMix: number(value, "fWetMix")?, fFeedback: number(value, "fFeedback")?, fDelay: number(value, "fDelay")?, lChannel: integer(value, "lChannel")? })
-        }
+        EffectKind::BassFx(BassFxEffect::Phaser) => effect.set_parameters(&raw::BASS_BFX_PHASER {
+            fDryMix: number(value, "fDryMix")?,
+            fWetMix: number(value, "fWetMix")?,
+            fFeedback: number(value, "fFeedback")?,
+            fRate: number(value, "fRate")?,
+            fRange: number(value, "fRange")?,
+            fFreq: number(value, "fFreq")?,
+            lChannel: integer(value, "lChannel")?,
+        }),
+        EffectKind::BassFx(BassFxEffect::Echo2) => effect.set_parameters(&raw::BASS_BFX_ECHO2 {
+            fDryMix: number(value, "fDryMix")?,
+            fWetMix: number(value, "fWetMix")?,
+            fFeedback: number(value, "fFeedback")?,
+            fDelay: number(value, "fDelay")?,
+            lChannel: integer(value, "lChannel")?,
+        }),
         EffectKind::BassFx(BassFxEffect::Compressor2) => {
-            effect.set_parameters(&raw::BASS_BFX_COMPRESSOR2 { fGain: number(value, "fGain")?, fThreshold: number(value, "fThreshold")?, fRatio: number(value, "fRatio")?, fAttack: number(value, "fAttack")?, fRelease: number(value, "fRelease")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_COMPRESSOR2 {
+                fGain: number(value, "fGain")?,
+                fThreshold: number(value, "fThreshold")?,
+                fRatio: number(value, "fRatio")?,
+                fAttack: number(value, "fAttack")?,
+                fRelease: number(value, "fRelease")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
-        EffectKind::BassFx(BassFxEffect::Echo3) => {
-            effect.set_parameters(&raw::BASS_BFX_ECHO3 { fDryMix: number(value, "fDryMix")?, fWetMix: number(value, "fWetMix")?, fDelay: number(value, "fDelay")?, lChannel: integer(value, "lChannel")? })
-        }
-        EffectKind::BassFx(BassFxEffect::Chorus) => {
-            effect.set_parameters(&raw::BASS_BFX_CHORUS { fDryMix: number(value, "fDryMix")?, fWetMix: number(value, "fWetMix")?, fFeedback: number(value, "fFeedback")?, fMinSweep: number(value, "fMinSweep")?, fMaxSweep: number(value, "fMaxSweep")?, fRate: number(value, "fRate")?, lChannel: integer(value, "lChannel")? })
-        }
+        EffectKind::BassFx(BassFxEffect::Echo3) => effect.set_parameters(&raw::BASS_BFX_ECHO3 {
+            fDryMix: number(value, "fDryMix")?,
+            fWetMix: number(value, "fWetMix")?,
+            fDelay: number(value, "fDelay")?,
+            lChannel: integer(value, "lChannel")?,
+        }),
+        EffectKind::BassFx(BassFxEffect::Chorus) => effect.set_parameters(&raw::BASS_BFX_CHORUS {
+            fDryMix: number(value, "fDryMix")?,
+            fWetMix: number(value, "fWetMix")?,
+            fFeedback: number(value, "fFeedback")?,
+            fMinSweep: number(value, "fMinSweep")?,
+            fMaxSweep: number(value, "fMaxSweep")?,
+            fRate: number(value, "fRate")?,
+            lChannel: integer(value, "lChannel")?,
+        }),
         EffectKind::BassFx(BassFxEffect::AllPassFilter) => {
-            effect.set_parameters(&raw::BASS_BFX_APF { fGain: number(value, "fGain")?, fDelay: number(value, "fDelay")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_APF {
+                fGain: number(value, "fGain")?,
+                fDelay: number(value, "fDelay")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
         EffectKind::BassFx(BassFxEffect::Compressor) => {
-            effect.set_parameters(&raw::BASS_BFX_COMPRESSOR { fThreshold: number(value, "fThreshold")?, fAttacktime: number(value, "fAttacktime")?, fReleasetime: number(value, "fReleasetime")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_COMPRESSOR {
+                fThreshold: number(value, "fThreshold")?,
+                fAttacktime: number(value, "fAttacktime")?,
+                fReleasetime: number(value, "fReleasetime")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
         EffectKind::BassFx(BassFxEffect::Distortion) => {
-            effect.set_parameters(&raw::BASS_BFX_DISTORTION { fDrive: number(value, "fDrive")?, fDryMix: number(value, "fDryMix")?, fWetMix: number(value, "fWetMix")?, fFeedback: number(value, "fFeedback")?, fVolume: number(value, "fVolume")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_DISTORTION {
+                fDrive: number(value, "fDrive")?,
+                fDryMix: number(value, "fDryMix")?,
+                fWetMix: number(value, "fWetMix")?,
+                fFeedback: number(value, "fFeedback")?,
+                fVolume: number(value, "fVolume")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
         EffectKind::BassFx(BassFxEffect::VolumeEnvelope) => {
             let nodes = env_nodes(value, "pNodes")?;
-            let parameters = raw::BASS_BFX_VOLUME_ENV { lChannel: integer(value, "lChannel")?, lNodeCount: integer(value, "lNodeCount")?, pNodes: nodes.as_ptr(), bFollow: integer(value, "bFollow")? };
+            let parameters = raw::BASS_BFX_VOLUME_ENV {
+                lChannel: integer(value, "lChannel")?,
+                lNodeCount: integer(value, "lNodeCount")?,
+                pNodes: nodes.as_ptr(),
+                bFollow: integer(value, "bFollow")?,
+            };
             effect.set_parameters(&parameters)
         }
         EffectKind::BassFx(BassFxEffect::BiquadFilter) => {
-            effect.set_parameters(&raw::BASS_BFX_BQF { lFilter: integer(value, "lFilter")?, fCenter: number(value, "fCenter")?, fGain: number(value, "fGain")?, fBandwidth: number(value, "fBandwidth")?, fQ: number(value, "fQ")?, fS: number(value, "fS")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_BQF {
+                lFilter: integer(value, "lFilter")?,
+                fCenter: number(value, "fCenter")?,
+                fGain: number(value, "fGain")?,
+                fBandwidth: number(value, "fBandwidth")?,
+                fQ: number(value, "fQ")?,
+                fS: number(value, "fS")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
-        EffectKind::BassFx(BassFxEffect::Echo4) => {
-            effect.set_parameters(&raw::BASS_BFX_ECHO4 { fDryMix: number(value, "fDryMix")?, fWetMix: number(value, "fWetMix")?, fFeedback: number(value, "fFeedback")?, fDelay: number(value, "fDelay")?, bStereo: integer(value, "bStereo")?, lChannel: integer(value, "lChannel")? })
-        }
+        EffectKind::BassFx(BassFxEffect::Echo4) => effect.set_parameters(&raw::BASS_BFX_ECHO4 {
+            fDryMix: number(value, "fDryMix")?,
+            fWetMix: number(value, "fWetMix")?,
+            fFeedback: number(value, "fFeedback")?,
+            fDelay: number(value, "fDelay")?,
+            bStereo: integer(value, "bStereo")?,
+            lChannel: integer(value, "lChannel")?,
+        }),
         EffectKind::BassFx(BassFxEffect::PitchShift) => {
-            effect.set_parameters(&raw::BASS_BFX_PITCHSHIFT { fPitchShift: number(value, "fPitchShift")?, fSemitones: number(value, "fSemitones")?, lFFTsize: integer(value, "lFFTsize")?, lOsamp: integer(value, "lOsamp")?, lChannel: integer(value, "lChannel")? })
+            effect.set_parameters(&raw::BASS_BFX_PITCHSHIFT {
+                fPitchShift: number(value, "fPitchShift")?,
+                fSemitones: number(value, "fSemitones")?,
+                lFFTsize: integer(value, "lFFTsize")?,
+                lOsamp: integer(value, "lOsamp")?,
+                lChannel: integer(value, "lChannel")?,
+            })
         }
-        EffectKind::Volume => {
-            effect.set_parameters(&raw::BASS_FX_VOLUME_PARAM { fTarget: number(value, "fTarget")?, fCurrent: number(value, "fCurrent")?, fTime: number(value, "fTime")?, lCurve: unsigned(value, "lCurve")? })
-        }
-        _ => Err(BassError::Unsupported { operation: "effect parameter mapping for this raw structure" }),
+        EffectKind::Volume => effect.set_parameters(&raw::BASS_FX_VOLUME_PARAM {
+            fTarget: number(value, "fTarget")?,
+            fCurrent: number(value, "fCurrent")?,
+            fTime: number(value, "fTime")?,
+            lCurve: unsigned(value, "lCurve")?,
+        }),
+        _ => Err(BassError::Unsupported {
+            operation: "effect parameter mapping for this raw structure",
+        }),
     }
 }
 
 fn get_effect_parameters(effect: &Effect, kind: EffectKind) -> bass_rs::Result<Value> {
     match kind {
-        EffectKind::Dx8(raw::BASS_FX_DX8_PARAMEQ) => { let p = effect.get_parameters::<raw::BASS_DX8_PARAMEQ>()?; Ok(json!({ "fCenter": p.fCenter, "fBandwidth": p.fBandwidth, "fGain": p.fGain })) }
-        EffectKind::Dx8(raw::BASS_FX_DX8_CHORUS) => { let p = effect.get_parameters::<raw::BASS_DX8_CHORUS>()?; Ok(json!({ "fWetDryMix": p.fWetDryMix, "fDepth": p.fDepth, "fFeedback": p.fFeedback, "fFrequency": p.fFrequency, "lWaveform": p.lWaveform, "fDelay": p.fDelay, "lPhase": p.lPhase })) }
-        EffectKind::Dx8(raw::BASS_FX_DX8_COMPRESSOR) => { let p = effect.get_parameters::<raw::BASS_DX8_COMPRESSOR>()?; Ok(json!({ "fGain": p.fGain, "fAttack": p.fAttack, "fRelease": p.fRelease, "fThreshold": p.fThreshold, "fRatio": p.fRatio, "fPredelay": p.fPredelay })) }
-        EffectKind::Dx8(raw::BASS_FX_DX8_DISTORTION) => { let p = effect.get_parameters::<raw::BASS_DX8_DISTORTION>()?; Ok(json!({ "fGain": p.fGain, "fEdge": p.fEdge, "fPostEQCenterFrequency": p.fPostEQCenterFrequency, "fPostEQBandwidth": p.fPostEQBandwidth, "fPreLowpassCutoff": p.fPreLowpassCutoff })) }
-        EffectKind::Dx8(raw::BASS_FX_DX8_ECHO) => { let p = effect.get_parameters::<raw::BASS_DX8_ECHO>()?; Ok(json!({ "fWetDryMix": p.fWetDryMix, "fFeedback": p.fFeedback, "fLeftDelay": p.fLeftDelay, "fRightDelay": p.fRightDelay, "lPanDelay": p.lPanDelay })) }
-        EffectKind::Dx8(raw::BASS_FX_DX8_FLANGER) => { let p = effect.get_parameters::<raw::BASS_DX8_FLANGER>()?; Ok(json!({ "fWetDryMix": p.fWetDryMix, "fDepth": p.fDepth, "fFeedback": p.fFeedback, "fFrequency": p.fFrequency, "lWaveform": p.lWaveform, "fDelay": p.fDelay, "lPhase": p.lPhase })) }
-        EffectKind::Dx8(raw::BASS_FX_DX8_GARGLE) => { let p = effect.get_parameters::<raw::BASS_DX8_GARGLE>()?; Ok(json!({ "dwRateHz": p.dwRateHz, "dwWaveShape": p.dwWaveShape })) }
-        EffectKind::Dx8(raw::BASS_FX_DX8_I3DL2REVERB) => { let p = effect.get_parameters::<raw::BASS_DX8_I3DL2REVERB>()?; Ok(json!({ "lRoom": p.lRoom, "lRoomHF": p.lRoomHF, "flRoomRolloffFactor": p.flRoomRolloffFactor, "flDecayTime": p.flDecayTime, "flDecayHFRatio": p.flDecayHFRatio, "lReflections": p.lReflections, "flReflectionsDelay": p.flReflectionsDelay, "lReverb": p.lReverb, "flReverbDelay": p.flReverbDelay, "flDiffusion": p.flDiffusion, "flDensity": p.flDensity, "flHFReference": p.flHFReference })) }
-        EffectKind::Dx8(raw::BASS_FX_DX8_REVERB) => { let p = effect.get_parameters::<raw::BASS_DX8_REVERB>()?; Ok(json!({ "fInGain": p.fInGain, "fReverbMix": p.fReverbMix, "fReverbTime": p.fReverbTime, "fHighFreqRTRatio": p.fHighFreqRTRatio })) }
-        EffectKind::BassFx(BassFxEffect::Rotate) => { let p = effect.get_parameters::<raw::BASS_BFX_ROTATE>()?; Ok(json!({ "fRate": p.fRate, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Echo) => { let p = effect.get_parameters::<raw::BASS_BFX_ECHO>()?; Ok(json!({ "fLevel": p.fLevel, "lDelay": p.lDelay })) }
-        EffectKind::BassFx(BassFxEffect::Flanger) => { let p = effect.get_parameters::<raw::BASS_BFX_FLANGER>()?; Ok(json!({ "fWetDry": p.fWetDry, "fSpeed": p.fSpeed, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Volume) => { let p = effect.get_parameters::<raw::BASS_BFX_VOLUME>()?; Ok(json!({ "lChannel": p.lChannel, "fVolume": p.fVolume })) }
-        EffectKind::BassFx(BassFxEffect::PeakEq) => { let p = effect.get_parameters::<raw::BASS_BFX_PEAKEQ>()?; Ok(json!({ "lBand": p.lBand, "fBandwidth": p.fBandwidth, "fQ": p.fQ, "fCenter": p.fCenter, "fGain": p.fGain, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Reverb) => { let p = effect.get_parameters::<raw::BASS_BFX_REVERB>()?; Ok(json!({ "fLevel": p.fLevel, "lDelay": p.lDelay })) }
-        EffectKind::BassFx(BassFxEffect::LowPassFilter) => { let p = effect.get_parameters::<raw::BASS_BFX_LPF>()?; Ok(json!({ "fResonance": p.fResonance, "fCutOffFreq": p.fCutOffFreq, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Mix) => { let p = effect.get_parameters::<raw::BASS_BFX_MIX>()?; Ok(json!({ "lChannelPointer": p.lChannel as usize })) }
-        EffectKind::BassFx(BassFxEffect::Damp) => { let p = effect.get_parameters::<raw::BASS_BFX_DAMP>()?; Ok(json!({ "fTarget": p.fTarget, "fQuiet": p.fQuiet, "fRate": p.fRate, "fGain": p.fGain, "fDelay": p.fDelay, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::AutoWah) => { let p = effect.get_parameters::<raw::BASS_BFX_AUTOWAH>()?; Ok(json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fRate": p.fRate, "fRange": p.fRange, "fFreq": p.fFreq, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Freeverb) => { let p = effect.get_parameters::<raw::BASS_BFX_FREEVERB>()?; Ok(json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fRoomSize": p.fRoomSize, "fDamp": p.fDamp, "fWidth": p.fWidth, "lMode": p.lMode, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Phaser) => { let p = effect.get_parameters::<raw::BASS_BFX_PHASER>()?; Ok(json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fRate": p.fRate, "fRange": p.fRange, "fFreq": p.fFreq, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Echo2) => { let p = effect.get_parameters::<raw::BASS_BFX_ECHO2>()?; Ok(json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fDelay": p.fDelay, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Echo3) => { let p = effect.get_parameters::<raw::BASS_BFX_ECHO3>()?; Ok(json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fDelay": p.fDelay, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Chorus) => { let p = effect.get_parameters::<raw::BASS_BFX_CHORUS>()?; Ok(json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fMinSweep": p.fMinSweep, "fMaxSweep": p.fMaxSweep, "fRate": p.fRate, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::AllPassFilter) => { let p = effect.get_parameters::<raw::BASS_BFX_APF>()?; Ok(json!({ "fGain": p.fGain, "fDelay": p.fDelay, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Compressor) => { let p = effect.get_parameters::<raw::BASS_BFX_COMPRESSOR>()?; Ok(json!({ "fThreshold": p.fThreshold, "fAttacktime": p.fAttacktime, "fReleasetime": p.fReleasetime, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Distortion) => { let p = effect.get_parameters::<raw::BASS_BFX_DISTORTION>()?; Ok(json!({ "fDrive": p.fDrive, "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fVolume": p.fVolume, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Compressor2) => { let p = effect.get_parameters::<raw::BASS_BFX_COMPRESSOR2>()?; Ok(json!({ "fGain": p.fGain, "fThreshold": p.fThreshold, "fRatio": p.fRatio, "fAttack": p.fAttack, "fRelease": p.fRelease, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::VolumeEnvelope) => { let p = effect.get_parameters::<raw::BASS_BFX_VOLUME_ENV>()?; let nodes = if p.pNodes.is_null() || p.lNodeCount <= 0 { Vec::new() } else { unsafe { std::slice::from_raw_parts(p.pNodes, p.lNodeCount as usize) }.iter().map(|node| { let pos = unsafe { std::ptr::addr_of!(node.pos).read_unaligned() }; let val = unsafe { std::ptr::addr_of!(node.val).read_unaligned() }; json!({ "pos": pos, "val": val }) }).collect::<Vec<_>>() }; Ok(json!({ "lChannel": p.lChannel, "lNodeCount": p.lNodeCount, "pNodes": nodes, "bFollow": p.bFollow })) }
-        EffectKind::BassFx(BassFxEffect::BiquadFilter) => { let p = effect.get_parameters::<raw::BASS_BFX_BQF>()?; Ok(json!({ "lFilter": p.lFilter, "fCenter": p.fCenter, "fGain": p.fGain, "fBandwidth": p.fBandwidth, "fQ": p.fQ, "fS": p.fS, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::Echo4) => { let p = effect.get_parameters::<raw::BASS_BFX_ECHO4>()?; Ok(json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fDelay": p.fDelay, "bStereo": p.bStereo, "lChannel": p.lChannel })) }
-        EffectKind::BassFx(BassFxEffect::PitchShift) => { let p = effect.get_parameters::<raw::BASS_BFX_PITCHSHIFT>()?; Ok(json!({ "fPitchShift": p.fPitchShift, "fSemitones": p.fSemitones, "lFFTsize": p.lFFTsize, "lOsamp": p.lOsamp, "lChannel": p.lChannel })) }
-        EffectKind::Volume => { let p = effect.get_parameters::<raw::BASS_FX_VOLUME_PARAM>()?; Ok(json!({ "fTarget": p.fTarget, "fCurrent": p.fCurrent, "fTime": p.fTime, "lCurve": p.lCurve })) }
-        _ => Err(BassError::Unsupported { operation: "effect parameter mapping for this raw structure" }),
+        EffectKind::Dx8(raw::BASS_FX_DX8_PARAMEQ) => {
+            let p = effect.get_parameters::<raw::BASS_DX8_PARAMEQ>()?;
+            Ok(json!({ "fCenter": p.fCenter, "fBandwidth": p.fBandwidth, "fGain": p.fGain }))
+        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_CHORUS) => {
+            let p = effect.get_parameters::<raw::BASS_DX8_CHORUS>()?;
+            Ok(
+                json!({ "fWetDryMix": p.fWetDryMix, "fDepth": p.fDepth, "fFeedback": p.fFeedback, "fFrequency": p.fFrequency, "lWaveform": p.lWaveform, "fDelay": p.fDelay, "lPhase": p.lPhase }),
+            )
+        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_COMPRESSOR) => {
+            let p = effect.get_parameters::<raw::BASS_DX8_COMPRESSOR>()?;
+            Ok(
+                json!({ "fGain": p.fGain, "fAttack": p.fAttack, "fRelease": p.fRelease, "fThreshold": p.fThreshold, "fRatio": p.fRatio, "fPredelay": p.fPredelay }),
+            )
+        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_DISTORTION) => {
+            let p = effect.get_parameters::<raw::BASS_DX8_DISTORTION>()?;
+            Ok(
+                json!({ "fGain": p.fGain, "fEdge": p.fEdge, "fPostEQCenterFrequency": p.fPostEQCenterFrequency, "fPostEQBandwidth": p.fPostEQBandwidth, "fPreLowpassCutoff": p.fPreLowpassCutoff }),
+            )
+        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_ECHO) => {
+            let p = effect.get_parameters::<raw::BASS_DX8_ECHO>()?;
+            Ok(
+                json!({ "fWetDryMix": p.fWetDryMix, "fFeedback": p.fFeedback, "fLeftDelay": p.fLeftDelay, "fRightDelay": p.fRightDelay, "lPanDelay": p.lPanDelay }),
+            )
+        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_FLANGER) => {
+            let p = effect.get_parameters::<raw::BASS_DX8_FLANGER>()?;
+            Ok(
+                json!({ "fWetDryMix": p.fWetDryMix, "fDepth": p.fDepth, "fFeedback": p.fFeedback, "fFrequency": p.fFrequency, "lWaveform": p.lWaveform, "fDelay": p.fDelay, "lPhase": p.lPhase }),
+            )
+        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_GARGLE) => {
+            let p = effect.get_parameters::<raw::BASS_DX8_GARGLE>()?;
+            Ok(json!({ "dwRateHz": p.dwRateHz, "dwWaveShape": p.dwWaveShape }))
+        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_I3DL2REVERB) => {
+            let p = effect.get_parameters::<raw::BASS_DX8_I3DL2REVERB>()?;
+            Ok(
+                json!({ "lRoom": p.lRoom, "lRoomHF": p.lRoomHF, "flRoomRolloffFactor": p.flRoomRolloffFactor, "flDecayTime": p.flDecayTime, "flDecayHFRatio": p.flDecayHFRatio, "lReflections": p.lReflections, "flReflectionsDelay": p.flReflectionsDelay, "lReverb": p.lReverb, "flReverbDelay": p.flReverbDelay, "flDiffusion": p.flDiffusion, "flDensity": p.flDensity, "flHFReference": p.flHFReference }),
+            )
+        }
+        EffectKind::Dx8(raw::BASS_FX_DX8_REVERB) => {
+            let p = effect.get_parameters::<raw::BASS_DX8_REVERB>()?;
+            Ok(
+                json!({ "fInGain": p.fInGain, "fReverbMix": p.fReverbMix, "fReverbTime": p.fReverbTime, "fHighFreqRTRatio": p.fHighFreqRTRatio }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Rotate) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_ROTATE>()?;
+            Ok(json!({ "fRate": p.fRate, "lChannel": p.lChannel }))
+        }
+        EffectKind::BassFx(BassFxEffect::Echo) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_ECHO>()?;
+            Ok(json!({ "fLevel": p.fLevel, "lDelay": p.lDelay }))
+        }
+        EffectKind::BassFx(BassFxEffect::Flanger) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_FLANGER>()?;
+            Ok(json!({ "fWetDry": p.fWetDry, "fSpeed": p.fSpeed, "lChannel": p.lChannel }))
+        }
+        EffectKind::BassFx(BassFxEffect::Volume) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_VOLUME>()?;
+            Ok(json!({ "lChannel": p.lChannel, "fVolume": p.fVolume }))
+        }
+        EffectKind::BassFx(BassFxEffect::PeakEq) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_PEAKEQ>()?;
+            Ok(
+                json!({ "lBand": p.lBand, "fBandwidth": p.fBandwidth, "fQ": p.fQ, "fCenter": p.fCenter, "fGain": p.fGain, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Reverb) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_REVERB>()?;
+            Ok(json!({ "fLevel": p.fLevel, "lDelay": p.lDelay }))
+        }
+        EffectKind::BassFx(BassFxEffect::LowPassFilter) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_LPF>()?;
+            Ok(
+                json!({ "fResonance": p.fResonance, "fCutOffFreq": p.fCutOffFreq, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Mix) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_MIX>()?;
+            Ok(json!({ "lChannelPointer": p.lChannel as usize }))
+        }
+        EffectKind::BassFx(BassFxEffect::Damp) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_DAMP>()?;
+            Ok(
+                json!({ "fTarget": p.fTarget, "fQuiet": p.fQuiet, "fRate": p.fRate, "fGain": p.fGain, "fDelay": p.fDelay, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::AutoWah) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_AUTOWAH>()?;
+            Ok(
+                json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fRate": p.fRate, "fRange": p.fRange, "fFreq": p.fFreq, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Freeverb) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_FREEVERB>()?;
+            Ok(
+                json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fRoomSize": p.fRoomSize, "fDamp": p.fDamp, "fWidth": p.fWidth, "lMode": p.lMode, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Phaser) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_PHASER>()?;
+            Ok(
+                json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fRate": p.fRate, "fRange": p.fRange, "fFreq": p.fFreq, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Echo2) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_ECHO2>()?;
+            Ok(
+                json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fDelay": p.fDelay, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Echo3) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_ECHO3>()?;
+            Ok(
+                json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fDelay": p.fDelay, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Chorus) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_CHORUS>()?;
+            Ok(
+                json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fMinSweep": p.fMinSweep, "fMaxSweep": p.fMaxSweep, "fRate": p.fRate, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::AllPassFilter) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_APF>()?;
+            Ok(json!({ "fGain": p.fGain, "fDelay": p.fDelay, "lChannel": p.lChannel }))
+        }
+        EffectKind::BassFx(BassFxEffect::Compressor) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_COMPRESSOR>()?;
+            Ok(
+                json!({ "fThreshold": p.fThreshold, "fAttacktime": p.fAttacktime, "fReleasetime": p.fReleasetime, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Distortion) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_DISTORTION>()?;
+            Ok(
+                json!({ "fDrive": p.fDrive, "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fVolume": p.fVolume, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Compressor2) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_COMPRESSOR2>()?;
+            Ok(
+                json!({ "fGain": p.fGain, "fThreshold": p.fThreshold, "fRatio": p.fRatio, "fAttack": p.fAttack, "fRelease": p.fRelease, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::VolumeEnvelope) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_VOLUME_ENV>()?;
+            let nodes = if p.pNodes.is_null() || p.lNodeCount <= 0 {
+                Vec::new()
+            } else {
+                unsafe { std::slice::from_raw_parts(p.pNodes, p.lNodeCount as usize) }
+                    .iter()
+                    .map(|node| {
+                        let pos = unsafe { std::ptr::addr_of!(node.pos).read_unaligned() };
+                        let val = unsafe { std::ptr::addr_of!(node.val).read_unaligned() };
+                        json!({ "pos": pos, "val": val })
+                    })
+                    .collect::<Vec<_>>()
+            };
+            Ok(
+                json!({ "lChannel": p.lChannel, "lNodeCount": p.lNodeCount, "pNodes": nodes, "bFollow": p.bFollow }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::BiquadFilter) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_BQF>()?;
+            Ok(
+                json!({ "lFilter": p.lFilter, "fCenter": p.fCenter, "fGain": p.fGain, "fBandwidth": p.fBandwidth, "fQ": p.fQ, "fS": p.fS, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::Echo4) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_ECHO4>()?;
+            Ok(
+                json!({ "fDryMix": p.fDryMix, "fWetMix": p.fWetMix, "fFeedback": p.fFeedback, "fDelay": p.fDelay, "bStereo": p.bStereo, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::BassFx(BassFxEffect::PitchShift) => {
+            let p = effect.get_parameters::<raw::BASS_BFX_PITCHSHIFT>()?;
+            Ok(
+                json!({ "fPitchShift": p.fPitchShift, "fSemitones": p.fSemitones, "lFFTsize": p.lFFTsize, "lOsamp": p.lOsamp, "lChannel": p.lChannel }),
+            )
+        }
+        EffectKind::Volume => {
+            let p = effect.get_parameters::<raw::BASS_FX_VOLUME_PARAM>()?;
+            Ok(
+                json!({ "fTarget": p.fTarget, "fCurrent": p.fCurrent, "fTime": p.fTime, "lCurve": p.lCurve }),
+            )
+        }
+        _ => Err(BassError::Unsupported {
+            operation: "effect parameter mapping for this raw structure",
+        }),
     }
 }
 
 fn number(value: &Value, field: &str) -> bass_rs::Result<f32> {
-    value.get(field).and_then(Value::as_f64).map(|value| value as f32).ok_or_else(|| BassError::InvalidInput { kind: "effect parameter", message: format!("missing numeric field {field}") })
+    value
+        .get(field)
+        .and_then(Value::as_f64)
+        .map(|value| value as f32)
+        .ok_or_else(|| BassError::InvalidInput {
+            kind: "effect parameter",
+            message: format!("missing numeric field {field}"),
+        })
 }
 
 fn integer(value: &Value, field: &str) -> bass_rs::Result<i32> {
-    value.get(field).and_then(Value::as_i64).and_then(|value| i32::try_from(value).ok()).ok_or_else(|| BassError::InvalidInput { kind: "effect parameter", message: format!("missing integer field {field}") })
+    value
+        .get(field)
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+        .ok_or_else(|| BassError::InvalidInput {
+            kind: "effect parameter",
+            message: format!("missing integer field {field}"),
+        })
 }
 
 fn integers(value: &Value, field: &str) -> bass_rs::Result<Vec<i32>> {
     value
         .get(field)
         .and_then(Value::as_array)
-        .ok_or_else(|| BassError::InvalidInput { kind: "effect parameter", message: format!("missing integer array {field}") })?
+        .ok_or_else(|| BassError::InvalidInput {
+            kind: "effect parameter",
+            message: format!("missing integer array {field}"),
+        })?
         .iter()
-        .map(|value| value.as_i64().and_then(|value| i32::try_from(value).ok()).ok_or_else(|| BassError::InvalidInput { kind: "effect parameter", message: format!("invalid integer array {field}") }))
+        .map(|value| {
+            value
+                .as_i64()
+                .and_then(|value| i32::try_from(value).ok())
+                .ok_or_else(|| BassError::InvalidInput {
+                    kind: "effect parameter",
+                    message: format!("invalid integer array {field}"),
+                })
+        })
         .collect()
 }
 
@@ -1945,17 +2839,41 @@ fn env_nodes(value: &Value, field: &str) -> bass_rs::Result<Vec<raw::BASS_BFX_EN
     value
         .get(field)
         .and_then(Value::as_array)
-        .ok_or_else(|| BassError::InvalidInput { kind: "effect parameter", message: format!("missing node array {field}") })?
+        .ok_or_else(|| BassError::InvalidInput {
+            kind: "effect parameter",
+            message: format!("missing node array {field}"),
+        })?
         .iter()
-        .map(|node| Ok(raw::BASS_BFX_ENV_NODE {
-            pos: node.get("pos").and_then(Value::as_f64).ok_or_else(|| BassError::InvalidInput { kind: "effect parameter", message: "node.pos is required".into() })?,
-            val: node.get("val").and_then(Value::as_f64).map(|value| value as f32).ok_or_else(|| BassError::InvalidInput { kind: "effect parameter", message: "node.val is required".into() })?,
-        }))
+        .map(|node| {
+            Ok(raw::BASS_BFX_ENV_NODE {
+                pos: node.get("pos").and_then(Value::as_f64).ok_or_else(|| {
+                    BassError::InvalidInput {
+                        kind: "effect parameter",
+                        message: "node.pos is required".into(),
+                    }
+                })?,
+                val: node
+                    .get("val")
+                    .and_then(Value::as_f64)
+                    .map(|value| value as f32)
+                    .ok_or_else(|| BassError::InvalidInput {
+                        kind: "effect parameter",
+                        message: "node.val is required".into(),
+                    })?,
+            })
+        })
         .collect()
 }
 
 fn unsigned(value: &Value, field: &str) -> bass_rs::Result<u32> {
-    value.get(field).and_then(Value::as_u64).and_then(|value| u32::try_from(value).ok()).ok_or_else(|| BassError::InvalidInput { kind: "effect parameter", message: format!("missing unsigned field {field}") })
+    value
+        .get(field)
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| BassError::InvalidInput {
+            kind: "effect parameter",
+            message: format!("missing unsigned field {field}"),
+        })
 }
 
 #[cfg(test)]
@@ -1973,15 +2891,44 @@ mod tests {
     #[test]
     fn all_public_effect_names_parse() {
         for name in [
-            "dx8.chorus", "dx8.compressor", "dx8.distortion", "dx8.echo", "dx8.flanger",
-            "dx8.gargle", "dx8.i3dl2reverb", "dx8.parameq", "dx8.reverb", "volume",
-            "bassFx.rotate", "bassFx.echo", "bassFx.flanger", "bassFx.volume", "bassFx.peakeq",
-            "bassFx.reverb", "bassFx.lowpassfilter", "bassFx.mix", "bassFx.damp", "bassFx.autowah",
-            "bassFx.echo2", "bassFx.phaser", "bassFx.echo3", "bassFx.chorus", "bassFx.allpassfilter",
-            "bassFx.compressor", "bassFx.distortion", "bassFx.compressor2", "bassFx.volumeenvelope",
-            "bassFx.biquadfilter", "bassFx.echo4", "bassFx.pitchshift", "bassFx.freeverb",
+            "dx8.chorus",
+            "dx8.compressor",
+            "dx8.distortion",
+            "dx8.echo",
+            "dx8.flanger",
+            "dx8.gargle",
+            "dx8.i3dl2reverb",
+            "dx8.parameq",
+            "dx8.reverb",
+            "volume",
+            "bassFx.rotate",
+            "bassFx.echo",
+            "bassFx.flanger",
+            "bassFx.volume",
+            "bassFx.peakeq",
+            "bassFx.reverb",
+            "bassFx.lowpassfilter",
+            "bassFx.mix",
+            "bassFx.damp",
+            "bassFx.autowah",
+            "bassFx.echo2",
+            "bassFx.phaser",
+            "bassFx.echo3",
+            "bassFx.chorus",
+            "bassFx.allpassfilter",
+            "bassFx.compressor",
+            "bassFx.distortion",
+            "bassFx.compressor2",
+            "bassFx.volumeenvelope",
+            "bassFx.biquadfilter",
+            "bassFx.echo4",
+            "bassFx.pitchshift",
+            "bassFx.freeverb",
         ] {
-            assert!(parse_effect_kind(name).is_ok(), "effect did not parse: {name}");
+            assert!(
+                parse_effect_kind(name).is_ok(),
+                "effect did not parse: {name}"
+            );
         }
     }
 
