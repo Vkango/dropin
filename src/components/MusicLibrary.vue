@@ -28,9 +28,13 @@
                 </div>
             </div>
         </template>
-        <div class="song-list-container">
-            <SongList :songs="musicLibrary.songs" @song-select="$emit('song-select', $event)"
-                @song-play="$emit('song-play', $event)" />
+        <div ref="pageRef" class="library-content-with-alphabet">
+            <div class="song-list-container">
+                <SongList :songs="musicLibrary.songs" @song-select="$emit('song-select', $event)"
+                    @song-play="$emit('song-play', $event)" @group-label-click="handleGroupLabelClick" />
+            </div>
+            <AlphabetFilter :active-initial="activeInitial" :available-initials="availableInitials"
+                @select="handleAlphabetSelect" />
         </div>
 
         <!-- 专辑详情卡片 -->
@@ -42,12 +46,15 @@
 <script setup>
 import { defineProps, defineEmits, computed, inject, ref } from 'vue'
 import SongList from './SongList.vue'
+import AlphabetFilter from './AlphabetFilter.vue'
 import Icon from './Icon.vue'
 import AlbumDetailCard from './AlbumDetailCard.vue'
 import PageLayout from './PageLayout.vue'
 import MotionTransition from './MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { getAvailableInitials } from '../utils/alphabet.js'
+import { useAlphabetNavigation } from '../utils/useAlphabetNavigation.js'
 
 const currentSong = inject('currentSong')
 
@@ -73,6 +80,12 @@ const emit = defineEmits(['header-control-click', 'song-select', 'song-play'])
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const pageRef = ref(null)
+const availableInitials = computed(() => getAvailableInitials(props.musicLibrary.songs, (song) => song.title))
+const { activeInitial, handleAlphabetSelect, handleGroupLabelClick } = useAlphabetNavigation(
+    pageRef,
+    availableInitials
+)
 
 // 专辑详情状态
 const albumDetailVisible = ref(false)
@@ -186,5 +199,22 @@ const handleTrackPlay = (track) => {
 /* 歌曲列表 */
 .song-list-container {
     width: 100%;
+}
+
+.library-content-with-alphabet {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.library-content-with-alphabet .song-list-container {
+    min-width: 0;
+    flex: 1;
+}
+
+@media (max-width: 768px) {
+    .library-content-with-alphabet {
+        gap: 4px;
+    }
 }
 </style>

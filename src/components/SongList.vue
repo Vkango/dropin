@@ -12,15 +12,11 @@
         </div>
 
         <div class="songs">
-            <template v-for="(song, index) in songs" :key="song.id">
-                <!-- 分组标签 -->
-                <div v-if="index === 0" class="group-label">&</div>
-                <div v-if="index === 1" class="group-label">#</div>
-                <div v-if="index === 2" class="group-label">A</div>
-                <div v-if="index === 4" class="group-label">A</div>
-                <MotionDiv class="song-item" :while-hover="{ backgroundColor: 'rgba(var(--surface-color), 0.5)' }"
+            <template v-for="group in groupedSongs" :key="group.initial">
+                <GroupLabel :label="group.initial" @click="$emit('group-label-click', group.initial)" />
+                <MotionDiv v-for="song in group.items" :key="song.id" class="song-item"
+                    :while-hover="{ backgroundColor: 'rgba(var(--surface-color), 0.5)' }"
                     :transition="microTransition" @click="$emit('song-select', song)">
-
                     <div class="col-info">
                         <img :src="song.cover" :alt="song.title" class="song-cover" />
                         <div class="song-details">
@@ -40,6 +36,8 @@
 import { defineProps, defineEmits, computed } from 'vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { groupByInitial } from '../utils/alphabet.js'
+import GroupLabel from './GroupLabel.vue'
 import { PlayIcon } from '@lucide/vue'
 import { ListFilter } from '@lucide/vue'
 
@@ -50,10 +48,11 @@ const props = defineProps({
     }
 })
 
-const emit = defineEmits(['song-select', 'song-play'])
+const emit = defineEmits(['song-select', 'song-play', 'group-label-click'])
 const MotionDiv = motion.div
 const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const groupedSongs = computed(() => groupByInitial(props.songs, (song) => song.title))
 </script>
 
 <style scoped>
@@ -66,18 +65,6 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
     display: flex;
     gap: 20px;
     padding: 16px;
-}
-
-.group-label {
-    background: rgba(var(--surface-color), 0.5);
-    width: fit-content;
-    padding: 6px 10px;
-    font-size: 13px;
-    font-weight: 700;
-    border-radius: 10px;
-    margin-bottom: 10px;
-    margin-top: 20px;
-    margin-left: 16px;
 }
 
 .song-item {

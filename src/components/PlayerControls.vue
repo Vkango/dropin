@@ -1,18 +1,5 @@
 <template>
     <div class="player-controls">
-        <div ref="progressRef" class="top-progress" role="slider" tabindex="0" :aria-valuenow="clampedProgress"
-            aria-valuemin="0" aria-valuemax="100" aria-label="播放进度" :class="{ 'is-dragging': isProgressDragging }"
-            @mousedown.stop @pointerdown.stop.prevent="handleProgressPointerDown"
-            @pointermove.stop="handleProgressPointerMove" @pointerup.stop="handleProgressPointerUp"
-            @pointercancel.stop="handleProgressPointerUp" @lostpointercapture="handleProgressPointerUp"
-            @keydown.left.prevent="emitProgressCommit(clampedProgress - 5)"
-            @keydown.right.prevent="emitProgressCommit(clampedProgress + 5)">
-            <div class="top-progress-track">
-                <div class="top-progress-fill" :style="{ width: `${clampedProgress}%` }"></div>
-                <span class="top-progress-thumb" :style="{ left: `${clampedProgress}%` }"></span>
-            </div>
-        </div>
-
         <div class="player-layout">
             <div class="left-zone">
                 <div class="now-playing" @mousedown.stop>
@@ -44,30 +31,47 @@
             </div>
 
             <div class="controls" aria-label="播放控制" @mousedown.stop>
-                <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
-                    :transition="microTransition" aria-label="上一首" @click.stop="$emit('previous')">
-                    <SkipBack :size="18" :stroke-width="1.8" />
-                </MotionButton>
-                <MotionButton class="control-button play-pause" :while-hover="buttonHover" :while-press="buttonPress"
-                    :transition="microTransition" :aria-label="isPlaying ? '暂停' : '播放'"
-                    @click.stop="$emit('toggle-play')">
-                    <Pause v-if="isPlaying" :size="18" :stroke-width="1.8" />
-                    <Play v-else :size="18" :stroke-width="1.8" />
-                </MotionButton>
-                <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
-                    :transition="microTransition" aria-label="下一首" @click.stop="$emit('next')">
-                    <SkipForward :size="18" :stroke-width="1.8" />
-                </MotionButton>
-                <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
-                    :while-press="buttonPress" :transition="microTransition" aria-label="循环播放"
-                    @click.stop="$emit('repeat')">
-                    <Repeat2 :size="18" :stroke-width="1.8" />
-                </MotionButton>
-                <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
-                    :while-press="buttonPress" :transition="microTransition" aria-label="播放列表"
-                    @click.stop="$emit('queue')">
-                    <ListMusic :size="18" :stroke-width="1.8" />
-                </MotionButton>
+                <div class="transport-buttons">
+                    <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
+                        :while-press="buttonPress" :transition="microTransition" aria-label="播放列表"
+                        @click.stop="$emit('queue')">
+                        <ListMusic :size="18" :stroke-width="1.8" />
+                    </MotionButton>
+                    <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
+                        :transition="microTransition" aria-label="上一首" @click.stop="$emit('previous')">
+                        <SkipBack :size="18" :stroke-width="1.8" />
+                    </MotionButton>
+                    <MotionButton class="control-button play-pause" :while-hover="buttonHover"
+                        :while-press="buttonPress" :transition="microTransition" :aria-label="isPlaying ? '暂停' : '播放'"
+                        @click.stop="$emit('toggle-play')">
+                        <Pause v-if="isPlaying" :size="18" :stroke-width="1.8" />
+                        <Play v-else :size="18" :stroke-width="1.8" />
+                    </MotionButton>
+                    <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
+                        :transition="microTransition" aria-label="下一首" @click.stop="$emit('next')">
+                        <SkipForward :size="18" :stroke-width="1.8" />
+                    </MotionButton>
+                    <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
+                        :while-press="buttonPress" :transition="microTransition" aria-label="循环播放"
+                        @click.stop="$emit('repeat')">
+                        <Repeat2 :size="18" :stroke-width="1.8" />
+                    </MotionButton>
+
+                </div>
+
+                <div ref="progressRef" class="top-progress" role="slider" tabindex="0" :aria-valuenow="clampedProgress"
+                    aria-valuemin="0" aria-valuemax="100" aria-label="播放进度"
+                    :class="{ 'is-dragging': isProgressDragging }" @mousedown.stop
+                    @pointerdown.stop.prevent="handleProgressPointerDown" @pointermove.stop="handleProgressPointerMove"
+                    @pointerup.stop="handleProgressPointerUp" @pointercancel.stop="handleProgressPointerUp"
+                    @lostpointercapture="handleProgressPointerUp"
+                    @keydown.left.prevent="emitProgressCommit(clampedProgress - 5)"
+                    @keydown.right.prevent="emitProgressCommit(clampedProgress + 5)">
+                    <div class="top-progress-track">
+                        <div class="top-progress-fill" :style="{ width: `${clampedProgress}%` }"></div>
+                        <span class="top-progress-thumb" :style="{ left: `${clampedProgress}%` }"></span>
+                    </div>
+                </div>
             </div>
 
             <div class="drag-region drag-region-right" data-tauri-drag-region aria-label="拖动窗口"></div>
@@ -211,16 +215,16 @@ const handleProgressPointerUp = (event) => {
 }
 
 .top-progress {
-    position: fixed;
+    position: absolute;
     z-index: 2;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 16px;
+    bottom: 5px;
+    width: 100%;
+    height: 8px;
     cursor: grab;
     outline: none;
     touch-action: none;
     user-select: none;
+    border-radius: 10px;
 }
 
 .top-progress.is-dragging {
@@ -229,9 +233,11 @@ const handleProgressPointerUp = (event) => {
 
 .top-progress-track {
     position: relative;
-    top: 0;
+    top: 2px;
     width: 100%;
     height: 4px;
+    border-radius: 10px;
+    background-color: rgba(var(--text-color), 0.05);
 }
 
 .top-progress-fill {
@@ -369,12 +375,25 @@ const handleProgressPointerUp = (event) => {
 }
 
 .controls {
+    position: relative;
     display: flex;
+    flex-direction: column;
     grid-column: 2;
+    align-items: stretch;
+    justify-content: center;
+    height: 60px;
+    justify-self: center;
+}
+
+.transport-buttons {
+    display: flex;
+    flex: 0 0 60px;
     align-items: center;
     justify-content: center;
     gap: 9px;
-    justify-self: center;
+    padding: 0 20px;
+    margin: 0 10px;
+    margin-bottom: 8px;
 }
 
 .control-button {
@@ -419,6 +438,10 @@ const handleProgressPointerUp = (event) => {
     .controls {
         grid-column: 2;
         justify-self: start;
+        width: 100%;
+    }
+
+    .transport-buttons {
         gap: 3px;
     }
 

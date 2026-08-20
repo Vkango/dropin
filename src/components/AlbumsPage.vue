@@ -17,7 +17,8 @@
             </div>
         </div>
         </template>
-        <div class="albums-page">
+        <div ref="pageRef" class="albums-page">
+        <div class="albums-main">
         <div class="page-header">
             <h1 class="page-title"></h1>
             <div class="view-controls">
@@ -46,28 +47,35 @@
 
         <!-- 专辑网格/列表 -->
         <MotionTransition variant="page" mode="out-in">
-            <div v-if="viewMode === 'grid'" key="grid" class="albums-grid">
-                <MotionDiv v-for="album in filteredAlbums" :key="album.id" class="album-card" initial="rest"
-                    while-hover="hover" :variants="cardVariants"
-                    @click="$emit('album-select', album)">
-                    <div class="album-cover">
-                        <MotionTransition variant="cover" mode="out-in">
-                            <MotionImg :key="album.cover" :src="album.cover" :alt="album.title"
-                                :variants="imageVariants" />
-                        </MotionTransition>
-                        <MotionDiv class="album-overlay" :variants="overlayVariants">
-                            <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }" :while-press="{ scale: 0.94 }"
-                                :transition="microTransition" @click.stop="$emit('album-play', album)">
-                                <Icon src="/assets/play.svg" size="lg" />
-                            </MotionButton>
+            <div v-if="viewMode === 'grid'" key="grid" class="albums-grid-view">
+                <div v-for="group in visibleGroups" :key="group.key" class="album-group">
+                    <GroupLabel v-if="group.initial" :label="group.initial"
+                        @click="handleGroupLabelClick(group.initial)" />
+                    <div class="albums-grid">
+                        <MotionDiv v-for="album in group.items" :key="album.id" class="album-card" initial="rest"
+                            while-hover="hover" :variants="cardVariants"
+                            @click="$emit('album-select', album)">
+                            <div class="album-cover">
+                                <MotionTransition variant="cover" mode="out-in">
+                                    <MotionImg :key="album.cover" :src="album.cover" :alt="album.title"
+                                        :variants="imageVariants" />
+                                </MotionTransition>
+                                <MotionDiv class="album-overlay" :variants="overlayVariants">
+                                    <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }"
+                                        :while-press="{ scale: 0.94 }" :transition="microTransition"
+                                        @click.stop="$emit('album-play', album)">
+                                        <Icon src="/assets/play.svg" size="lg" />
+                                    </MotionButton>
+                                </MotionDiv>
+                            </div>
+                            <div class="album-info">
+                                <h3 class="album-title">{{ album.title }}</h3>
+                                <p class="album-artist">{{ album.artist }}</p>
+                                <p class="album-meta">{{ album.year }} • {{ album.trackCount }} 首歌</p>
+                            </div>
                         </MotionDiv>
                     </div>
-                    <div class="album-info">
-                        <h3 class="album-title">{{ album.title }}</h3>
-                        <p class="album-artist">{{ album.artist }}</p>
-                        <p class="album-meta">{{ album.year }} • {{ album.trackCount }} 首歌</p>
-                    </div>
-                </MotionDiv>
+                </div>
             </div>
 
             <div v-else key="list" class="albums-list">
@@ -79,26 +87,33 @@
                     <div class="header-tracks">歌曲数</div>
                     <div class="header-duration">时长</div>
                 </div>
-                <MotionDiv v-for="album in filteredAlbums" :key="album.id" class="album-row" initial="rest"
-                    while-hover="hover" :variants="rowVariants"
-                    @click="$emit('album-select', album)">
-                    <div class="row-cover">
-                        <img :src="album.cover" :alt="album.title" />
-                    </div>
-                    <div class="row-title">{{ album.title }}</div>
-                    <div class="row-artist">{{ album.artist }}</div>
-                    <div class="row-year">{{ album.year }}</div>
-                    <div class="row-tracks">{{ album.trackCount }}</div>
-                    <div class="row-duration">{{ album.duration }}</div>
-                    <div class="row-actions">
-                        <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
-                            :transition="microTransition" @click.stop="$emit('album-play', album)">
-                            <Icon src="/assets/play.svg" size="sm" />
-                        </MotionButton>
-                    </div>
-                </MotionDiv>
+                <template v-for="group in visibleGroups" :key="group.key">
+                    <GroupLabel v-if="group.initial" :label="group.initial"
+                        @click="handleGroupLabelClick(group.initial)" />
+                    <MotionDiv v-for="album in group.items" :key="album.id" class="album-row" initial="rest"
+                        while-hover="hover" :variants="rowVariants"
+                        @click="$emit('album-select', album)">
+                        <div class="row-cover">
+                            <img :src="album.cover" :alt="album.title" />
+                        </div>
+                        <div class="row-title">{{ album.title }}</div>
+                        <div class="row-artist">{{ album.artist }}</div>
+                        <div class="row-year">{{ album.year }}</div>
+                        <div class="row-tracks">{{ album.trackCount }}</div>
+                        <div class="row-duration">{{ album.duration }}</div>
+                        <div class="row-actions">
+                            <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                                :transition="microTransition" @click.stop="$emit('album-play', album)">
+                                <Icon src="/assets/play.svg" size="sm" />
+                            </MotionButton>
+                        </div>
+                    </MotionDiv>
+                </template>
             </div>
         </MotionTransition>
+        </div>
+        <AlphabetFilter :active-initial="activeInitial" :available-initials="availableInitials"
+            @select="handleAlphabetSelect" />
         </div>
     </PageLayout>
 </template>
@@ -107,10 +122,14 @@
 import { ref, computed, inject } from 'vue'
 import Icon from './Icon.vue'
 import Combobox from './Combobox.vue'
+import AlphabetFilter from './AlphabetFilter.vue'
+import GroupLabel from './GroupLabel.vue'
 import MotionTransition from './MotionTransition.vue'
 import PageLayout from './PageLayout.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { getAvailableInitials, groupByInitial, sortByInitial } from '../utils/alphabet.js'
+import { useAlphabetNavigation } from '../utils/useAlphabetNavigation.js'
 
 const props = defineProps({
     albums: {
@@ -130,13 +149,14 @@ const cardVariants = { rest: { y: 0 }, hover: { y: -4 } }
 const imageVariants = { rest: { scale: 1 }, hover: { scale: 1.05 } }
 const overlayVariants = { rest: { opacity: 0 }, hover: { opacity: 1 } }
 const rowVariants = {
-    rest: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+    rest: {},
     hover: { backgroundColor: 'rgba(var(--primary-color), 0.05)' }
 }
 
 const viewMode = ref('grid')
 const sortBy = ref('name')
 const filterGenre = ref('')
+const pageRef = ref(null)
 const sortOptions = [
     { value: 'name', label: '按名称排序' },
     { value: 'artist', label: '按艺术家排序' },
@@ -155,21 +175,29 @@ const setViewMode = (mode) => {
     viewMode.value = mode
 }
 
-const filteredAlbums = computed(() => {
+const albumsAfterFilters = computed(() => {
     let albums = [...props.albums]
 
-    // 筛选流派
     if (filterGenre.value) {
         albums = albums.filter(album =>
             album.genres && album.genres.includes(filterGenre.value)
         )
     }
 
-    // 排序
+    return albums
+})
+
+const availableInitials = computed(() => getAvailableInitials(albumsAfterFilters.value, (album) => album.title))
+
+const filteredAlbums = computed(() => {
+    let albums = [...albumsAfterFilters.value]
+
+    if (sortBy.value === 'name') {
+        return sortByInitial(albums, (album) => album.title)
+    }
+
     albums.sort((a, b) => {
         switch (sortBy.value) {
-            case 'name':
-                return a.title.localeCompare(b.title)
             case 'artist':
                 return a.artist.localeCompare(b.artist)
             case 'year':
@@ -183,11 +211,29 @@ const filteredAlbums = computed(() => {
 
     return albums
 })
+
+const groupedAlbums = computed(() => groupByInitial(filteredAlbums.value, (album) => album.title))
+const visibleGroups = computed(() => sortBy.value === 'name'
+    ? groupedAlbums.value.map((group) => ({ ...group, key: group.initial }))
+    : [{ key: 'all', initial: '', items: filteredAlbums.value }])
+
+const { activeInitial, handleAlphabetSelect, handleGroupLabelClick } = useAlphabetNavigation(
+    pageRef,
+    availableInitials
+)
 </script>
 
 <style scoped>
 .albums-page {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
     width: 100%;
+}
+
+.albums-main {
+    min-width: 0;
+    flex: 1;
 }
 
 /* 页面标题 */
@@ -232,6 +278,14 @@ const filteredAlbums = computed(() => {
 .filter-options {
     display: flex;
     gap: 16px;
+}
+
+.albums-grid-view {
+    width: 100%;
+}
+
+.album-group {
+    width: 100%;
 }
 
 .sort-select,

@@ -741,7 +741,7 @@ onBeforeUnmount(() => {
       @progress-commit="handleProgressCommit" @expand-player="handleExpandPlayer" />
 
     <!-- 侧边栏 -->
-    <Sidebar :sidebar-items="sidebarItems" :search-query="searchQuery" :is-dark="isDarkTheme"
+    <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery" :is-dark="isDarkTheme"
       @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick" @add-tag="handleAddTag"
       @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin" />
 
@@ -798,6 +798,8 @@ select {
   --text-color: 28, 27, 31;
   --secondary-color: 80, 96, 110;
   --outline-color: 121, 116, 126;
+  --global-color: 255, 255, 255;
+  --global-inverse-color: 0, 0, 0;
 
   --md-sys-color-primary: 136, 208, 236;
   --md-sys-color-primary-container: 204, 231, 255;
@@ -816,6 +818,13 @@ select {
 
   --md-sys-color-outline: 121, 116, 126;
   --md-sys-color-outline-variant: 202, 182, 224;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --global-color: 0, 0, 0;
+    --global-inverse-color: 255, 255, 255;
+  }
 }
 
 body {

@@ -25,7 +25,7 @@ export const SOFT_SPRING = {
 export const LINEAR_LOOP = {
   type: 'keyframes',
   ease: 'linear',
-  duration: 10,
+  duration: 24,
   repeat: Infinity
 }
 

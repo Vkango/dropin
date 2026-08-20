@@ -17,7 +17,8 @@
             </div>
         </div>
         </template>
-        <div class="artists-page">
+        <div ref="pageRef" class="artists-page">
+        <div class="artists-main">
         <div class="page-header">
             <h1 class="page-title"></h1>
             <div class="view-controls">
@@ -46,32 +47,39 @@
 
         <!-- 艺术家网格/列表 -->
         <MotionTransition variant="page" mode="out-in">
-            <div v-if="viewMode === 'grid'" key="grid" class="artists-grid">
-                <MotionDiv v-for="artist in filteredArtists" :key="artist.id" class="artist-card" initial="rest"
-                    while-hover="hover" :variants="cardVariants"
-                    @click="$emit('artist-select', artist)">
-                    <div class="artist-avatar">
-                        <MotionTransition variant="cover" mode="out-in">
-                            <MotionImg :key="artist.avatar || artist.cover" :src="artist.avatar || artist.cover"
-                                :alt="artist.name" :variants="imageVariants" />
-                        </MotionTransition>
-                        <MotionDiv class="artist-overlay" :variants="overlayVariants">
-                            <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }" :while-press="{ scale: 0.94 }"
-                                :transition="microTransition" @click.stop="$emit('artist-play', artist)">
-                                <Icon src="/assets/play.svg" size="lg" />
-                            </MotionButton>
+            <div v-if="viewMode === 'grid'" key="grid" class="artists-grid-view">
+                <div v-for="group in visibleGroups" :key="group.key" class="artist-group">
+                    <GroupLabel v-if="group.initial" :label="group.initial"
+                        @click="handleGroupLabelClick(group.initial)" />
+                    <div class="artists-grid">
+                        <MotionDiv v-for="artist in group.items" :key="artist.id" class="artist-card" initial="rest"
+                            while-hover="hover" :variants="cardVariants"
+                            @click="$emit('artist-select', artist)">
+                            <div class="artist-avatar">
+                                <MotionTransition variant="cover" mode="out-in">
+                                    <MotionImg :key="artist.avatar || artist.cover" :src="artist.avatar || artist.cover"
+                                        :alt="artist.name" :variants="imageVariants" />
+                                </MotionTransition>
+                                <MotionDiv class="artist-overlay" :variants="overlayVariants">
+                                    <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }"
+                                        :while-press="{ scale: 0.94 }" :transition="microTransition"
+                                        @click.stop="$emit('artist-play', artist)">
+                                        <Icon src="/assets/play.svg" size="lg" />
+                                    </MotionButton>
+                                </MotionDiv>
+                            </div>
+                            <div class="artist-info">
+                                <h3 class="artist-name">{{ artist.name }}</h3>
+                                <p class="artist-meta">{{ artist.albumCount }} 张专辑 • {{ artist.songCount }} 首歌</p>
+                                <div class="artist-genres">
+                                    <span v-for="genre in artist.genres?.slice(0, 2)" :key="genre" class="genre-tag">
+                                        {{ genre }}
+                                    </span>
+                                </div>
+                            </div>
                         </MotionDiv>
                     </div>
-                    <div class="artist-info">
-                        <h3 class="artist-name">{{ artist.name }}</h3>
-                        <p class="artist-meta">{{ artist.albumCount }} 张专辑 • {{ artist.songCount }} 首歌</p>
-                        <div class="artist-genres">
-                            <span v-for="genre in artist.genres?.slice(0, 2)" :key="genre" class="genre-tag">
-                                {{ genre }}
-                            </span>
-                        </div>
-                    </div>
-                </MotionDiv>
+                </div>
             </div>
 
             <div v-else key="list" class="artists-list">
@@ -83,36 +91,43 @@
                     <div class="header-genres">流派</div>
                     <div class="header-actions"></div>
                 </div>
-                <MotionDiv v-for="artist in filteredArtists" :key="artist.id" class="artist-row" initial="rest"
-                    while-hover="hover" :variants="rowVariants"
-                    @click="$emit('artist-select', artist)">
-                    <div class="row-avatar">
-                        <img :src="artist.avatar || artist.cover" :alt="artist.name" />
-                    </div>
-                    <div class="row-name">
-                        <div class="name">{{ artist.name }}</div>
-                        <div class="followers">{{ formatNumber(artist.followers) }} 关注者</div>
-                    </div>
-                    <div class="row-albums">{{ artist.albumCount }}</div>
-                    <div class="row-songs">{{ artist.songCount }}</div>
-                    <div class="row-genres">
-                        <span v-for="genre in artist.genres?.slice(0, 3)" :key="genre" class="genre-pill">
-                            {{ genre }}
-                        </span>
-                    </div>
-                    <div class="row-actions">
-                        <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
-                            :transition="microTransition" @click.stop="$emit('artist-play', artist)">
-                            <Icon src="/assets/play.svg" size="sm" />
-                        </MotionButton>
-                        <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
-                            :transition="microTransition" @click.stop="toggleFollow(artist)">
-                            <Icon :src="artist.isFollowing ? '/assets/favourite.svg' : '/assets/user.svg'" size="sm" />
-                        </MotionButton>
-                    </div>
-                </MotionDiv>
+                <template v-for="group in visibleGroups" :key="group.key">
+                    <GroupLabel v-if="group.initial" :label="group.initial"
+                        @click="handleGroupLabelClick(group.initial)" />
+                    <MotionDiv v-for="artist in group.items" :key="artist.id" class="artist-row" initial="rest"
+                        while-hover="hover" :variants="rowVariants"
+                        @click="$emit('artist-select', artist)">
+                        <div class="row-avatar">
+                            <img :src="artist.avatar || artist.cover" :alt="artist.name" />
+                        </div>
+                        <div class="row-name">
+                            <div class="name">{{ artist.name }}</div>
+                            <div class="followers">{{ formatNumber(artist.followers) }} 关注者</div>
+                        </div>
+                        <div class="row-albums">{{ artist.albumCount }}</div>
+                        <div class="row-songs">{{ artist.songCount }}</div>
+                        <div class="row-genres">
+                            <span v-for="genre in artist.genres?.slice(0, 3)" :key="genre" class="genre-pill">
+                                {{ genre }}
+                            </span>
+                        </div>
+                        <div class="row-actions">
+                            <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                                :transition="microTransition" @click.stop="$emit('artist-play', artist)">
+                                <Icon src="/assets/play.svg" size="sm" />
+                            </MotionButton>
+                            <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                                :transition="microTransition" @click.stop="toggleFollow(artist)">
+                                <Icon :src="artist.isFollowing ? '/assets/favourite.svg' : '/assets/user.svg'" size="sm" />
+                            </MotionButton>
+                        </div>
+                    </MotionDiv>
+                </template>
             </div>
         </MotionTransition>
+        </div>
+        <AlphabetFilter :active-initial="activeInitial" :available-initials="availableInitials"
+            @select="handleAlphabetSelect" />
         </div>
     </PageLayout>
 </template>
@@ -121,10 +136,14 @@
 import { ref, computed, inject } from 'vue'
 import Icon from './Icon.vue'
 import Combobox from './Combobox.vue'
+import AlphabetFilter from './AlphabetFilter.vue'
+import GroupLabel from './GroupLabel.vue'
 import MotionTransition from './MotionTransition.vue'
 import PageLayout from './PageLayout.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { getAvailableInitials, groupByInitial, sortByInitial } from '../utils/alphabet.js'
+import { useAlphabetNavigation } from '../utils/useAlphabetNavigation.js'
 const currentSong = inject('currentSong')
 const props = defineProps({
     artists: {
@@ -144,13 +163,14 @@ const cardVariants = { rest: { y: 0 }, hover: { y: -4 } }
 const imageVariants = { rest: { scale: 1 }, hover: { scale: 1.05 } }
 const overlayVariants = { rest: { opacity: 0 }, hover: { opacity: 1 } }
 const rowVariants = {
-    rest: { backgroundColor: 'rgba(0, 0, 0, 0)' },
+    rest: {},
     hover: { backgroundColor: 'rgba(var(--primary-color), 0.05)' }
 }
 
 const viewMode = ref('grid')
 const sortBy = ref('name')
 const searchQuery = ref('')
+const pageRef = ref(null)
 const sortOptions = [
     { value: 'name', label: '按名称排序' },
     { value: 'albums', label: '按专辑数排序' },
@@ -175,7 +195,7 @@ const formatNumber = (num) => {
     return num?.toString() || '0'
 }
 
-const filteredArtists = computed(() => {
+const artistsAfterFilters = computed(() => {
     let artists = [...props.artists]
 
     // 搜索筛选
@@ -187,27 +207,55 @@ const filteredArtists = computed(() => {
         )
     }
 
+    return artists
+})
+
+const availableInitials = computed(() => getAvailableInitials(artistsAfterFilters.value, (artist) => artist.name))
+
+const filteredArtists = computed(() => {
+    let artists = [...artistsAfterFilters.value]
+
+    if (sortBy.value === 'name') {
+        return sortByInitial(artists, (artist) => artist.name)
+    }
+
     // 排序
     artists.sort((a, b) => {
         switch (sortBy.value) {
-            case 'name':
-                return a.name.localeCompare(b.name)
-            case 'albums':
-                return (b.albumCount || 0) - (a.albumCount || 0)
-            case 'recent':
-                return new Date(b.lastPlayed) - new Date(a.lastPlayed)
-            default:
-                return 0
+        case 'albums':
+            return (b.albumCount || 0) - (a.albumCount || 0)
+        case 'recent':
+            return new Date(b.lastPlayed) - new Date(a.lastPlayed)
+        default:
+            return 0
         }
     })
 
     return artists
 })
+
+const groupedArtists = computed(() => groupByInitial(filteredArtists.value, (artist) => artist.name))
+const visibleGroups = computed(() => sortBy.value === 'name'
+    ? groupedArtists.value.map((group) => ({ ...group, key: group.initial }))
+    : [{ key: 'all', initial: '', items: filteredArtists.value }])
+
+const { activeInitial, handleAlphabetSelect, handleGroupLabelClick } = useAlphabetNavigation(
+    pageRef,
+    availableInitials
+)
 </script>
 
 <style scoped>
 .artists-page {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
     width: 100%;
+}
+
+.artists-main {
+    min-width: 0;
+    flex: 1;
 }
 
 /* 页面标题 */
@@ -253,6 +301,14 @@ const filteredArtists = computed(() => {
     display: flex;
     gap: 16px;
     align-items: center;
+}
+
+.artists-grid-view {
+    width: 100%;
+}
+
+.artist-group {
+    width: 100%;
 }
 
 .search-input {

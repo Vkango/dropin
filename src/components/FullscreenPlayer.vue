@@ -50,19 +50,24 @@
 
                 <section class="lyrics-column" aria-label="歌词">
                     <div ref="lyricsWindowRef" class="lyrics-window">
-                        <MotionDiv v-if="isInterlude" class="lyric-interlude" :initial="{ opacity: 0.4 }"
-                            :animate="{ opacity: 1 }" :transition="microTransition" aria-label="间奏">
-                            <span v-for="dot in 3" :key="dot" class="lyric-interlude-dot"></span>
-                        </MotionDiv>
-                        <MotionDiv v-else-if="syncedLyrics.length" class="lyrics-track" :animate="{ y: lyricOffset }"
+                        <MotionDiv v-if="lyricRows.length" class="lyrics-track" :animate="{ y: lyricOffset }"
                             :transition="contentTransition">
-                            <MotionDiv v-for="(line, index) in syncedLyrics" :ref="setLyricLineRef(index)"
-                                :key="currentSong.title + '-' + line.startTimeMs + '-' + index" class="lyric-line"
-                                :animate="getLyricState(index)" :transition="contentTransition">
-                                <div class="lyric-primary">{{ line.text }}</div>
-                                <div v-for="secondary in line.secondary" :key="secondary" class="lyric-secondary">
-                                    {{ secondary }}
-                                </div>
+                            <MotionDiv v-for="(row, index) in lyricRows" :ref="setLyricRowRef(row.key)"
+                                :key="row.key" class="lyric-line"
+                                :class="{ 'lyric-interlude-row': row.type === 'interlude' }"
+                                :aria-label="row.type === 'interlude' && activeLyricRowIndex === index ? '间奏' : undefined"
+                                :animate="getLyricState(index)"
+                                :transition="row.type === 'interlude' ? instantTransition : contentTransition">
+                                <template v-if="row.type === 'interlude'">
+                                    <MoreHorizontal v-if="activeLyricRowIndex === index" class="lyric-interlude-icon"
+                                        :size="32" :stroke-width="2.5" fill="currentColor" aria-hidden="true" />
+                                </template>
+                                <template v-else>
+                                    <div class="lyric-primary">{{ row.line.text }}</div>
+                                    <div v-for="secondary in row.line.secondary" :key="secondary" class="lyric-secondary">
+                                        {{ secondary }}
+                                    </div>
+                                </template>
                             </MotionDiv>
                         </MotionDiv>
                         <MotionDiv v-else-if="lyricsLoading" class="lyrics-status" :initial="{ opacity: 0 }"
@@ -308,33 +313,63 @@ const toggleBackgroundMode = () => {
 const volume = ref(75)
 const albumStageRef = ref(null)
 const lyricsWindowRef = ref(null)
-const lyricLineRefs = ref([])
+const lyricRowRefs = new Map()
 const albumSize = ref(0)
 let albumResizeObserver
 let lyricsResizeObserver
 const tickCount = 52
 const ticks = Array.from({ length: tickCount }, (_, index) => (index * 360) / tickCount)
 const syncedLyrics = computed(() => props.lyrics?.lines || [])
+const interludes = computed(() => props.lyrics?.interludes || [])
 const plainLyrics = computed(() => props.lyrics?.plainLines || [])
-const activeLyricIndex = computed(() => {
-    if (!syncedLyrics.value.length) return -1
+const lyricTimelineRows = computed(() => {
+    const rows = [
+        ...syncedLyrics.value.map((line, index) => ({
+            type: 'line',
+            key: `line-${line.startTimeMs}-${index}`,
+            startTimeMs: line.startTimeMs,
+            endTimeMs: line.endTimeMs,
+            line
+        })),
+        ...interludes.value.map((interlude, index) => ({
+            type: 'interlude',
+            key: `interlude-${interlude.startTimeMs}-${index}`,
+            startTimeMs: interlude.startTimeMs,
+            endTimeMs: interlude.endTimeMs
+        }))
+    ]
 
-    return syncedLyrics.value.findIndex((line) =>
-        props.currentTimeMs >= line.startTimeMs && props.currentTimeMs < line.endTimeMs
+    return rows.sort((left, right) => left.startTimeMs - right.startTimeMs)
+})
+const activeLyricTimelineRow = computed(() => lyricTimelineRows.value.find((row) =>
+    props.currentTimeMs >= row.startTimeMs && props.currentTimeMs < row.endTimeMs
+))
+const lyricRows = computed(() => {
+    const activeInterludeKey = activeLyricTimelineRow.value?.type === 'interlude'
+        ? activeLyricTimelineRow.value.key
+        : null
+
+    return lyricTimelineRows.value.filter((row) =>
+        row.type !== 'interlude' || row.key === activeInterludeKey
     )
 })
-const isInterlude = computed(() => syncedLyrics.value.length > 0 && activeLyricIndex.value < 0)
+const activeLyricRowIndex = computed(() => lyricRows.value.findIndex((row) =>
+    props.currentTimeMs >= row.startTimeMs && props.currentTimeMs < row.endTimeMs
+))
 const lyricOffset = ref(0)
 
-const setLyricLineRef = (index) => (value) => {
-    lyricLineRefs.value[index] = value?.$el ?? value
+const setLyricRowRef = (key) => (value) => {
+    const element = value?.$el ?? value
+    if (element) lyricRowRefs.set(key, element)
+    else lyricRowRefs.delete(key)
 }
 
 const measureLyrics = async () => {
     await nextTick()
     const windowElement = lyricsWindowRef.value
-    const lineElement = lyricLineRefs.value[activeLyricIndex.value]
-    if (!windowElement || !lineElement || activeLyricIndex.value < 0) {
+    const activeRowKey = activeLyricTimelineRow.value?.key
+    const lineElement = activeRowKey ? lyricRowRefs.get(activeRowKey) : null
+    if (!windowElement || !lineElement || !activeRowKey) {
         lyricOffset.value = 0
         return
     }
@@ -357,9 +392,9 @@ const albumVisualStyle = computed(() => {
 })
 
 const getLyricState = (index) => {
-    const distance = activeLyricIndex.value < 0
+    const distance = activeLyricRowIndex.value < 0
         ? index + 1
-        : Math.abs(index - activeLyricIndex.value)
+        : Math.abs(index - activeLyricRowIndex.value)
     return {
         opacity: distance === 0 ? 1 : Math.max(0.22, 0.7 - distance * 0.13),
         scale: distance === 0 ? 1 : Math.max(0.88, 1 - distance * 0.035),
@@ -454,10 +489,11 @@ onUnmounted(() => {
     document.removeEventListener('keydown', handleKeydown)
     albumResizeObserver?.disconnect()
     lyricsResizeObserver?.disconnect()
+    lyricRowRefs.clear()
     stopAudioBands()
 })
 
-watch([syncedLyrics, activeLyricIndex], measureLyrics, { deep: true, flush: 'post' })
+watch([lyricRows, activeLyricRowIndex, activeLyricTimelineRow], measureLyrics, { deep: true, flush: 'post' })
 watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], startAudioBands)
 </script>
 
@@ -721,8 +757,7 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
 }
 
 .lyrics-status,
-.plain-lyrics,
-.lyric-interlude {
+.plain-lyrics {
     width: 100%;
     color: rgba(255, 255, 255, 0.52);
     text-align: left;
@@ -734,44 +769,14 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
     font-size: 22px;
 }
 
-.lyric-interlude {
-    align-self: center;
+.lyric-interlude-row {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 44px;
+    justify-content: flex-start;
 }
 
-.lyric-interlude-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-    animation: lyric-interlude-pulse 1.2s ease-in-out infinite;
-}
-
-.lyric-interlude-dot:nth-child(2) {
-    animation-delay: 0.16s;
-}
-
-.lyric-interlude-dot:nth-child(3) {
-    animation-delay: 0.32s;
-}
-
-@keyframes lyric-interlude-pulse {
-
-    0%,
-    60%,
-    100% {
-        opacity: 0.35;
-        transform: scale(0.75);
-    }
-
-    30% {
-        opacity: 1;
-        transform: scale(1);
-    }
+.lyric-interlude-icon {
+    flex: 0 0 auto;
 }
 
 .plain-lyrics {

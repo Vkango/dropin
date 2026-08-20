@@ -20,6 +20,9 @@ importers:
       motion-v:
         specifier: ^2.4.0
         version: 2.4.0(@vueuse/core@14.4.0(vue@3.5.40))(vue@3.5.40)
+      pinyin-pro:
+        specifier: ^3.26.0
+        version: 3.29.3
       vue:
         specifier: ^3.5.13
         version: 3.5.40
@@ -570,6 +573,9 @@ packages:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
 
+  pinyin-pro@3.29.3:
+    resolution: {integrity: sha512-+UU9bx6vfDw8amOJGHm0TE0rdQl8VPylsDWviQ5OOQ3e+on1xRP4OqDbiDuMT5OISgvfl/Y6ez1BBRaIP80GLQ==}
+
   postcss@8.5.25:
     resolution: {integrity: sha512-DTPx3RWSSnWyzLxQnlH0rJP+EW5ekl16ZU4/psbIhA0e53kJfdgaN5vKM+xP7yJtXVu+nfdVFmlgFDEKAe4Pyw==}
     engines: {node: ^10 || ^12 || >=14}
@@ -1023,6 +1029,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.5: {}
+
+  pinyin-pro@3.29.3: {}
 
   postcss@8.5.25:
     dependencies:

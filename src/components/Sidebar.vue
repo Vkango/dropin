@@ -8,9 +8,10 @@
             </div>
 
             <nav class="nav-menu">
-                <MotionDiv v-for="item in sidebarItems" :key="item.id" :class="['nav-item', { active: item.active }]"
-                    :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }" :transition="microTransition"
-                    @click="$emit('nav-item-click', item)">
+                <MotionDiv v-for="item in sidebarItems" :key="item.id"
+                    :class="['nav-item', { active: item.id === currentPage }]"
+                    :aria-current="item.id === currentPage ? 'page' : undefined" :while-hover="{ y: -1 }"
+                    :transition="microTransition" @click="$emit('nav-item-click', item)">
                     <span class="nav-icon">
                         <Icon :src="'/assets/' + item.icon" />
                     </span>
@@ -31,8 +32,7 @@
                         :transition="microTransition" @click.stop="$emit('add-tag')">+</MotionButton>
                 </div>
                 <div v-if="sections.tags" class="section-content">
-                    <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
-                        :transition="microTransition">
+                    <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition">
                         <span class="section-icon">
                             <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
                         </span>
@@ -68,13 +68,11 @@
                         :transition="microTransition" @click.stop="$emit('add-plugin')">+</MotionButton>
                 </div>
                 <div v-if="sections.plugins" class="section-content">
-                    <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
-                        :transition="microTransition">
+                    <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition">
                         <span class="nav-icon">👣</span>
                         <span class="nav-label">我的足迹</span>
                     </MotionDiv>
-                    <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
-                        :transition="microTransition">
+                    <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition">
                         <span class="nav-icon">⏰</span>
                         <span class="nav-label">定时停止</span>
                     </MotionDiv>
@@ -94,6 +92,10 @@ import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 const props = defineProps({
     sidebarItems: {
         type: Array,
+        required: true
+    },
+    currentPage: {
+        type: String,
         required: true
     },
     searchQuery: {
@@ -206,9 +208,13 @@ const toggleSection = (sectionName) => {
     cursor: pointer;
 }
 
-.nav-item.active {
-    background: rgba(var(--text-color), 0.1);
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.08);
+.nav-item:hover {
+    background-color: rgba(var(--text-color), 0.06);
+}
+
+.nav-item.active,
+.nav-item.active:hover {
+    background-color: rgba(var(--global-inverse-color), 0.14);
 }
 
 .nav-icon {

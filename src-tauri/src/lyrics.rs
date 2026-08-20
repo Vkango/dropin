@@ -21,11 +21,19 @@ pub struct LyricLine {
     pub secondary: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricInterlude {
+    pub start_time_ms: u64,
+    pub end_time_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LyricsPayload {
     pub source: String,
     pub lines: Vec<LyricLine>,
+    pub interludes: Vec<LyricInterlude>,
     pub plain_lines: Vec<String>,
     pub warnings: Vec<String>,
 }
@@ -170,9 +178,9 @@ fn parse_lrc_text(text: &str) -> Result<ParsedLyrics, String> {
     let timed = lyrics
         .get_timed_lines()
         .iter()
-        .filter_map(|(timestamp, text)| {
+        .map(|(timestamp, text)| {
             let text = text.trim();
-            (!text.is_empty()).then_some((timestamp.get_timestamp().max(0) as u64, text.to_owned()))
+            (timestamp.get_timestamp().max(0) as u64, text.to_owned())
         })
         .collect();
     let plain = lyrics
@@ -188,7 +196,7 @@ fn parse_lrc_text(text: &str) -> Result<ParsedLyrics, String> {
 
 impl ParsedLyrics {
     fn has_content(&self) -> bool {
-        !self.timed.is_empty() || !self.plain.is_empty()
+        self.timed.iter().any(|(_, text)| !text.is_empty()) || !self.plain.is_empty()
     }
 }
 
@@ -198,39 +206,94 @@ fn payload_from_parsed(
     duration_ms: u64,
     warnings: Vec<String>,
 ) -> LyricsPayload {
-    let mut lines: Vec<LyricLine> = Vec::new();
+    let mut timed_groups: Vec<(u64, Vec<String>)> = Vec::new();
     for (timestamp, text) in parsed.timed {
-        if let Some(line) = lines.last_mut() {
-            if line.start_time_ms == timestamp {
-                if text != line.text && !line.secondary.iter().any(|value| value == &text) {
-                    line.secondary.push(text);
+        if let Some((group_timestamp, texts)) = timed_groups.last_mut() {
+            if *group_timestamp == timestamp {
+                if !text.is_empty() && !texts.iter().any(|value| value == &text) {
+                    texts.push(text);
                 }
                 continue;
             }
         }
 
+        timed_groups.push((
+            timestamp,
+            (!text.is_empty()).then_some(text).into_iter().collect(),
+        ));
+    }
+
+    let mut lines: Vec<LyricLine> = Vec::new();
+    for (index, (timestamp, texts)) in timed_groups.iter().enumerate() {
+        let Some(text) = texts.first() else {
+            continue;
+        };
+
         lines.push(LyricLine {
-            start_time_ms: timestamp,
+            start_time_ms: *timestamp,
             end_time_ms: 0,
-            text,
-            secondary: Vec::new(),
+            text: text.clone(),
+            secondary: texts.iter().skip(1).cloned().collect(),
+        });
+
+        let next_start = timed_groups.get(index + 1).map(|group| group.0);
+        lines.last_mut().unwrap().end_time_ms = next_start.unwrap_or_else(|| {
+            if duration_ms > *timestamp {
+                duration_ms
+            } else {
+                timestamp.saturating_add(5_000)
+            }
         });
     }
 
-    for index in 0..lines.len() {
-        let next_start = lines.get(index + 1).map(|line| line.start_time_ms);
-        lines[index].end_time_ms = next_start.unwrap_or_else(|| {
-            if duration_ms > lines[index].start_time_ms {
-                duration_ms
-            } else {
-                lines[index].start_time_ms.saturating_add(5_000)
+    let mut interludes = Vec::new();
+    let mut interlude_start = None;
+    for (timestamp, texts) in &timed_groups {
+        if texts.is_empty() {
+            interlude_start.get_or_insert(*timestamp);
+            continue;
+        }
+
+        if let Some(start_time_ms) = interlude_start.take() {
+            if start_time_ms < *timestamp {
+                interludes.push(LyricInterlude {
+                    start_time_ms,
+                    end_time_ms: *timestamp,
+                });
             }
-        });
+        }
+    }
+
+    if let Some(first_line_start) = timed_groups
+        .iter()
+        .find_map(|(timestamp, texts)| (!texts.is_empty()).then_some(*timestamp))
+    {
+        if first_line_start > 0 {
+            interludes.insert(
+                0,
+                LyricInterlude {
+                    start_time_ms: 0,
+                    end_time_ms: first_line_start,
+                },
+            );
+        }
+    }
+
+    let mut merged_interludes: Vec<LyricInterlude> = Vec::new();
+    for interlude in interludes {
+        if let Some(previous) = merged_interludes.last_mut() {
+            if interlude.start_time_ms <= previous.end_time_ms {
+                previous.end_time_ms = previous.end_time_ms.max(interlude.end_time_ms);
+                continue;
+            }
+        }
+        merged_interludes.push(interlude);
     }
 
     LyricsPayload {
         source: source.into(),
         lines,
+        interludes: merged_interludes,
         plain_lines: parsed.plain,
         warnings,
     }
@@ -253,6 +316,48 @@ mod tests {
         assert_eq!(payload.lines[0].secondary, vec!["副歌词", "第三行"]);
         assert_eq!(payload.lines[0].end_time_ms, 3_000);
         assert_eq!(payload.lines[1].end_time_ms, 5_000);
+    }
+
+    #[test]
+    fn preserves_explicit_timed_interludes_without_lyric_text() {
+        let parsed = parse_lrc_text(
+            "[00:00.00]\n[00:02.00]第一句\n[00:04.00]\n[00:05.00]\n[00:06.00]第二句\n[00:08.00]",
+        )
+        .expect("valid lrc");
+        let payload = payload_from_parsed("sidecar", parsed, 10_000, Vec::new());
+
+        assert_eq!(payload.lines.len(), 2);
+        assert!(payload.plain_lines.is_empty());
+        assert_eq!(payload.lines[0].end_time_ms, 4_000);
+        assert_eq!(payload.lines[1].end_time_ms, 8_000);
+        assert_eq!(
+            payload.interludes,
+            vec![
+                LyricInterlude {
+                    start_time_ms: 0,
+                    end_time_ms: 2_000,
+                },
+                LyricInterlude {
+                    start_time_ms: 4_000,
+                    end_time_ms: 6_000,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn adds_leading_interlude_but_not_trailing_interlude() {
+        let parsed =
+            parse_lrc_text("[00:02.00]第一句\n[00:05.00]第二句\n[00:08.00]").expect("valid lrc");
+        let payload = payload_from_parsed("sidecar", parsed, 8_000, Vec::new());
+
+        assert_eq!(
+            payload.interludes,
+            vec![LyricInterlude {
+                start_time_ms: 0,
+                end_time_ms: 2_000,
+            }]
+        );
     }
 
     #[test]

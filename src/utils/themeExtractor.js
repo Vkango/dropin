@@ -426,6 +426,9 @@ export function applyTheme(theme, isDark = false) {
     root.style.setProperty('--text-color', `${selectedTheme.onSurface.r}, ${selectedTheme.onSurface.g}, ${selectedTheme.onSurface.b}`);
     root.style.setProperty('--secondary-color', `${selectedTheme.secondary.r}, ${selectedTheme.secondary.g}, ${selectedTheme.secondary.b}`);
     root.style.setProperty('--outline-color', `${selectedTheme.outline.r}, ${selectedTheme.outline.g}, ${selectedTheme.outline.b}`);
+    // Global mode indicator: black in dark mode and white in light mode.
+    root.style.setProperty('--global-color', isDark ? '0, 0, 0' : '255, 255, 255');
+    root.style.setProperty('--global-inverse-color', isDark ? '255, 255, 255' : '0, 0, 0');
 
     // 设置主题模式
     document.body.setAttribute('data-theme', isDark ? 'dark' : 'light');
