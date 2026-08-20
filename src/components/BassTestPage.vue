@@ -1,4 +1,5 @@
 <template>
+  <PageLayout>
   <div class="bass-page">
     <div class="page-header">
       <div>
@@ -22,8 +23,8 @@
     <section class="panel">
       <div class="section-title"><h2>输出设备</h2><button @click="refreshDevices">重新枚举</button></div>
       <div class="form-grid">
-        <label>设备<select v-model.number="init.device"><option :value="-1">默认设备</option><option v-for="device in devices" :key="device.index" :value="device.index">{{ device.index }} · {{ device.name }}</option></select></label>
-        <label>后端<select v-model="init.backend"><option value="wasapi">WASAPI</option><option value="directSound">DirectSound</option></select></label>
+        <label>设备<Combobox v-model="init.device" :options="deviceOptions" label-key="name"><template #option="{ option, label }"><span>{{ option.index }} · {{ label }}</span></template><template #selected="{ option, label }"><span>{{ option.index }} · {{ label }}</span></template></Combobox></label>
+        <label>后端<Combobox v-model="init.backend" :options="backendOptions" /></label>
         <label>采样率<input v-model.number="init.sampleRate" type="number" min="8000" step="100" /></label>
         <label>全局音量<input v-model.number="globalVolume" type="number" min="0" max="1" step="0.01" @change="setGlobalVolume" /></label>
       </div>
@@ -38,7 +39,7 @@
       <div class="source-row"><input v-model="url" placeholder="https://example.com/audio.mp3" /><button class="primary" @click="loadUrl">打开 URL</button></div>
       <div class="form-grid compact"><label>URL offset<input v-model.number="urlOptions.offset" type="number" min="0" /></label><label>URL flags<input v-model.number="urlOptions.flags" type="number" min="0" /></label><label><input v-model="urlOptions.float" type="checkbox" /> 浮点 URL</label></div>
       <div v-if="channelId" class="channel-controls">
-        <select v-model.number="selectedChannel"><option v-for="id in channelIds" :key="id" :value="id">Channel {{ id }}</option></select>
+        <Combobox v-model="selectedChannel" :options="channelOptions" :label-key="channelLabel" />
         <button class="primary" @click="channelCommand('bass_channel_play', { restart: false })">播放</button><button @click="channelCommand('bass_channel_pause')">暂停</button><button @click="channelCommand('bass_channel_stop')">停止</button><button @click="channelCommand('bass_channel_close')">关闭</button>
         <label>音量<input v-model.number="channelVolume" type="range" min="0" max="1" step="0.01" @input="setChannelAttribute('volume', channelVolume)" /></label>
         <label>定位<input v-model.number="seekSeconds" type="number" min="0" step="0.1" /><button @click="channelCommand('bass_channel_seek', { seconds: seekSeconds })">跳转</button></label>
@@ -49,7 +50,7 @@
     <section class="panel">
       <div class="section-title"><h2>音频效果</h2></div>
       <div class="form-grid">
-        <label>效果<select v-model="effectKind"><option v-for="item in effectKinds" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
+        <label>效果<Combobox v-model="effectKind" :options="effectKinds" /></label>
         <label>优先级<input v-model.number="effectPriority" type="number" /></label>
       </div>
       <textarea v-model="effectJson" rows="5" spellcheck="false"></textarea>
@@ -68,12 +69,15 @@
 
     <div v-if="error" class="error-box">{{ error }}</div>
   </div>
+  </PageLayout>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { bassCall } from '../services/bassApi.js'
+import Combobox from './Combobox.vue'
+import PageLayout from './PageLayout.vue'
 
 const status = reactive({ loaded: false, fxLoaded: false })
 const devices = ref([])
@@ -105,10 +109,21 @@ let timer = null
 
 const init = reactive({ device: -1, sampleRate: 44100, backend: 'wasapi', mono: false, exclusive: false, forceFrequency: false, floatProcessing: false })
 const urlOptions = reactive({ offset: 0, flags: 0, float: false })
+const backendOptions = [
+  { value: 'wasapi', label: 'WASAPI' },
+  { value: 'directSound', label: 'DirectSound' }
+]
 const effectKinds = [
   { value: 'dx8.parameq', label: 'DX8 ParamEQ' }, { value: 'dx8.compressor', label: 'DX8 Compressor' }, { value: 'dx8.reverb', label: 'DX8 Reverb' },
   { value: 'bassFx.freeverb', label: 'BASS_FX Freeverb' }, { value: 'bassFx.phaser', label: 'BASS_FX Phaser' }, { value: 'bassFx.echo2', label: 'BASS_FX Echo2' }, { value: 'bassFx.compressor2', label: 'BASS_FX Compressor2' }, { value: 'volume', label: 'Volume' }
 ]
+
+const deviceOptions = computed(() => [
+  { value: -1, name: '默认设备', index: '默认' },
+  ...devices.value.map((device) => ({ ...device, value: device.index }))
+])
+const channelOptions = computed(() => channelIds.value)
+const channelLabel = (id) => `Channel ${id}`
 
 const version = (value) => value ? `0x${Number(value).toString(16)}` : '—'
 const pretty = (value) => JSON.stringify(value, null, 2)
@@ -158,15 +173,15 @@ onBeforeUnmount(() => { stopEvents(); if (timer) window.clearInterval(timer) })
 </script>
 
 <style scoped>
-.bass-page { width: 100%; padding: 28px 32px 160px; color: rgb(var(--text-color)); }
+.bass-page { width: 100%; padding: 0 0 160px; color: rgb(var(--text-color)); }
 .page-header, .section-title, .header-actions, .button-row, .source-row, .channel-controls, .checks { display: flex; align-items: center; gap: 10px; }
 .page-header { justify-content: space-between; margin-bottom: 24px; gap: 20px; }
 .eyebrow { color: rgb(var(--primary-color)); font-size: 11px; letter-spacing: .12em; font-weight: 700; }
 h1 { margin: 5px 0; font-size: 30px; } h2 { margin: 0; font-size: 17px; } p { opacity: .65; font-size: 13px; }
-button, input, select, textarea { border: 1px solid rgba(var(--outline-color), .24); border-radius: 8px; background: rgba(var(--surface-color), .5); color: inherit; padding: 9px 11px; font: inherit; }
+button, input, textarea { border: 1px solid rgba(var(--outline-color), .24); border-radius: 8px; background: rgba(var(--surface-color), .5); color: inherit; padding: 9px 11px; font: inherit; }
 button { cursor: pointer; } button:hover { border-color: rgb(var(--primary-color)); } button.primary { background: rgb(var(--primary-color)); color: #10212b; border-color: transparent; }
 .status-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }.status-card, .panel { border: 1px solid rgba(var(--outline-color), .16); background: rgba(var(--surface-color), .42); border-radius: 14px; }.status-card { padding: 14px; display: grid; gap: 6px; }.status-card span { font-size: 11px; opacity: .6; }.status-card strong { font-size: 15px; }
-.panel { padding: 18px; margin-top: 14px; }.section-title { justify-content: space-between; margin-bottom: 14px; }.form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }.form-grid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }.form-grid label, .channel-controls label { display: grid; gap: 6px; font-size: 12px; opacity: .85; }.form-grid input, .form-grid select { width: 100%; }.checks { margin: 14px 0; flex-wrap: wrap; font-size: 12px; }.checks label { display: flex; align-items: center; gap: 5px; }.button-row { flex-wrap: wrap; margin-top: 14px; }.source-row { margin-top: 10px; }.source-row input:not(.file-input) { flex: 1; min-width: 180px; }.file-input { width: 170px; padding: 6px; }.channel-controls { margin-top: 14px; flex-wrap: wrap; }.channel-controls label { display: flex; align-items: center; }.channel-controls input[type=range] { width: 120px; padding: 0; }.small-json, .event-log { margin-top: 14px; padding: 12px; border-radius: 8px; background: rgba(0, 0, 0, .18); white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, monospace; max-height: 220px; overflow: auto; }.event-log { max-height: 180px; }.error-box { margin-top: 14px; padding: 12px; border-radius: 8px; background: rgba(220, 60, 60, .15); color: #ff9c9c; font-size: 13px; }
+.panel { padding: 18px; margin-top: 14px; }.section-title { justify-content: space-between; margin-bottom: 14px; }.form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }.form-grid.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }.form-grid label, .channel-controls label { display: grid; gap: 6px; font-size: 12px; opacity: .85; }.form-grid input, .form-grid :deep(.combobox) { width: 100%; }.checks { margin: 14px 0; flex-wrap: wrap; font-size: 12px; }.checks label { display: flex; align-items: center; gap: 5px; }.button-row { flex-wrap: wrap; margin-top: 14px; }.source-row { margin-top: 10px; }.source-row input:not(.file-input) { flex: 1; min-width: 180px; }.file-input { width: 170px; padding: 6px; }.channel-controls { margin-top: 14px; flex-wrap: wrap; }.channel-controls label { display: flex; align-items: center; }.channel-controls input[type=range] { width: 120px; padding: 0; }.small-json, .event-log { margin-top: 14px; padding: 12px; border-radius: 8px; background: rgba(0, 0, 0, .18); white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, monospace; max-height: 220px; overflow: auto; }.event-log { max-height: 180px; }.error-box { margin-top: 14px; padding: 12px; border-radius: 8px; background: rgba(220, 60, 60, .15); color: #ff9c9c; font-size: 13px; }
 textarea { width: 100%; margin-top: 14px; font: 12px/1.5 ui-monospace, monospace; }.header-actions { flex-shrink: 0; }
 @media (max-width: 900px) { .status-grid, .form-grid, .form-grid.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); } .page-header { align-items: flex-start; flex-direction: column; } }
 </style>

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted, onBeforeUnmount, provide, computed, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, provide, computed, watch, nextTick } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import MusicLibrary from './components/MusicLibrary.vue'
 import HomePage from './components/HomePage.vue'
@@ -25,6 +25,8 @@ const pageCache = reactive(new Map())
 
 // 全屏播放器状态
 const showFullscreenPlayer = ref(false)
+const isTitlebarScrolled = ref(false)
+let unbindScrollSources = () => { }
 
 // 页面组件映射
 const pageComponents = {
@@ -57,6 +59,10 @@ const progress = ref(0)
 const activeChannelId = ref(null)
 const fullscreenBackgroundMode = ref('flowing')
 let snapshotTimer = null
+let seekTimer = null
+let pendingSeekSeconds = null
+let seekInFlight = false
+let seekCommitRequested = false
 const lyricsPayload = ref(null)
 const lyricsLoading = ref(false)
 let lyricsRequestId = 0
@@ -328,7 +334,7 @@ const navigateToPage = (pageId) => {
   // 缓存当前页面状态
   if (currentPage.value) {
     pageCache.set(currentPage.value, {
-      scrollPosition: document.querySelector('.page-layout')?.scrollTop || 0,
+      scrollPosition: document.querySelector('.page-layout-scroll')?.scrollTop || 0,
       timestamp: Date.now()
     })
   }
@@ -349,10 +355,38 @@ const restorePageScroll = () => {
   const cachedState = pageCache.get(currentPage.value)
   if (!cachedState) return
 
-  const mainContent = document.querySelector('.page-layout')
+  const mainContent = document.querySelector('.page-layout-scroll')
   if (mainContent) {
     mainContent.scrollTop = cachedState.scrollPosition
   }
+}
+
+const bindScrollSources = async () => {
+  unbindScrollSources()
+  await nextTick()
+
+  const updateTitlebarScroll = () => {
+    const sources = [
+      document.querySelector('.sidebar-scroll'),
+      document.querySelector('.page-layout-scroll')
+    ].filter(Boolean)
+
+    isTitlebarScrolled.value = sources.some((source) => source.scrollTop > 0)
+  }
+
+  // 使用捕获阶段监听所有滚动容器，页面切换替换滚动节点时无需重新依赖旧节点。
+  document.addEventListener('scroll', updateTitlebarScroll, { capture: true, passive: true })
+  updateTitlebarScroll()
+
+  unbindScrollSources = () => {
+    document.removeEventListener('scroll', updateTitlebarScroll, true)
+    unbindScrollSources = () => { }
+  }
+}
+
+const handlePageEntered = () => {
+  restorePageScroll()
+  bindScrollSources()
 }
 
 // 当前页面组件
@@ -430,7 +464,7 @@ watch(
 )
 
 const refreshPlaybackSnapshot = async () => {
-  if (!activeChannelId.value) return
+  if (!activeChannelId.value || seekInFlight || pendingSeekSeconds !== null) return
   try {
     const snapshot = await bassCall('bass_channel_snapshot', { channelId: activeChannelId.value })
     const position = Number(snapshot.positionSeconds || 0)
@@ -453,6 +487,12 @@ const startPlaybackSnapshot = () => {
 
 const playSong = async (song) => {
   try {
+    if (seekTimer !== null) {
+      window.clearTimeout(seekTimer)
+      seekTimer = null
+    }
+    pendingSeekSeconds = null
+    seekCommitRequested = false
     if (activeChannelId.value) {
       await bassCall('bass_channel_stop', { channelId: activeChannelId.value }).catch(() => { })
       await bassCall('bass_channel_close', { channelId: activeChannelId.value }).catch(() => { })
@@ -565,11 +605,43 @@ const handleProgressChange = (percent) => {
     const targetSeconds = activeLengthSeconds.value * boundedPercent / 100
     currentTimeMs.value = Math.round(targetSeconds * 1000)
     currentTime.value = formatSeconds(targetSeconds)
-    bassCall('bass_channel_seek', {
-      channelId: activeChannelId.value,
-      seconds: targetSeconds
-    }).catch((error) => console.error('调整播放进度失败:', error))
+    pendingSeekSeconds = targetSeconds
   }
+}
+
+const flushSeek = async () => {
+  seekTimer = null
+  if (seekInFlight || pendingSeekSeconds === null || !activeChannelId.value || activeLengthSeconds.value <= 0) return
+
+  const targetSeconds = pendingSeekSeconds
+  const channelId = activeChannelId.value
+  pendingSeekSeconds = null
+  seekCommitRequested = false
+  seekInFlight = true
+  try {
+    await bassCall('bass_channel_seek', {
+      channelId,
+      seconds: targetSeconds
+    })
+  } catch (error) {
+    console.error('调整播放进度失败:', error)
+  } finally {
+    seekInFlight = false
+    if (pendingSeekSeconds !== null && seekCommitRequested) scheduleSeek()
+  }
+}
+
+const scheduleSeek = () => {
+  if (seekTimer !== null) return
+  seekTimer = window.setTimeout(flushSeek, 0)
+}
+
+const handleProgressCommit = (percent) => {
+  if (percent === null || percent === undefined) return
+  handleProgressChange(percent)
+  if (pendingSeekSeconds === null) return
+  seekCommitRequested = true
+  scheduleSeek()
 }
 
 const handleAddTag = () => {
@@ -590,6 +662,10 @@ const handleRepeat = () => {
 
 const handleMenu = () => {
   console.log('菜单')
+}
+
+const handleQueue = () => {
+  console.log('播放队列')
 }
 
 const handleAdd = () => {
@@ -639,6 +715,8 @@ onMounted(async () => {
     await updateThemeFromSong(currentSong.value)
   }
 
+  // 先绑定页面滚动，避免桌面端事件初始化失败时影响标题栏状态联动。
+  await bindScrollSources()
   await libraryStore.installListeners()
   await libraryStore.refresh()
   await libraryStore.hydrateCovers()
@@ -647,12 +725,21 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (snapshotTimer) clearInterval(snapshotTimer)
+  if (seekTimer !== null) window.clearTimeout(seekTimer)
+  unbindScrollSources()
   libraryStore.dispose()
 })
 </script>
 
 <template>
   <div class="music-player">
+    <TitleBar :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
+      :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress" :lyrics="lyricsPayload"
+      :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer" :is-scrolled="isTitlebarScrolled"
+      @toggle-play="handleTogglePlay" @previous="handlePrevious" @next="handleNext"
+      @progress-change="handleProgressChange" @repeat="handleRepeat" @queue="handleQueue"
+      @progress-commit="handleProgressCommit" @expand-player="handleExpandPlayer" />
+
     <!-- 侧边栏 -->
     <Sidebar :sidebar-items="sidebarItems" :search-query="searchQuery" :is-dark="isDarkTheme"
       @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick" @add-tag="handleAddTag"
@@ -660,7 +747,7 @@ onBeforeUnmount(() => {
 
     <!-- 主内容区 -->
     <div class="main-content-wrapper">
-      <MotionTransition variant="page" mode="out-in" @after-enter="restorePageScroll">
+      <MotionTransition variant="page" mode="out-in" @after-enter="handlePageEntered">
         <KeepAlive :max="5">
           <component :is="currentPageComponent" :key="currentPage" v-bind="getPageProps()"
             @song-select="handleSongSelect" @song-play="handleSongPlay" @album-select="handleAlbumSelect"
@@ -674,17 +761,16 @@ onBeforeUnmount(() => {
     <!-- 右侧详情面板 -->
     <!-- <DetailPanel :current-song="currentSong" /> -->
 
-    <!-- 共享播放卡片：迷你播放器和全屏内容在同一张卡片内替换 -->
+    <!-- 全屏播放器层；顶部迷你播放器由 TitleBar 承载 -->
     <PlayerSurface :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
       :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress" :lyrics="lyricsPayload"
-      :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer"
-      :channel-id="activeChannelId" :background-mode="fullscreenBackgroundMode"
-      @close="handleCloseFullscreenPlayer"
-      @toggle-play="handleTogglePlay" @previous="handlePrevious" @next="handleNext"
-      @progress-change="handleProgressChange" @volume-change="(volume) => console.log('音量变化:', volume)"
-      @shuffle="() => console.log('随机播放')" @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')"
-      @queue="() => console.log('播放队列')" @menu="handleMenu" @add="handleAdd"
-      @background-mode-change="handleBackgroundModeChange" @expand-player="handleExpandPlayer" />
+      :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer" :channel-id="activeChannelId"
+      :background-mode="fullscreenBackgroundMode" @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay"
+      @previous="handlePrevious" @next="handleNext" @progress-change="handleProgressChange"
+      @progress-commit="handleProgressCommit"
+      @volume-change="(volume) => console.log('音量变化:', volume)" @shuffle="() => console.log('随机播放')"
+      @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')" @queue="handleQueue"
+      @background-mode-change="handleBackgroundModeChange" />
   </div>
 </template>
 
@@ -693,6 +779,15 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+html,
+body,
+button,
+input,
+textarea,
+select {
+  font-family: MiSans, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 :root {
@@ -732,10 +827,11 @@ body {
 /* Banner 样式 */
 .music-banner {
   width: 100%;
-  height: 190px;
+  height: 300px;
   position: relative;
   overflow: hidden;
   border-radius: 0 0 18px 18px;
+  isolation: isolate;
 }
 
 .image-container {
@@ -743,6 +839,7 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  border-radius: inherit;
 }
 
 .image-container img {
@@ -753,7 +850,8 @@ body {
 
 .music-banner .background-image {
   width: 100%;
-  height: 190px;
+  height: 300px;
+  display: block;
   object-fit: cover;
 }
 
@@ -816,7 +914,7 @@ body {
   grid-template-rows: 1fr;
   grid-template-areas: "sidebar main";
   height: 100vh;
-  background: rgb(var(--background-color));
+  background: color-mix(in srgb, rgba(var(--background-color)), black 40%);
   color: rgb(var(--text-color));
   font-family: MiSans, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
@@ -827,9 +925,8 @@ body {
   min-width: 0;
   left: 300px;
   width: calc(100% - 300px);
-  top: 60px;
-  height: calc(100% - 60px);
-  border-radius: 10px 0 0 0;
+  top: 0;
+  height: 100%;
   overflow: hidden;
 }
 </style>

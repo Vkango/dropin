@@ -240,6 +240,7 @@ const emit = defineEmits([
     'previous',
     'next',
     'progress-change',
+    'progress-commit',
     'volume-change',
     'shuffle',
     'repeat',
@@ -388,7 +389,9 @@ const handleProgressPointerMove = (event) => {
 
 const handleProgressPointerUp = (event) => {
     if (!isProgressDragging.value) return
-    emit('progress-change', progressFromPointer(event))
+    const nextProgress = progressFromPointer(event)
+    emit('progress-change', nextProgress)
+    emit('progress-commit', nextProgress)
     event.currentTarget.releasePointerCapture?.(event.pointerId)
     isProgressDragging.value = false
 }
@@ -403,7 +406,9 @@ const handleProgressKeydown = (event) => {
 
     event.preventDefault()
     event.stopPropagation()
-    emit('progress-change', Math.max(0, Math.min(100, nextProgress)))
+    const boundedProgress = Math.max(0, Math.min(100, nextProgress))
+    emit('progress-change', boundedProgress)
+    emit('progress-commit', boundedProgress)
 }
 
 const handleKeydown = (event) => {
@@ -477,7 +482,7 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
 }
 
 .player-background {
-    z-index: -1;
+    z-index: 0;
     overflow: hidden;
     background: #090807;
 }
@@ -500,6 +505,7 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
 
 .player-container {
     position: relative;
+    z-index: 1;
     width: 100%;
     height: 100%;
     overflow: hidden;
@@ -507,6 +513,8 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
 
 .player-main {
     display: grid;
+    position: relative;
+    z-index: 1;
     grid-template-columns: minmax(420px, 50%) minmax(0, 50%);
     width: 100%;
     height: calc(100% - 156px);
@@ -799,6 +807,7 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
 
 .player-footer {
     position: absolute;
+    z-index: 2;
     right: 0;
     bottom: 0;
     left: 0;

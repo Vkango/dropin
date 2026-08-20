@@ -39,11 +39,7 @@
         <!-- 筛选和排序 -->
         <div class="filter-section">
             <div class="filter-options">
-                <select v-model="sortBy" class="sort-select">
-                    <option value="name">按名称排序</option>
-                    <option value="albums">按专辑数排序</option>
-                    <option value="recent">最近播放</option>
-                </select>
+                <Combobox v-model="sortBy" class="sort-select" :options="sortOptions" />
                 <input v-model="searchQuery" type="text" placeholder="搜索艺术家..." class="search-input" />
             </div>
         </div>
@@ -124,6 +120,7 @@
 <script setup>
 import { ref, computed, inject } from 'vue'
 import Icon from './Icon.vue'
+import Combobox from './Combobox.vue'
 import MotionTransition from './MotionTransition.vue'
 import PageLayout from './PageLayout.vue'
 import { motion, useReducedMotion } from 'motion-v'
@@ -154,6 +151,11 @@ const rowVariants = {
 const viewMode = ref('grid')
 const sortBy = ref('name')
 const searchQuery = ref('')
+const sortOptions = [
+    { value: 'name', label: '按名称排序' },
+    { value: 'albums', label: '按专辑数排序' },
+    { value: 'recent', label: '最近播放' }
+]
 
 const setViewMode = (mode) => {
     viewMode.value = mode
@@ -253,7 +255,6 @@ const filteredArtists = computed(() => {
     align-items: center;
 }
 
-.sort-select,
 .search-input {
     background: rgba(var(--surface-color), 0.1);
     border: 1px solid rgba(var(--outline-color), 0.2);
@@ -267,7 +268,10 @@ const filteredArtists = computed(() => {
     width: 240px;
 }
 
-.sort-select:focus,
+.sort-select {
+    min-width: 160px;
+}
+
 .search-input:focus {
     outline: none;
     border-color: rgba(var(--primary-color), 0.3);

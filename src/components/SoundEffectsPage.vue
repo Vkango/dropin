@@ -16,20 +16,8 @@
                 </div>
                 <div class="header-content">
                     <div class="preset-controls">
-                        <select v-model="currentPreset" class="preset-select">
-                            <option value="original">Original</option>
-                            <option value="rock">Rock</option>
-                            <option value="pop">Pop</option>
-                            <option value="jazz">Jazz</option>
-                            <option value="classical">Classical</option>
-                            <option value="electronic">Electronic</option>
-                            <option value="vocal">Vocal</option>
-                            <option value="custom">Custom</option>
-                        </select>
-                        <select v-model="viewMode" class="view-select">
-                            <option value="custom">Custom</option>
-                            <option value="advanced">Advanced</option>
-                        </select>
+                        <Combobox v-model="currentPreset" class="preset-select" :options="presetOptions" />
+                        <Combobox v-model="viewMode" class="view-select" :options="viewOptions" />
                     </div>
                 </div>
             </div>
@@ -257,6 +245,7 @@
 <script setup>
 import { ref, reactive, watch, inject, computed } from 'vue'
 import Icon from './Icon.vue'
+import Combobox from './Combobox.vue'
 import PageLayout from './PageLayout.vue'
 import MotionTransition from './MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
@@ -269,6 +258,20 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
 
 const currentPreset = ref('original')
 const viewMode = ref('custom')
+const presetOptions = [
+    { value: 'original', label: 'Original' },
+    { value: 'rock', label: 'Rock' },
+    { value: 'pop', label: 'Pop' },
+    { value: 'jazz', label: 'Jazz' },
+    { value: 'classical', label: 'Classical' },
+    { value: 'electronic', label: 'Electronic' },
+    { value: 'vocal', label: 'Vocal' },
+    { value: 'custom', label: 'Custom' }
+]
+const viewOptions = [
+    { value: 'custom', label: 'Custom' },
+    { value: 'advanced', label: 'Advanced' }
+]
 
 // 音效参数
 const effects = reactive({
@@ -436,20 +439,7 @@ const resetToDefaults = () => {
 
 .preset-select,
 .view-select {
-    background: rgba(var(--surface-color), 0.1);
-    border: 1px solid rgba(var(--outline-color), 0.2);
-    border-radius: 8px;
-    padding: 8px 12px;
-    color: rgb(var(--text-color));
-    font-size: 14px;
-    cursor: pointer;
     min-width: 120px;
-}
-
-.preset-select:focus,
-.view-select:focus {
-    outline: none;
-    border-color: rgba(var(--primary-color), 0.3);
 }
 
 /* 警告横幅 */

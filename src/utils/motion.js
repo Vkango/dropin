@@ -59,10 +59,15 @@ export const motionVariants = {
     absolute: true
   },
   miniCover: {
-    enter: { opacity: [0, 1], scale: [0.8, 1], rotate: [-5, 0], filter: ['blur(3px)', 'blur(0px)'] },
-    leave: { opacity: [1, 0], scale: [1, 1.2], rotate: [0, 5], filter: ['blur(0px)', 'blur(3px)'] },
+    enter: { opacity: [0, 1], scale: [0.72, 1], rotateY: [-90, 0], filter: ['blur(3px)', 'blur(0px)'] },
+    leave: { opacity: [1, 0], scale: [1, 0.72], rotateY: [0, 90], filter: ['blur(0px)', 'blur(3px)'] },
     spring: MICRO_SPRING,
     absolute: true
+  },
+  miniLyric: {
+    enter: { opacity: [0, 1], y: [5, 0] },
+    leave: { opacity: [1, 0], y: [0, -5] },
+    spring: MICRO_SPRING
   },
   songInfo: {
     enter: { opacity: [0, 1], y: [20, 0] },

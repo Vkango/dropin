@@ -1,200 +1,97 @@
 <template>
-  <div class="title-bar" @mousedown="startDragging" @mouseup="stopDragging" @mouseleave="stopDragging"
-    @mousemove="handleDraggingMaxized">
-    <div class="title">{{ title }}</div>
-    <div class="controls" @mouseup.stop @mouseleave.stop @mousedown.stop>
-      <RippleButton class="control-button" style="padding: 0; width: 48px; height: 45px;" id="avatar"
-        :hover-style="{ opacity: 1 }"
-        @click="emit('showNotificationBox')">
-        <img class="avatar" style="width: 20px; height: 20px; border-radius: 20px; padding: 0; margin-top: 5px;"
-          :src="user.avatar">
-        <div id="msgCount" v-if="msgCount > 0">{{ msgCount > 99 ? `99+` : msgCount }}</div>
-      </RippleButton>
-      <RippleButton class="control-button"
-        :hover-style="{ color: 'rgba(var(--text-color), 1)', backgroundColor: 'rgba(var(--text-color), 0.1)' }"
-        @click="emit('showTabs')"> <!--Tabs-->
-        <img class="icon" src="/assets/list.svg">
-      </RippleButton>
-      <RippleButton class="control-button"
-        :hover-style="{ color: 'rgba(var(--text-color), 1)', backgroundColor: 'rgba(var(--text-color), 0.1)' }"
-        @click="minimizeWindow">
-        <img class="icon" src="/assets/minimize.svg">
-      </RippleButton>
-      <RippleButton v-if="isMaximized" class="control-button"
-        :hover-style="{ color: 'rgba(var(--text-color), 1)', backgroundColor: 'rgba(var(--text-color), 0.1)' }"
-        @click="maximizeWindow">
-        <img class="icon" src="/assets/restore.svg">
-      </RippleButton>
-      <RippleButton v-if="!isMaximized" class="control-button"
-        :hover-style="{ color: 'rgba(var(--text-color), 1)', backgroundColor: 'rgba(var(--text-color), 0.1)' }"
-        @click="maximizeWindow">
-        <img class="icon" src="/assets/maximize.svg">
-      </RippleButton>
-      <RippleButton class="control-button" id="close"
-        :hover-style="{ color: 'white', backgroundColor: 'rgba(255, 0, 0, 0.5)' }" @click="closeWindow"><img class="icon" src="/assets/close1.svg">
-      </RippleButton>
+  <Teleport to="#decorum-player-mount">
+    <div v-if="!isFullscreen" class="title-bar-player">
+      <PlayerControls :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
+        :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress" :lyrics="lyrics"
+        :lyrics-loading="lyricsLoading" @toggle-play="$emit('toggle-play')" @previous="$emit('previous')"
+        @next="$emit('next')" @progress-change="$emit('progress-change', $event)"
+        @progress-commit="$emit('progress-commit', $event)"
+        @repeat="$emit('repeat')" @queue="$emit('queue')" @expand-player="$emit('expand-player')" />
     </div>
-  </div>
+  </Teleport>
 </template>
 
 <script setup>
-import { ref, onMounted, defineEmits } from 'vue';
-import RippleButton from './RippleButton.vue';
-const isMaximized = ref(false);
-const isMouseDown = ref(false);
-const isMoved = ref(false);
-const user = ref({ user_name: '', avatar: '' });
-onMounted(async () => {
-  isMaximized.value = !getCurrentWindow().isMaximized();
-  await getCurrentWindow().onResized(handleResize);
-})
-const handleResize = async () => {
-  const window = getCurrentWindow();
-  isMaximized.value = await window.isMaximized();
-};
+import { onBeforeUnmount, onMounted, watch } from 'vue'
+import PlayerControls from './PlayerControls.vue'
+
 const props = defineProps({
-  title: {
-    type: String,
-    default: 'Tauri App'
+  currentSong: {
+    type: Object,
+    required: true
   },
-  msgCount: {
+  isPlaying: {
+    type: Boolean,
+    default: false
+  },
+  currentTime: {
+    type: String,
+    default: '00:00'
+  },
+  currentTimeMs: {
     type: Number,
     default: 0
+  },
+  totalTime: {
+    type: String,
+    default: '00:00'
+  },
+  progress: {
+    type: Number,
+    default: 0
+  },
+  lyrics: {
+    type: Object,
+    default: null
+  },
+  lyricsLoading: {
+    type: Boolean,
+    default: false
+  },
+  isScrolled: {
+    type: Boolean,
+    default: false
+  },
+  isFullscreen: {
+    type: Boolean,
+    default: false
   }
-});
-const handleDraggingMaxized = () => {
-  isMoved.value = true;
-  if (isMaximized.value && isMouseDown.value) {
-    const window = getCurrentWindow();
-    window.startDragging();
-    isMaximized.value = false;
-  }
-};
-const startDragging = (event) => {
-  isMouseDown.value = true;
-  isMoved.value = false;
-  if (isMaximized.value) {
-    return;
-  }
-  const window = getCurrentWindow();
-  window.startDragging();
+})
 
-};
-const stopDragging = () => {
+defineEmits([
+  'toggle-play',
+  'previous',
+  'next',
+  'progress-change',
+  'repeat',
+  'queue',
+  'expand-player',
+  'progress-commit'
+])
 
-  isMouseDown.value = false;
-};
-const minimizeWindow = async () => {
-  const window = getCurrentWindow();
-  await window.minimize();
-};
-const maximizeWindow = async () => {
-  const window = getCurrentWindow();
-  isMaximized.value = await window.isMaximized();
-  if (isMaximized.value) {
-    await window.unmaximize();
-  } else {
-    await window.maximize();
-  }
-  isMaximized.value = await window.isMaximized();
-};
+const syncTitlebarState = () => {
+  const titlebar = document.getElementById('decorum-titlebar')
+  if (!titlebar) return
 
-const closeWindow = async () => {
-  const window = getCurrentWindow();
-  await window.close();
-};
+  titlebar.classList.toggle('is-fullscreen', props.isFullscreen)
+  titlebar.classList.toggle('is-scrolled', props.isScrolled)
+}
 
+onMounted(syncTitlebarState)
+watch(() => [props.isFullscreen, props.isScrolled], syncTitlebarState)
 
-const emit = defineEmits(['showTabs', 'showNotificationBox']);
-
+onBeforeUnmount(() => {
+  const titlebar = document.getElementById('decorum-titlebar')
+  titlebar?.classList.remove('is-fullscreen', 'is-scrolled')
+})
 </script>
 
-
 <style scoped>
-#avatar {
-  opacity: 0.7;
-}
-
-.icon {
-  filter: invert(var(--invert));
-}
-
-.avatar {
-  width: 30px;
-  height: 30px;
-
-  overflow: hidden;
-}
-
-.search-box {
-  position: relative;
-  left: 30px;
-  height: 30px;
-  width: 300px;
-  font-size: 13px;
-}
-
-#msgCount {
-  opacity: 1;
-  position: absolute;
-  right: 6px;
-  bottom: 10px;
-  padding: 0 3px;
-  background-color: rgba(var(--background-color), 0.288);
-  backdrop-filter: blur(10px);
-  min-width: 10px;
-  height: 16px;
-  border-radius: 10px;
-  color: white;
-
-}
-
-.title-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 45px;
-  color: rgba(var(--text-color));
-  position: absolute;
-  left: 0px;
-  top: 0px;
+.title-bar-player {
   width: 100%;
-  z-index: 4;
-}
-
-.title {
-  font-size: 12px;
-  font-weight: normal;
-  left: 15px;
-  position: relative;
-  color: rgba(var(--text-color), 0.5);
-}
-
-.controls {
-  display: flex;
-  position: absolute;
-  right: 0px;
-}
-
-.control-button img {
-  width: 60%;
-  padding-top: 3px;
-}
-
-.control-button {
-  padding: 0 15px;
-  background: none;
-  border: none;
-  color: rgba(var(--text-color), 0.5);
-  font-size: 16px;
-  cursor: pointer;
-  height: 45px;
-  box-shadow: none;
-  display: flex;
-  border-radius: 0;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  border-radius: 0;
+  height: 60px;
+  min-width: 0;
+  pointer-events: auto;
+  font-family: MiSans, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 </style>

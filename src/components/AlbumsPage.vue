@@ -39,19 +39,8 @@
         <!-- 筛选和排序 -->
         <div class="filter-section">
             <div class="filter-options">
-                <select v-model="sortBy" class="sort-select">
-                    <option value="name">按名称排序</option>
-                    <option value="artist">按艺术家排序</option>
-                    <option value="year">按年份排序</option>
-                    <option value="recent">最近添加</option>
-                </select>
-                <select v-model="filterGenre" class="genre-select">
-                    <option value="">所有流派</option>
-                    <option value="电子">电子</option>
-                    <option value="流行">流行</option>
-                    <option value="摇滚">摇滚</option>
-                    <option value="古典">古典</option>
-                </select>
+                <Combobox v-model="sortBy" class="sort-select" :options="sortOptions" />
+                <Combobox v-model="filterGenre" class="genre-select" :options="genreOptions" />
             </div>
         </div>
 
@@ -117,6 +106,7 @@
 <script setup>
 import { ref, computed, inject } from 'vue'
 import Icon from './Icon.vue'
+import Combobox from './Combobox.vue'
 import MotionTransition from './MotionTransition.vue'
 import PageLayout from './PageLayout.vue'
 import { motion, useReducedMotion } from 'motion-v'
@@ -147,6 +137,19 @@ const rowVariants = {
 const viewMode = ref('grid')
 const sortBy = ref('name')
 const filterGenre = ref('')
+const sortOptions = [
+    { value: 'name', label: '按名称排序' },
+    { value: 'artist', label: '按艺术家排序' },
+    { value: 'year', label: '按年份排序' },
+    { value: 'recent', label: '最近添加' }
+]
+const genreOptions = [
+    { value: '', label: '所有流派' },
+    { value: '电子', label: '电子' },
+    { value: '流行', label: '流行' },
+    { value: '摇滚', label: '摇滚' },
+    { value: '古典', label: '古典' }
+]
 
 const setViewMode = (mode) => {
     viewMode.value = mode
@@ -233,19 +236,7 @@ const filteredAlbums = computed(() => {
 
 .sort-select,
 .genre-select {
-    background: rgba(var(--surface-color), 0.1);
-    border: 1px solid rgba(var(--outline-color), 0.2);
-    border-radius: 8px;
-    padding: 8px 12px;
-    color: rgb(var(--text-color));
-    font-size: 14px;
-    cursor: pointer;
-}
-
-.sort-select:focus,
-.genre-select:focus {
-    outline: none;
-    border-color: rgba(var(--primary-color), 0.3);
+    min-width: 160px;
 }
 
 /* 网格视图 */

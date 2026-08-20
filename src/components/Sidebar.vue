@@ -1,83 +1,86 @@
 <template>
-    <aside class="sidebar">
-        <div class="search-container">
-            <!-- <input type="text" placeholder="Search Everywhere" class="search-input" :value="searchQuery"
+    <aside class="sidebar-scroll">
+        <div class="sidebar-titlebar-spacer" aria-hidden="true"></div>
+        <div class="sidebar">
+            <div class="search-container">
+                <!-- <input type="text" placeholder="Search Everywhere" class="search-input" :value="searchQuery"
                 @input="$emit('search-update', $event.target.value)" /> -->
-        </div>
-
-        <nav class="nav-menu">
-            <MotionDiv v-for="item in sidebarItems" :key="item.id" :class="['nav-item', { active: item.active }]"
-                :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }" :transition="microTransition"
-                @click="$emit('nav-item-click', item)">
-                <span class="nav-icon">
-                    <Icon :src="'/assets/' + item.icon" />
-                </span>
-                <span class="nav-label">{{ item.label }}</span>
-            </MotionDiv>
-        </nav>
-
-        <!-- 我的标签 -->
-        <div class="section" :class="{ collapsed: !sections.tags }">
-            <div class="section-header" role="button" tabindex="0" :aria-expanded="sections.tags"
-                @click="toggleSection('tags')" @keydown.enter="toggleSection('tags')"
-                @keydown.space.prevent="toggleSection('tags')">
-                <Icon class="section-chevron" :class="{ collapsed: !sections.tags }" src="/assets/chevrondown.svg"
-                    :color="iconColor" />
-                <Icon class="section-icon" src="/assets/bookmark.svg" :color="iconColor" />
-                <span class="section-title">我的标签</span>
-                <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
-                    :transition="microTransition" @click.stop="$emit('add-tag')">+</MotionButton>
             </div>
-            <div v-if="sections.tags" class="section-content">
-                <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
-                    :transition="microTransition">
-                    <span class="section-icon">
-                        <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
+
+            <nav class="nav-menu">
+                <MotionDiv v-for="item in sidebarItems" :key="item.id" :class="['nav-item', { active: item.active }]"
+                    :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }" :transition="microTransition"
+                    @click="$emit('nav-item-click', item)">
+                    <span class="nav-icon">
+                        <Icon :src="'/assets/' + item.icon" />
                     </span>
-                    <span class="nav-label">未分类标签001</span>
+                    <span class="nav-label">{{ item.label }}</span>
                 </MotionDiv>
-            </div>
-        </div>
+            </nav>
 
-        <!-- 播放列表 -->
-        <div class="section" :class="{ collapsed: !sections.playlists }">
-            <div class="section-header" role="button" tabindex="0" :aria-expanded="sections.playlists"
-                @click="toggleSection('playlists')" @keydown.enter="toggleSection('playlists')"
-                @keydown.space.prevent="toggleSection('playlists')">
-                <Icon class="section-chevron" :class="{ collapsed: !sections.playlists }" src="/assets/chevrondown.svg"
-                    :color="iconColor" />
-                <Icon class="section-icon" src="/assets/playlist.svg" style="scale: 0.8" :color="iconColor" />
-                <span class="section-title">播放列表</span>
-                <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
-                    :transition="microTransition" @click.stop="$emit('add-playlist')">+</MotionButton>
-            </div>
-        </div>
-
-        <!-- 扩展插件 -->
-        <div class="section" :class="{ collapsed: !sections.plugins }">
-            <div class="section-header" role="button" tabindex="0" :aria-expanded="sections.plugins"
-                @click="toggleSection('plugins')" @keydown.enter="toggleSection('plugins')"
-                @keydown.space.prevent="toggleSection('plugins')">
-                <Icon class="section-chevron" :class="{ collapsed: !sections.plugins }" src="/assets/chevrondown.svg"
-                    :color="iconColor" />
-                <Icon class="section-icon" src="/assets/plugin.svg" :color="iconColor" />
-                <span class="section-title">扩展插件</span>
-                <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
-                    :transition="microTransition" @click.stop="$emit('add-plugin')">+</MotionButton>
-            </div>
-            <div v-if="sections.plugins" class="section-content">
-                <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
-                    :transition="microTransition">
-                    <span class="nav-icon">👣</span>
-                    <span class="nav-label">我的足迹</span>
-                </MotionDiv>
-                <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
-                    :transition="microTransition">
-                    <span class="nav-icon">⏰</span>
-                    <span class="nav-label">定时停止</span>
-                </MotionDiv>
+            <!-- 我的标签 -->
+            <div class="section" :class="{ collapsed: !sections.tags }">
+                <div class="section-header" role="button" tabindex="0" :aria-expanded="sections.tags"
+                    @click="toggleSection('tags')" @keydown.enter="toggleSection('tags')"
+                    @keydown.space.prevent="toggleSection('tags')">
+                    <Icon class="section-chevron" :class="{ collapsed: !sections.tags }" src="/assets/chevrondown.svg"
+                        :color="iconColor" />
+                    <Icon class="section-icon" src="/assets/bookmark.svg" :color="iconColor" />
+                    <span class="section-title">我的标签</span>
+                    <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
+                        :transition="microTransition" @click.stop="$emit('add-tag')">+</MotionButton>
+                </div>
+                <div v-if="sections.tags" class="section-content">
+                    <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
+                        :transition="microTransition">
+                        <span class="section-icon">
+                            <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
+                        </span>
+                        <span class="nav-label">未分类标签001</span>
+                    </MotionDiv>
+                </div>
             </div>
 
+            <!-- 播放列表 -->
+            <div class="section" :class="{ collapsed: !sections.playlists }">
+                <div class="section-header" role="button" tabindex="0" :aria-expanded="sections.playlists"
+                    @click="toggleSection('playlists')" @keydown.enter="toggleSection('playlists')"
+                    @keydown.space.prevent="toggleSection('playlists')">
+                    <Icon class="section-chevron" :class="{ collapsed: !sections.playlists }"
+                        src="/assets/chevrondown.svg" :color="iconColor" />
+                    <Icon class="section-icon" src="/assets/playlist.svg" style="scale: 0.8" :color="iconColor" />
+                    <span class="section-title">播放列表</span>
+                    <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
+                        :transition="microTransition" @click.stop="$emit('add-playlist')">+</MotionButton>
+                </div>
+            </div>
+
+            <!-- 扩展插件 -->
+            <div class="section" :class="{ collapsed: !sections.plugins }">
+                <div class="section-header" role="button" tabindex="0" :aria-expanded="sections.plugins"
+                    @click="toggleSection('plugins')" @keydown.enter="toggleSection('plugins')"
+                    @keydown.space.prevent="toggleSection('plugins')">
+                    <Icon class="section-chevron" :class="{ collapsed: !sections.plugins }"
+                        src="/assets/chevrondown.svg" :color="iconColor" />
+                    <Icon class="section-icon" src="/assets/plugin.svg" :color="iconColor" />
+                    <span class="section-title">扩展插件</span>
+                    <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
+                        :transition="microTransition" @click.stop="$emit('add-plugin')">+</MotionButton>
+                </div>
+                <div v-if="sections.plugins" class="section-content">
+                    <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
+                        :transition="microTransition">
+                        <span class="nav-icon">👣</span>
+                        <span class="nav-label">我的足迹</span>
+                    </MotionDiv>
+                    <MotionDiv class="nav-item" :while-hover="{ backgroundColor: 'rgba(var(--text-color), 0.06)' }"
+                        :transition="microTransition">
+                        <span class="nav-icon">⏰</span>
+                        <span class="nav-label">定时停止</span>
+                    </MotionDiv>
+                </div>
+
+            </div>
         </div>
     </aside>
 </template>
@@ -128,10 +131,46 @@ const toggleSection = (sectionName) => {
 </script>
 
 <style scoped>
-.sidebar {
+.sidebar-scroll {
     grid-area: sidebar;
-    padding: 40px 20px;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
     overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.sidebar {
+    width: 100%;
+    min-height: calc(100% - 104px);
+    padding: 0 20px 40px;
+}
+
+.sidebar-titlebar-spacer {
+    width: 100%;
+    height: 64px;
+    min-height: 64px;
+    pointer-events: none;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+    width: 4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+    background: rgba(var(--outline-color), 0.1);
+    border-radius: 2px;
+    margin-top: 64px;
+    margin-bottom: 8px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+    background: rgba(var(--outline-color), 0.3);
+    border-radius: 2px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(var(--outline-color), 0.5);
 }
 
 .search-container {
