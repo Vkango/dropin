@@ -38,11 +38,8 @@
                                 <DiscAlbum style="scale: 0.7;" />{{ currentSong.album }}
                             </p>
 
-                            <div class="song-tags">
-                                <span class="tag">44.1KHz</span>
-                                <span class="tag">1696Kbps</span>
-                                <span class="tag">2 Channels</span>
-                                <span class="tag">FLAC Audio</span>
+                            <div v-if="songTags.length" class="song-tags">
+                                <span v-for="tag in songTags" :key="tag.key" class="tag">{{ tag.label }}</span>
                             </div>
                         </div>
                     </MotionTransition>
@@ -356,6 +353,53 @@ let audioBandsTimer
 let audioBandsRequest = 0
 let audioBandsInFlight = false
 
+const bassTrackInfo = ref(null)
+let bassTrackInfoRequest = 0
+let bassTrackInfoInFlight = false
+
+const formatSampleRate = (value) => {
+    const sampleRate = Number(value)
+    if (!Number.isFinite(sampleRate) || sampleRate <= 0) return ''
+    const kiloHertz = sampleRate / 1000
+    return `${Number.isInteger(kiloHertz) ? kiloHertz : kiloHertz.toFixed(1).replace(/\.0$/, '')}KHz`
+}
+
+const formatBitrate = (value) => {
+    const bitrate = Number(value)
+    if (!Number.isFinite(bitrate) || bitrate <= 0) return ''
+    return `${Math.round(bitrate / 1000)}Kbps`
+}
+
+const bassFormatName = (info) => {
+    const source = String(info?.filename || '')
+        .split(/[?#]/, 1)[0]
+        .split(/[\\/]/).pop() || ''
+    const extension = source.includes('.') ? source.split('.').pop().toUpperCase() : ''
+    const fallback = String(props.currentSong?.format || props.currentSong?.codec || '')
+        .replace(/^\./, '')
+        .replace(/\s+Audio$/i, '')
+        .trim()
+    const format = extension || fallback
+    return format ? `${format.toUpperCase()} Audio` : ''
+}
+
+const songTags = computed(() => {
+    const info = bassTrackInfo.value
+    if (!info) return []
+
+    return [
+        { key: 'sample-rate', label: formatSampleRate(info.frequency) },
+        { key: 'bitrate', label: formatBitrate(props.currentSong?.bitrate) },
+        {
+            key: 'channels',
+            label: Number(info.channels) > 0
+                ? `${info.channels} ${Number(info.channels) === 1 ? 'Channel' : 'Channels'}`
+                : ''
+        },
+        { key: 'format', label: bassFormatName(info) }
+    ].filter((tag) => tag.label)
+})
+
 const normalizedBackgroundMode = computed(() => props.backgroundMode === 'blur' ? 'blur' : 'flowing')
 
 const stopAudioBands = () => {
@@ -388,6 +432,35 @@ const startAudioBands = () => {
     if (!props.isVisible || normalizedBackgroundMode.value !== 'flowing' || !props.channelId) return
     refreshAudioBands()
     audioBandsTimer = window.setInterval(refreshAudioBands, 100)
+}
+
+const stopBassTrackInfo = () => {
+    bassTrackInfoRequest++
+    bassTrackInfoInFlight = false
+    bassTrackInfo.value = null
+}
+
+const refreshBassTrackInfo = async () => {
+    if (!props.isVisible || !props.channelId || bassTrackInfoInFlight) return
+    const requestId = ++bassTrackInfoRequest
+    const channelId = props.channelId
+    bassTrackInfoInFlight = true
+    try {
+        const result = await bassCall('bass_channel_info', { channelId })
+        if (requestId === bassTrackInfoRequest && channelId === props.channelId) {
+            bassTrackInfo.value = result
+        }
+    } catch (error) {
+        if (requestId === bassTrackInfoRequest) bassTrackInfo.value = null
+    } finally {
+        bassTrackInfoInFlight = false
+    }
+}
+
+const startBassTrackInfo = () => {
+    stopBassTrackInfo()
+    if (!props.isVisible || !props.channelId) return
+    refreshBassTrackInfo()
 }
 
 const openPlaybackOptions = () => {
@@ -604,10 +677,12 @@ onUnmounted(() => {
     lyricsResizeObserver?.disconnect()
     lyricRowRefs.clear()
     stopAudioBands()
+    stopBassTrackInfo()
 })
 
 watch([lyricRows, activeLyricRowIndex, activeLyricTimelineRow], measureLyrics, { deep: true, flush: 'post' })
 watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], startAudioBands)
+watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.currentSong?.title], startBassTrackInfo)
 </script>
 
 <style scoped>

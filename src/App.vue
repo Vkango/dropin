@@ -7,7 +7,6 @@ import AlbumsPage from './components/AlbumsPage.vue'
 import ArtistsPage from './components/ArtistsPage.vue'
 import SoundEffectsPage from './components/SoundEffectsPage.vue'
 import PluginsPage from './components/PluginsPage.vue'
-import BassTestPage from './components/BassTestPage.vue'
 import DetailPanel from './components/DetailPanel.vue'
 import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
@@ -35,8 +34,7 @@ const pageComponents = {
   albums: AlbumsPage,
   artists: ArtistsPage,
   effects: SoundEffectsPage,
-  plugins: PluginsPage,
-  bass: BassTestPage
+  plugins: PluginsPage
 }
 
 // 当前播放的歌曲
@@ -129,8 +127,7 @@ const sidebarItems = reactive([
   { id: 'albums', icon: 'album.svg', label: '专辑', active: false },
   { id: 'artists', icon: 'artists.svg', label: '艺术家', active: false },
   { id: 'effects', icon: 'effect.svg', label: '声音效果', active: false },
-  { id: 'plugins', icon: 'plugin.svg', label: '扩展插件', active: false },
-  { id: 'bass', icon: 'bug.svg', label: 'BASS 测试', active: false }
+  { id: 'plugins', icon: 'plugin.svg', label: '扩展插件', active: false }
 ])
 
 // 数据集合

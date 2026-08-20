@@ -35,26 +35,26 @@
                     <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
                         :while-press="buttonPress" :transition="microTransition" aria-label="播放列表"
                         @click.stop="$emit('queue')">
-                        <ListMusic :size="18" :stroke-width="1.8" />
+                        <ListMusic :size="14" :stroke-width="1.8" />
                     </MotionButton>
                     <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
                         :transition="microTransition" aria-label="上一首" @click.stop="$emit('previous')">
-                        <SkipBack :size="18" :stroke-width="1.8" />
+                        <SkipBack :size="14" :stroke-width="1.8" />
                     </MotionButton>
                     <MotionButton class="control-button play-pause" :while-hover="buttonHover"
                         :while-press="buttonPress" :transition="microTransition" :aria-label="isPlaying ? '暂停' : '播放'"
                         @click.stop="$emit('toggle-play')">
-                        <Pause v-if="isPlaying" :size="18" :stroke-width="1.8" />
+                        <Pause v-if="isPlaying" :size="15" :stroke-width="1.8" />
                         <Play v-else :size="18" :stroke-width="1.8" />
                     </MotionButton>
                     <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
                         :transition="microTransition" aria-label="下一首" @click.stop="$emit('next')">
-                        <SkipForward :size="18" :stroke-width="1.8" />
+                        <SkipForward :size="14" :stroke-width="1.8" />
                     </MotionButton>
                     <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
                         :while-press="buttonPress" :transition="microTransition" aria-label="循环播放"
                         @click.stop="$emit('repeat')">
-                        <Repeat2 :size="18" :stroke-width="1.8" />
+                        <Repeat2 :size="14" :stroke-width="1.8" />
                     </MotionButton>
 
                 </div>
