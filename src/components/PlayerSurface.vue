@@ -136,6 +136,7 @@ const fullLayerClosed = {
     inset: 0;
     z-index: 1000;
     overflow: hidden;
+    height: 100dvh;
     transform-origin: 0% 0%;
     pointer-events: auto;
     will-change: transform, opacity, filter;

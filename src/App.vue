@@ -917,6 +917,7 @@ body {
 
 #app {
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
 }
 </style>
@@ -928,6 +929,7 @@ body {
   grid-template-rows: 1fr;
   grid-template-areas: "sidebar main";
   height: 100vh;
+  height: 100dvh;
   background: color-mix(in srgb, rgba(var(--background-color)), rgb(var(--global-color)) 40%);
   color: rgb(var(--text-color));
   font-family: MiSans, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;

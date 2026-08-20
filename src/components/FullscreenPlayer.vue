@@ -339,6 +339,7 @@ const buttonHover = { scale: 1.08 }
 const buttonPress = { scale: 0.92 }
 const isBrowserFullscreen = ref(false)
 const appWindow = getCurrentWindow()
+const wasMaximizedBeforeFullscreen = ref(false)
 
 const syncBrowserFullscreen = async () => {
     if (document.fullscreenElement) {
@@ -358,10 +359,24 @@ const toggleBrowserFullscreen = async () => {
             await document.exitFullscreen()
         } else {
             const isWindowFullscreen = await appWindow.isFullscreen()
-            await appWindow.setFullscreen(!isWindowFullscreen)
+            if (isWindowFullscreen) {
+                await appWindow.setFullscreen(false)
+            } else {
+                wasMaximizedBeforeFullscreen.value = await appWindow.isMaximized()
+                if (wasMaximizedBeforeFullscreen.value) await appWindow.unmaximize()
+                await appWindow.setFullscreen(true)
+            }
+        }
+        if (!document.fullscreenElement && wasMaximizedBeforeFullscreen.value) {
+            await appWindow.maximize()
+            wasMaximizedBeforeFullscreen.value = false
         }
         await syncBrowserFullscreen()
     } catch (error) {
+        if (wasMaximizedBeforeFullscreen.value) {
+            await appWindow.maximize().catch(() => { })
+            wasMaximizedBeforeFullscreen.value = false
+        }
         try {
             if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
                 await document.documentElement.requestFullscreen()
@@ -724,7 +739,11 @@ onUnmounted(() => {
     stopAudioBands()
     stopBassTrackInfo()
     if (document.fullscreenElement === document.documentElement) document.exitFullscreen().catch(() => { })
-    appWindow.setFullscreen(false).catch(() => { })
+    appWindow.isFullscreen().then(async (isFullscreen) => {
+        if (!isFullscreen) return
+        await appWindow.setFullscreen(false).catch(() => { })
+        if (wasMaximizedBeforeFullscreen.value) await appWindow.maximize().catch(() => { })
+    }).catch(() => { })
 })
 
 watch([lyricRows, activeLyricRowIndex, activeLyricTimelineRow], measureLyrics, { deep: true, flush: 'post' })
@@ -738,6 +757,7 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     inset: 0;
     width: 100%;
     height: 100%;
+    height: 100dvh;
     overflow: hidden;
     color: #f7f5f3;
     background: #090807;
