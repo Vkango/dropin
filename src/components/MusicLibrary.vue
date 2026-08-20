@@ -33,7 +33,8 @@
                 <SongList :songs="musicLibrary.songs" @song-select="$emit('song-select', $event)"
                     @song-play="$emit('song-play', $event)" @group-label-click="handleGroupLabelClick" />
             </div>
-            <AlphabetFilter :active-initial="activeInitial" :available-initials="availableInitials"
+            <AlphabetFilter :active-initial="activeInitial" :top-offset="alphabetTopOffset"
+                :available-initials="availableInitials"
                 @select="handleAlphabetSelect" />
         </div>
 
@@ -82,7 +83,7 @@ const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const pageRef = ref(null)
 const availableInitials = computed(() => getAvailableInitials(props.musicLibrary.songs, (song) => song.title))
-const { activeInitial, handleAlphabetSelect, handleGroupLabelClick } = useAlphabetNavigation(
+const { activeInitial, alphabetTopOffset, handleAlphabetSelect, handleGroupLabelClick } = useAlphabetNavigation(
     pageRef,
     availableInitials
 )

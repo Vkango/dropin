@@ -5,6 +5,7 @@ const STICKY_TOP_OFFSET = 72
 
 export function useAlphabetNavigation(pageRef, availableInitials) {
   const activeInitial = ref(ALL_INITIAL)
+  const alphabetTopOffset = ref(0)
   let scrollContainer = null
   let frameId = null
   let mutationObserver = null
@@ -16,8 +17,22 @@ export function useAlphabetNavigation(pageRef, availableInitials) {
     return [...pageRef.value.querySelectorAll('[data-group-initial]')]
   }
 
+  const updateAlphabetTopOffset = () => {
+    const pageElement = pageRef.value
+    const firstGroup = getGroupElements()[0]
+    if (!pageElement || !firstGroup) {
+      alphabetTopOffset.value = 0
+      return
+    }
+
+    alphabetTopOffset.value = Math.max(0,
+      Math.round(firstGroup.getBoundingClientRect().top - pageElement.getBoundingClientRect().top)
+    )
+  }
+
   const updateActiveInitial = () => {
     frameId = null
+    updateAlphabetTopOffset()
     if (pendingInitial !== null) {
       activeInitial.value = pendingInitial
       return
@@ -120,6 +135,7 @@ export function useAlphabetNavigation(pageRef, availableInitials) {
 
   return {
     activeInitial,
+    alphabetTopOffset,
     handleAlphabetSelect: scrollToInitial,
     handleGroupLabelClick
   }

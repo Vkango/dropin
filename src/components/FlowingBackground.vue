@@ -50,6 +50,7 @@ let lastFrameAt = 0
 let simTime = Math.random() * 200
 let blobs = []
 let coverRequestId = 0
+let hasLoadedCoverPalette = false
 let reducedMotion = false
 const blobValues = new Float32Array(BLOB_N * 4)
 const currentPalette = DEFAULT_PALETTE.map((color) => [...color])
@@ -150,6 +151,29 @@ function hslToRgb(h, s, l) {
         return p
     }
     return [hueToRgb(h + 1 / 3), hueToRgb(h), hueToRgb(h - 1 / 3)].map((value) => Math.round(value * 255))
+}
+
+function getThemePalette() {
+    const primary = getComputedStyle(document.documentElement)
+        .getPropertyValue('--primary-color')
+        .split(',')
+        .map((value) => Number(value.trim()))
+
+    if (primary.length !== 3 || primary.some((value) => !Number.isFinite(value))) {
+        return DEFAULT_PALETTE.map((color) => [...color])
+    }
+
+    const [hue, saturation, lightness] = rgbToHsl(...primary)
+    const clampLightness = (value) => Math.max(0.12, Math.min(0.88, value))
+    const clampSaturation = (value) => Math.max(0.18, Math.min(0.9, value))
+
+    return [
+        hslToRgb(hue, clampSaturation(saturation * 0.82), clampLightness(lightness * 0.34)),
+        hslToRgb(hue, clampSaturation(saturation * 0.92), clampLightness(lightness * 0.58)),
+        primary.map((value) => Math.round(value)),
+        hslToRgb(hue, clampSaturation(saturation * 0.86), clampLightness(lightness * 1.12)),
+        hslToRgb(hue, clampSaturation(saturation * 0.72), clampLightness(lightness * 1.32))
+    ]
 }
 
 function medianCut(pixels, count) {
@@ -384,9 +408,11 @@ function uploadPalette() {
     gl.uniform3f(uniforms.base, dark[0] / 255 * 0.45, dark[1] / 255 * 0.45, dark[2] / 255 * 0.45)
 }
 
-function setPalette(palette) {
+function setPalette(palette, immediate = false) {
     for (let index = 0; index < BLOB_N; index++) {
-        targetPalette[index] = [...(palette[index] || DEFAULT_PALETTE[index])]
+        const nextColor = palette[index] || DEFAULT_PALETTE[index]
+        targetPalette[index] = [...nextColor]
+        if (immediate) currentPalette[index] = [...nextColor]
     }
 }
 
@@ -520,10 +546,11 @@ function showWebgl() {
     fallback.style.display = 'none'
 }
 
-function applyPalette(palette) {
+function applyPalette(palette, { immediate = false } = {}) {
     setFallback(palette)
     if (!gl || !program) return
-    setPalette(palette)
+    setPalette(palette, immediate)
+    if (immediate) uploadPalette()
     resize()
     showWebgl()
     if (reducedMotion) {
@@ -539,14 +566,16 @@ function loadCover() {
     image.onload = () => {
         if (requestId !== coverRequestId) return
         try {
-            applyPalette(extractPalette(image))
+            const palette = extractPalette(image)
+            applyPalette(palette, { immediate: !hasLoadedCoverPalette })
+            hasLoadedCoverPalette = true
         } catch (error) {
             console.warn('专辑封面取色失败:', error)
-            applyPalette(DEFAULT_PALETTE)
+            applyPalette(getThemePalette(), { immediate: !hasLoadedCoverPalette })
         }
     }
     image.onerror = () => {
-        if (requestId === coverRequestId) applyPalette(DEFAULT_PALETTE)
+        if (requestId === coverRequestId) applyPalette(getThemePalette(), { immediate: !hasLoadedCoverPalette })
     }
     image.src = props.cover || '/assets/cover.jpg'
 }
@@ -560,11 +589,12 @@ onMounted(() => {
     canvas = canvasRef.value
     fallback = fallbackRef.value
     reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    setFallback(DEFAULT_PALETTE)
+    const initialPalette = getThemePalette()
+    setFallback(initialPalette)
     showFallback()
 
     if (initWebgl()) {
-        makeBlobs(DEFAULT_PALETTE)
+        makeBlobs(initialPalette)
         resize()
         loadCover()
     } else {
@@ -618,7 +648,6 @@ onBeforeUnmount(() => {
     inset: -20%;
     filter: blur(60px);
     animation: flowing-background-drift 40s ease-in-out infinite alternate;
-    transition: background 1.2s ease;
 }
 
 @keyframes flowing-background-drift {

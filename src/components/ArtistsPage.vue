@@ -126,7 +126,8 @@
             </div>
         </MotionTransition>
         </div>
-        <AlphabetFilter :active-initial="activeInitial" :available-initials="availableInitials"
+        <AlphabetFilter :active-initial="activeInitial" :top-offset="alphabetTopOffset"
+            :available-initials="availableInitials"
             @select="handleAlphabetSelect" />
         </div>
     </PageLayout>
@@ -239,7 +240,7 @@ const visibleGroups = computed(() => sortBy.value === 'name'
     ? groupedArtists.value.map((group) => ({ ...group, key: group.initial }))
     : [{ key: 'all', initial: '', items: filteredArtists.value }])
 
-const { activeInitial, handleAlphabetSelect, handleGroupLabelClick } = useAlphabetNavigation(
+const { activeInitial, alphabetTopOffset, handleAlphabetSelect, handleGroupLabelClick } = useAlphabetNavigation(
     pageRef,
     availableInitials
 )

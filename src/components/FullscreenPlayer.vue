@@ -1,5 +1,5 @@
 <template>
-    <div class="fullscreen-player" @click.self="$emit('close')">
+    <div class="fullscreen-player" :style="lyricsStyle" @click.self="$emit('close')">
         <div class="player-background" :class="`background-mode-${backgroundMode}`" aria-hidden="true">
             <FlowingBackground v-if="backgroundMode === 'flowing'" :cover="currentSong.cover" :bands="audioBands" />
             <div v-else class="backdrop-image" :style="{ backgroundImage: `url(${currentSong.cover})` }"></div>
@@ -52,9 +52,8 @@
                     <div ref="lyricsWindowRef" class="lyrics-window">
                         <MotionDiv v-if="lyricRows.length" class="lyrics-track" :animate="{ y: lyricOffset }"
                             :transition="contentTransition">
-                            <MotionDiv v-for="(row, index) in lyricRows" :ref="setLyricRowRef(row.key)"
-                                :key="row.key" class="lyric-line"
-                                :class="{ 'lyric-interlude-row': row.type === 'interlude' }"
+                            <MotionDiv v-for="(row, index) in lyricRows" :ref="setLyricRowRef(row.key)" :key="row.key"
+                                class="lyric-line" :class="{ 'lyric-interlude-row': row.type === 'interlude' }"
                                 :aria-label="row.type === 'interlude' && activeLyricRowIndex === index ? '间奏' : undefined"
                                 :animate="getLyricState(index)"
                                 :transition="row.type === 'interlude' ? instantTransition : contentTransition">
@@ -64,7 +63,8 @@
                                 </template>
                                 <template v-else>
                                     <div class="lyric-primary">{{ row.line.text }}</div>
-                                    <div v-for="secondary in row.line.secondary" :key="secondary" class="lyric-secondary">
+                                    <div v-for="secondary in row.line.secondary" :key="secondary"
+                                        class="lyric-secondary">
                                         {{ secondary }}
                                     </div>
                                 </template>
@@ -88,94 +88,156 @@
             </main>
 
             <footer class="player-footer">
-                <div class="footer-actions">
-                    <div class="footer-side footer-side-left">
-                        <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                            :transition="microTransition" aria-label="收起播放器" @click="$emit('close')">
-                            <ChevronDown :size="18" :stroke-width="1.5" />
-                        </MotionButton>
-                        <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                            :transition="microTransition" aria-label="全屏显示">
-                            <Maximize2 :size="18" :stroke-width="1.5" />
-                        </MotionButton>
-                        <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                            :transition="microTransition" aria-label="编辑播放页">
-                            <SquarePen :size="18" :stroke-width="1.5" />
-                        </MotionButton>
-                        <MotionButton class="footer-button background-mode-button"
-                            :class="{ active: backgroundMode === 'flowing' }" :while-hover="buttonHover"
-                            :while-press="buttonPress" :transition="microTransition"
-                            :aria-label="backgroundMode === 'flowing' ? '切换为纯模糊背景' : '切换为流沙背景'"
-                            :aria-pressed="backgroundMode === 'flowing'" @click="toggleBackgroundMode">
-                            <span class="background-mode-glyph">{{ backgroundMode === 'flowing' ? '流' : '糊' }}</span>
-                        </MotionButton>
-                    </div>
+                <AnimatePresence mode="wait" :initial="false">
+                    <MotionDiv v-if="!isPlaybackOptionsOpen" key="transport-bar" class="footer-view transport-view"
+                        :initial="footerViewInitial" :animate="footerViewAnimate" :exit="footerViewExit"
+                        :transition="footerTransition">
+                        <div class="footer-actions">
+                            <div class="footer-side footer-side-left">
+                                <MotionButton class="footer-button" :while-hover="buttonHover"
+                                    :while-press="buttonPress" :transition="microTransition" aria-label="收起播放器"
+                                    @click="$emit('close')">
+                                    <ChevronDown :size="18" :stroke-width="1.5" />
+                                </MotionButton>
+                                <MotionButton class="footer-button" :while-hover="buttonHover"
+                                    :while-press="buttonPress" :transition="microTransition" aria-label="打开播放页选项"
+                                    @click="openPlaybackOptions">
+                                    <SquarePen :size="18" :stroke-width="1.5" />
+                                </MotionButton>
+                                <MotionButton class="footer-button" :while-hover="buttonHover"
+                                    :while-press="buttonPress" :transition="microTransition" aria-label="全屏显示">
+                                    <Maximize2 :size="18" :stroke-width="1.5" />
+                                </MotionButton>
 
-                    <div class="transport-column">
-                        <div class="transport-controls">
-                            <MotionButton class="footer-button volume-button" :while-hover="buttonHover"
-                                :while-press="buttonPress" :transition="microTransition" aria-label="音量">
-                                <Volume2 :size="18" :stroke-width="1.5" />
-                            </MotionButton>
-                            <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                                :transition="microTransition" aria-label="上一首" @click="$emit('previous')">
-                                <SkipBack :size="18" :stroke-width="1.5" />
-                            </MotionButton>
-                            <MotionButton class="play-button" :while-hover="{ scale: 1.06 }"
-                                :while-press="{ scale: 0.94 }" :transition="microTransition"
-                                :aria-label="isPlaying ? '暂停' : '播放'" @click="$emit('toggle-play')">
-                                <Pause v-if="isPlaying" :size="18" :stroke-width="1.8" />
-                                <Play v-else :size="18" :stroke-width="1.8" />
-                            </MotionButton>
-                            <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                                :transition="microTransition" aria-label="下一首" @click="$emit('next')">
-                                <SkipForward :size="18" :stroke-width="1.5" />
-                            </MotionButton>
-                            <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                                :transition="microTransition" aria-label="随机播放" @click="$emit('shuffle')">
-                                <Shuffle :size="18" :stroke-width="1.5" />
-                            </MotionButton>
-                        </div>
+                            </div>
 
+                            <div class="transport-column">
+                                <div class="transport-controls">
+                                    <MotionButton class="footer-button volume-button" :while-hover="buttonHover"
+                                        :while-press="buttonPress" :transition="microTransition" aria-label="音量">
+                                        <Volume2 :size="18" :stroke-width="1.5" />
+                                    </MotionButton>
+                                    <MotionButton class="footer-button" :while-hover="buttonHover"
+                                        :while-press="buttonPress" :transition="microTransition" aria-label="上一首"
+                                        @click="$emit('previous')">
+                                        <SkipBack :size="18" :stroke-width="1.5" />
+                                    </MotionButton>
+                                    <MotionButton class="play-button" :while-hover="{ scale: 1.06 }"
+                                        :while-press="{ scale: 0.94 }" :transition="microTransition"
+                                        :aria-label="isPlaying ? '暂停' : '播放'" @click="$emit('toggle-play')">
+                                        <Pause v-if="isPlaying" :size="18" :stroke-width="1.8" />
+                                        <Play v-else :size="18" :stroke-width="1.8" />
+                                    </MotionButton>
+                                    <MotionButton class="footer-button" :while-hover="buttonHover"
+                                        :while-press="buttonPress" :transition="microTransition" aria-label="下一首"
+                                        @click="$emit('next')">
+                                        <SkipForward :size="18" :stroke-width="1.5" />
+                                    </MotionButton>
+                                    <MotionButton class="footer-button" :while-hover="buttonHover"
+                                        :while-press="buttonPress" :transition="microTransition" aria-label="随机播放"
+                                        @click="$emit('shuffle')">
+                                        <Shuffle :size="18" :stroke-width="1.5" />
+                                    </MotionButton>
+                                </div>
 
-                        <div class="progress-section">
-                            <span class="time-display">{{ currentTime }}</span>
-                            <div class="progress-container" :class="{ 'is-dragging': isProgressDragging }" role="slider"
-                                :aria-valuenow="Math.round(progress)" aria-valuemin="0" aria-valuemax="100" tabindex="0"
-                                @keydown="handleProgressKeydown" @pointerdown="handleProgressPointerDown"
-                                @pointermove="handleProgressPointerMove" @pointerup="handleProgressPointerUp"
-                                @pointercancel="handleProgressPointerUp">
-                                <div class="progress-track">
-                                    <MotionDiv class="progress-fill" :animate="{ width: `${progress}%` }"
-                                        :transition="progressTransition"></MotionDiv>
-                                    <MotionDiv class="progress-thumb" :animate="{ left: `${progress}%` }"
-                                        :transition="progressTransition"></MotionDiv>
+                                <div class="progress-section">
+                                    <span class="time-display">{{ currentTime }}</span>
+                                    <div class="progress-container" :class="{ 'is-dragging': isProgressDragging }"
+                                        role="slider" :aria-valuenow="Math.round(progress)" aria-valuemin="0"
+                                        aria-valuemax="100" tabindex="0" @keydown="handleProgressKeydown"
+                                        @pointerdown="handleProgressPointerDown"
+                                        @pointermove="handleProgressPointerMove" @pointerup="handleProgressPointerUp"
+                                        @pointercancel="handleProgressPointerUp">
+                                        <div class="progress-track">
+                                            <MotionDiv class="progress-fill" :animate="{ width: `${progress}%` }"
+                                                :transition="progressTransition"></MotionDiv>
+                                            <MotionDiv class="progress-thumb" :animate="{ left: `${progress}%` }"
+                                                :transition="progressTransition"></MotionDiv>
+                                        </div>
+                                    </div>
+                                    <span class="time-display">{{ totalTime }}</span>
                                 </div>
                             </div>
-                            <span class="time-display">{{ totalTime }}</span>
+
+                            <div class="footer-side footer-side-right">
+                                <MotionButton class="footer-button" :while-hover="buttonHover"
+                                    :while-press="buttonPress" :transition="microTransition" aria-label="播放设置">
+                                    <SlidersHorizontal :size="18" :stroke-width="1.5" />
+                                </MotionButton>
+                                <MotionButton class="footer-button" :while-hover="buttonHover"
+                                    :while-press="buttonPress" :transition="microTransition" aria-label="歌词面板">
+                                    <PanelTop :size="18" :stroke-width="1.5" />
+                                </MotionButton>
+                                <MotionButton class="footer-button" :while-hover="buttonHover"
+                                    :while-press="buttonPress" :transition="microTransition" aria-label="播放队列"
+                                    @click="$emit('queue')">
+                                    <ListMusic :size="18" :stroke-width="1.5" />
+                                </MotionButton>
+                                <MotionButton class="footer-button" :while-hover="buttonHover"
+                                    :while-press="buttonPress" :transition="microTransition" aria-label="更多操作">
+                                    <MoreHorizontal :size="18" :stroke-width="1.5" />
+                                </MotionButton>
+                            </div>
                         </div>
-                    </div>
+                    </MotionDiv>
 
-                    <div class="footer-side footer-side-right">
-                        <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                            :transition="microTransition" aria-label="播放设置">
-                            <SlidersHorizontal :size="18" :stroke-width="1.5" />
-                        </MotionButton>
-                        <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                            :transition="microTransition" aria-label="歌词面板">
-                            <PanelTop :size="18" :stroke-width="1.5" />
-                        </MotionButton>
-                        <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                            :transition="microTransition" aria-label="播放队列" @click="$emit('queue')">
-                            <ListMusic :size="18" :stroke-width="1.5" />
-                        </MotionButton>
-                        <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                            :transition="microTransition" aria-label="更多操作">
-                            <MoreHorizontal :size="18" :stroke-width="1.5" />
-                        </MotionButton>
-                    </div>
-                </div>
+                    <MotionDiv v-else key="playback-options" class="footer-view playback-options" role="group"
+                        aria-label="播放页选项" :initial="footerViewInitial" :animate="footerViewAnimate"
+                        :exit="footerViewExit" :transition="footerTransition"
+                        @animation-complete="handlePlaybackOptionsAnimationComplete">
+                        <MotionDiv class="playback-options-leading" :initial="settingsItemInitial"
+                            :animate="settingsItemAnimate" :transition="settingsItemTransition(0)">
+                            <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
+                                :transition="microTransition" aria-label="收起播放器" @click="$emit('close')">
+                                <ChevronDown :size="18" :stroke-width="1.5" />
+                            </MotionButton>
+                            <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
+                                :transition="microTransition" aria-label="返回播放控制" @click="closePlaybackOptions">
+                                <ArrowLeft :size="18" :stroke-width="1.5" />
+                            </MotionButton>
+                            <span class="playback-options-title">播放页选项</span>
+                        </MotionDiv>
 
+                        <MotionDiv class="playback-option lyrics-size-option" :initial="settingsItemInitial"
+                            :animate="settingsItemAnimate" :transition="settingsItemTransition(1)">
+                            <div class="option-label-row">
+                                <span class="option-label">歌词大小</span>
+                                <output class="option-value" aria-live="polite">{{ lyricsFontSizeValue }}px</output>
+                            </div>
+                            <div class="lyrics-size-slider">
+                                <span class="size-mark size-mark-small" aria-hidden="true">A</span>
+                                <input ref="lyricsRangeRef" class="lyrics-size-range" type="range" min="20" max="56"
+                                    step="1" :value="lyricsFontSizeValue" :style="lyricsRangeStyle" aria-label="歌词大小"
+                                    :aria-valuenow="lyricsFontSizeValue" aria-valuemin="20" aria-valuemax="56"
+                                    :aria-valuetext="`${lyricsFontSizeValue} 像素`" @input="handleLyricsFontSizeInput"
+                                    @keydown="handleLyricsRangeKeydown" />
+                                <span class="size-mark size-mark-large" aria-hidden="true">A</span>
+                            </div>
+                        </MotionDiv>
+
+                        <MotionDiv class="playback-option background-option-group" role="group" aria-label="背景"
+                            :initial="settingsItemInitial" :animate="settingsItemAnimate"
+                            :transition="settingsItemTransition(2)">
+                            <span class="option-label">背景</span>
+                            <div class="background-options" role="radiogroup" aria-label="背景模式">
+                                <MotionButton class="background-option"
+                                    :class="{ active: normalizedBackgroundMode === 'flowing' }"
+                                    :while-hover="buttonHover" :while-press="buttonPress" :transition="microTransition"
+                                    role="radio" :aria-checked="normalizedBackgroundMode === 'flowing'"
+                                    @click="setBackgroundMode('flowing')">
+                                    流沙
+                                </MotionButton>
+                                <MotionButton class="background-option"
+                                    :class="{ active: normalizedBackgroundMode === 'blur' }" :while-hover="buttonHover"
+                                    :while-press="buttonPress" :transition="microTransition" role="radio"
+                                    :aria-checked="normalizedBackgroundMode === 'blur'"
+                                    @click="setBackgroundMode('blur')">
+                                    高斯模糊
+                                </MotionButton>
+                            </div>
+                        </MotionDiv>
+                    </MotionDiv>
+                </AnimatePresence>
             </footer>
         </div>
     </div>
@@ -183,12 +245,12 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ChevronDown, ListMusic, Maximize2, MoreHorizontal, PanelTop, Pause, Play, Shuffle, SkipBack, SkipForward, SlidersHorizontal, SquarePen, Volume2 } from '@lucide/vue'
-import { motion, useReducedMotion } from 'motion-v'
+import { ArrowLeft, ChevronDown, ListMusic, Maximize2, MoreHorizontal, PanelTop, Pause, Play, Shuffle, SkipBack, SkipForward, SlidersHorizontal, SquarePen, Volume2 } from '@lucide/vue'
+import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
 import FlowingBackground from './FlowingBackground.vue'
 import { bassCall } from '../services/bassApi.js'
-import { INSTANT_MOTION, LINEAR_LOOP, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
+import { APPLE_SPRING, INSTANT_MOTION, LINEAR_LOOP, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
 import { User2Icon } from '@lucide/vue'
 import { DiscAlbum } from '@lucide/vue'
 
@@ -263,8 +325,30 @@ const contentTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : 
 const instantTransition = computed(() => INSTANT_MOTION)
 const progressTransition = computed(() => isProgressDragging.value ? INSTANT_MOTION : microTransition.value)
 const loopTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : LINEAR_LOOP)
+const footerTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : APPLE_SPRING)
+const footerViewInitial = { opacity: 0, y: 96, filter: 'blur(8px)' }
+const footerViewAnimate = { opacity: 1, y: 0, filter: 'blur(0px)' }
+const footerViewExit = { opacity: 0, y: 96, filter: 'blur(8px)' }
+const settingsItemInitial = { opacity: 0, y: 16 }
+const settingsItemAnimate = { opacity: 1, y: 0 }
+const settingsItemTransition = (index) => reducedMotion.value
+    ? INSTANT_MOTION
+    : { ...APPLE_SPRING, delay: index * 0.06 }
 const buttonHover = { scale: 1.08 }
 const buttonPress = { scale: 0.92 }
+
+const isPlaybackOptionsOpen = ref(false)
+const compactViewport = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
+const lyricsRangeRef = ref(null)
+const lyricsFontSize = ref(null)
+const lyricsFontSizeValue = computed(() => lyricsFontSize.value ?? (compactViewport.value ? 22 : 32))
+const lyricsStyle = computed(() => ({ '--lyrics-font-size': `${lyricsFontSizeValue.value}px` }))
+const lyricsRangeStyle = computed(() => {
+    const progress = ((lyricsFontSizeValue.value - 20) / (56 - 20)) * 100
+    return {
+        background: `linear-gradient(to right, rgba(var(--primary-color), 0.9) 0%, rgba(var(--primary-color), 0.9) ${progress}%, rgba(255, 255, 255, 0.22) ${progress}%, rgba(255, 255, 255, 0.22) 100%)`
+    }
+})
 
 const ZERO_BANDS = { bass: 0, mid: 0, treble: 0, level: 0 }
 const audioBands = ref({ ...ZERO_BANDS })
@@ -306,8 +390,34 @@ const startAudioBands = () => {
     audioBandsTimer = window.setInterval(refreshAudioBands, 100)
 }
 
-const toggleBackgroundMode = () => {
-    emit('background-mode-change', normalizedBackgroundMode.value === 'flowing' ? 'blur' : 'flowing')
+const openPlaybackOptions = () => {
+    isPlaybackOptionsOpen.value = true
+}
+
+const closePlaybackOptions = () => {
+    isPlaybackOptionsOpen.value = false
+}
+
+const setBackgroundMode = (mode) => {
+    if (mode === normalizedBackgroundMode.value) return
+    emit('background-mode-change', mode)
+}
+
+const handleLyricsFontSizeInput = (event) => {
+    const nextSize = Number(event.target.value)
+    lyricsFontSize.value = Math.max(20, Math.min(56, nextSize))
+}
+
+const handleLyricsRangeKeydown = (event) => {
+    if (event.key !== 'Escape') event.stopPropagation()
+}
+
+const updateCompactViewport = () => {
+    compactViewport.value = window.matchMedia('(max-width: 720px)').matches
+}
+
+const handlePlaybackOptionsAnimationComplete = () => {
+    if (isPlaybackOptionsOpen.value) lyricsRangeRef.value?.focus()
 }
 
 const volume = ref(75)
@@ -451,7 +561,8 @@ const handleKeydown = (event) => {
 
     switch (event.key) {
         case 'Escape':
-            emit('close')
+            if (isPlaybackOptionsOpen.value) closePlaybackOptions()
+            else emit('close')
             break
         case ' ':
             event.preventDefault()
@@ -476,6 +587,7 @@ const updateAlbumSize = () => {
 
 onMounted(() => {
     document.addEventListener('keydown', handleKeydown)
+    window.addEventListener('resize', updateCompactViewport)
     albumResizeObserver = new ResizeObserver(updateAlbumSize)
     if (albumStageRef.value) albumResizeObserver.observe(albumStageRef.value)
     lyricsResizeObserver = new ResizeObserver(measureLyrics)
@@ -487,6 +599,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     document.removeEventListener('keydown', handleKeydown)
+    window.removeEventListener('resize', updateCompactViewport)
     albumResizeObserver?.disconnect()
     lyricsResizeObserver?.disconnect()
     lyricRowRefs.clear()
@@ -735,7 +848,7 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
     min-height: 44px;
     padding: 5px 0;
     color: rgba(255, 255, 255, 0.5);
-    font-size: 32px;
+    font-size: var(--lyrics-font-size, 32px);
     line-height: 1.18;
     letter-spacing: -0.035em;
     text-align: left;
@@ -790,7 +903,7 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
 }
 
 .plain-lyric-line {
-    font-size: 26px;
+    font-size: var(--lyrics-font-size, 32px);
     line-height: 1.35;
 }
 
@@ -817,14 +930,169 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
     bottom: 0;
     left: 0;
     height: 95px;
+    overflow: hidden;
     padding: 0 20px;
+}
+
+.footer-view {
+    width: 100%;
+    min-height: 62px;
+    will-change: transform, opacity, filter;
+}
+
+.transport-view {
+    display: flex;
+    align-items: center;
 }
 
 .footer-actions {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
+    width: 100%;
     height: 62px;
+}
+
+.playback-options {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.8fr) minmax(300px, 1.25fr) minmax(250px, 1fr);
+    align-items: center;
+    gap: clamp(26px, 5vw, 88px);
+}
+
+.playback-options-leading,
+.playback-option,
+.background-options,
+.lyrics-size-slider,
+.option-label-row {
+    display: flex;
+    align-items: center;
+}
+
+.playback-options-leading {
+    gap: 14px;
+    min-width: 0;
+}
+
+.playback-options-title {
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 14px;
+    font-weight: 650;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.playback-option {
+    min-width: 0;
+    gap: 18px;
+}
+
+.lyrics-size-option {
+    display: grid;
+    gap: 8px;
+}
+
+.option-label-row {
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.option-label {
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 12px;
+    white-space: nowrap;
+    margin-left: auto;
+}
+
+.option-value {
+    min-width: 42px;
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.lyrics-size-slider {
+    gap: 10px;
+    width: 100%;
+}
+
+.size-mark {
+    flex: 0 0 auto;
+    color: rgba(255, 255, 255, 0.5);
+    font-weight: 700;
+    line-height: 1;
+}
+
+.size-mark-small {
+    font-size: 11px;
+}
+
+.size-mark-large {
+    font-size: 18px;
+}
+
+.lyrics-size-range {
+    flex: 1;
+    min-width: 100px;
+    height: 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 99px;
+    appearance: none;
+    cursor: pointer;
+    outline: none;
+}
+
+.lyrics-size-range::-webkit-slider-thumb {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.92);
+    border-radius: 50%;
+    background: rgb(var(--primary-color));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    appearance: none;
+}
+
+.lyrics-size-range::-moz-range-thumb {
+    width: 10px;
+    height: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.92);
+    border-radius: 50%;
+    background: rgb(var(--primary-color));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.lyrics-size-range:focus-visible {
+    outline: 2px solid rgba(var(--primary-color), 0.72);
+    outline-offset: 5px;
+}
+
+.background-option-group {
+    justify-content: space-between;
+}
+
+.background-options {
+    gap: 8px;
+}
+
+.background-option {
+    min-width: 76px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 9px;
+    color: rgba(255, 255, 255, 0.66);
+    background: rgba(255, 255, 255, 0.06);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.background-option.active {
+    border-color: rgba(var(--primary-color), 0.72);
+    color: #ffffff;
+    background: rgba(var(--primary-color), 0.22);
 }
 
 .footer-side {
@@ -871,26 +1139,6 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
 .footer-button {
     width: 32px;
     height: 32px;
-}
-
-.background-mode-button {
-    font-size: 11px;
-    font-weight: 700;
-}
-
-.background-mode-glyph {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border: 1px solid currentColor;
-    border-radius: 5px;
-    line-height: 1;
-}
-
-.footer-button.active {
-    color: #f0a07d;
 }
 
 .play-button {
@@ -981,7 +1229,13 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
     }
 
     .lyric-line {
-        font-size: 32px;
+        font-size: var(--lyrics-font-size, 32px);
+    }
+
+    .playback-options {
+        grid-template-columns: minmax(155px, 0.65fr) minmax(220px, 1.25fr) minmax(200px, 0.85fr);
+        gap: 18px;
+        padding: 0 20px;
     }
 
     .transport-controls {
@@ -1045,8 +1299,42 @@ watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], 
 
     .lyric-line {
         min-height: 44px;
-        font-size: 22px;
+        font-size: var(--lyrics-font-size, 22px);
         text-align: center;
+    }
+
+    .playback-options {
+        grid-template-areas:
+            'leading background'
+            'lyrics lyrics';
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px 12px;
+        align-content: center;
+        height: 100%;
+        padding: 14px 20px;
+    }
+
+    .playback-options-leading {
+        grid-area: leading;
+    }
+
+    .lyrics-size-option {
+        grid-area: lyrics;
+    }
+
+    .background-option-group {
+        grid-area: background;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    .background-option {
+        min-width: auto;
+        padding: 7px 9px;
+    }
+
+    .playback-options-title {
+        font-size: 12px;
     }
 
     .player-footer {

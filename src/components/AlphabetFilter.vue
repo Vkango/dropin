@@ -1,5 +1,6 @@
 <template>
-    <div class="alphabet-filter" data-alphabet-filter aria-label="首字母导航">
+    <div class="alphabet-filter" data-alphabet-filter aria-label="首字母导航"
+        :style="{ marginTop: `${topOffset}px` }">
         <button v-for="option in alphabetOptions" :key="option.value" type="button" class="alphabet-btn"
             :class="{ active: activeInitial === option.value, disabled: isDisabled(option.value) }"
             :disabled="isDisabled(option.value)" :aria-pressed="activeInitial === option.value"
@@ -17,6 +18,10 @@ const props = defineProps({
     activeInitial: {
         type: String,
         default: ALL_INITIAL
+    },
+    topOffset: {
+        type: Number,
+        default: 0
     },
     availableInitials: {
         type: Array,

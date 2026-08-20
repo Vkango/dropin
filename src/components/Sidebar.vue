@@ -2,10 +2,6 @@
     <aside class="sidebar-scroll">
         <div class="sidebar-titlebar-spacer" aria-hidden="true"></div>
         <div class="sidebar">
-            <div class="search-container">
-                <!-- <input type="text" placeholder="Search Everywhere" class="search-input" :value="searchQuery"
-                @input="$emit('search-update', $event.target.value)" /> -->
-            </div>
 
             <nav class="nav-menu">
                 <MotionDiv v-for="item in sidebarItems" :key="item.id"
@@ -146,6 +142,7 @@ const toggleSection = (sectionName) => {
     width: 100%;
     min-height: calc(100% - 104px);
     padding: 0 20px 40px;
+    margin-top: 10px;
 }
 
 .sidebar-titlebar-spacer {
@@ -173,10 +170,6 @@ const toggleSection = (sectionName) => {
 
 .sidebar-scroll::-webkit-scrollbar-thumb:hover {
     background: rgba(var(--outline-color), 0.5);
-}
-
-.search-container {
-    margin-bottom: 24px;
 }
 
 .search-input {
