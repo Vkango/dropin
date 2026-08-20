@@ -53,8 +53,8 @@ export const motionVariants = {
     absolute: true
   },
   albumCover: {
-    enter: { opacity: [0, 1], scale: [0.8, 1], rotate: [-10, 0], filter: ['blur(5px)', 'blur(0px)'] },
-    leave: { opacity: [1, 0], scale: [1, 1.2], rotate: [0, 10], filter: ['blur(0px)', 'blur(5px)'] },
+    enter: { opacity: [0, 1], scale: [0.8, 1], rotate: [-10, 0] },
+    leave: { opacity: [1, 0], scale: [1, 1.2], rotate: [0, 10] },
     spring: SOFT_SPRING,
     absolute: true
   },
