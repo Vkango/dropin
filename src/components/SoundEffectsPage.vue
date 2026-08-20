@@ -1,5 +1,6 @@
 <template>
-    <div class="sound-effects-page">
+    <PageLayout>
+        <template #header>
         <!-- 页面标题 -->
         <div class="music-banner" @click="showAlbumDetail">
             <div class="image-container">
@@ -33,9 +34,8 @@
                 </div>
             </div>
         </div>
-        <div class="page-header">
-
-        </div>
+        </template>
+        <div class="sound-effects-page">
 
         <!-- 警告提示 -->
         <div class="warning-banner">
@@ -250,12 +250,14 @@
                 Reset to Defaults
             </MotionButton>
         </div>
-    </div>
+        </div>
+    </PageLayout>
 </template>
 
 <script setup>
 import { ref, reactive, watch, inject, computed } from 'vue'
 import Icon from './Icon.vue'
+import PageLayout from './PageLayout.vue'
 import MotionTransition from './MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
@@ -386,10 +388,7 @@ const resetToDefaults = () => {
 
 <style scoped>
 .sound-effects-page {
-    padding: 20px 50px;
-    height: 100%;
-    overflow-y: auto;
-    background: #1e1e1e;
+    width: 100%;
 }
 
 /* 页面标题 */

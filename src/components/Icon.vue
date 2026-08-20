@@ -164,7 +164,7 @@ onMounted(() => {
     justify-content: center;
     width: var(--icon-size);
     height: var(--icon-size);
-    color: rgb(var(--icon-color, var(--primary-color, #333)));
+    color: var(--icon-color, rgb(var(--primary-color, 51, 51, 51)));
     user-select: none;
 }
 

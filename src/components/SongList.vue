@@ -52,7 +52,7 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
 
 <style scoped>
 .song-list {
-    background: #242424;
+    background: rgba(var(--surface-color), 0.75);
     border-radius: 8px;
     overflow: hidden;
 }
@@ -61,13 +61,13 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
     display: grid;
     grid-template-columns: 60px 1fr 30px 200px;
     padding: 16px 20px;
-    background: #2a2a2a;
+    background: rgba(var(--surface-color), 0.9);
     font-weight: 600;
     border-bottom: 1px solid #3a3a3a;
 }
 
 .group-label {
-    background: #2a2a2a;
+    background: rgba(var(--surface-color), 0.82);
     padding: 12px 20px;
     font-size: 18px;
     font-weight: 700;
@@ -90,7 +90,7 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
 .play-btn {
     background: none;
     border: none;
-    color: #888;
+    color: rgba(var(--text-color), 0.6);
     cursor: pointer;
     font-size: 14px;
 }
@@ -115,14 +115,14 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
 
 .song-artist {
     font-size: 12px;
-    color: #888;
+    color: rgba(var(--text-color), 0.6);
 }
 
 .col-album {
     display: flex;
     align-items: center;
     font-size: 13px;
-    color: #888;
+    color: rgba(var(--text-color), 0.6);
 }
 
 .col-duration {
@@ -130,6 +130,6 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
     align-items: center;
     justify-content: flex-end;
     font-size: 13px;
-    color: #888;
+    color: rgba(var(--text-color), 0.6);
 }
 </style>

@@ -7,6 +7,7 @@ import AlbumsPage from './components/AlbumsPage.vue'
 import ArtistsPage from './components/ArtistsPage.vue'
 import SoundEffectsPage from './components/SoundEffectsPage.vue'
 import PluginsPage from './components/PluginsPage.vue'
+import BassTestPage from './components/BassTestPage.vue'
 import DetailPanel from './components/DetailPanel.vue'
 import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
@@ -28,7 +29,8 @@ const pageComponents = {
   albums: AlbumsPage,
   artists: ArtistsPage,
   effects: SoundEffectsPage,
-  plugins: PluginsPage
+  plugins: PluginsPage,
+  bass: BassTestPage
 }
 
 // 当前播放的歌曲
@@ -53,6 +55,7 @@ const searchQuery = ref('')
 
 // 主题状态
 const currentTheme = ref(null)
+const isDarkTheme = computed(() => currentTheme.value?.isDark ?? themeManager.isDarkMode)
 
 // 音乐库数据
 const musicLibrary = reactive({
@@ -109,7 +112,8 @@ const sidebarItems = reactive([
   { id: 'albums', icon: 'album.svg', label: '专辑', active: false },
   { id: 'artists', icon: 'artists.svg', label: '艺术家', active: false },
   { id: 'effects', icon: 'effect.svg', label: '声音效果', active: false },
-  { id: 'plugins', icon: 'plugin.svg', label: '扩展插件', active: false }
+  { id: 'plugins', icon: 'plugin.svg', label: '扩展插件', active: false },
+  { id: 'bass', icon: 'bug.svg', label: 'BASS 测试', active: false }
 ])
 
 // 数据集合
@@ -270,7 +274,7 @@ const navigateToPage = (pageId) => {
   // 缓存当前页面状态
   if (currentPage.value) {
     pageCache.set(currentPage.value, {
-      scrollPosition: document.querySelector('.main-content')?.scrollTop || 0,
+      scrollPosition: document.querySelector('.page-layout')?.scrollTop || 0,
       timestamp: Date.now()
     })
   }
@@ -291,7 +295,7 @@ const restorePageScroll = () => {
   const cachedState = pageCache.get(currentPage.value)
   if (!cachedState) return
 
-  const mainContent = document.querySelector('.main-content')
+  const mainContent = document.querySelector('.page-layout')
   if (mainContent) {
     mainContent.scrollTop = cachedState.scrollPosition
   }
@@ -465,7 +469,8 @@ onMounted(async () => {
 <template>
   <div class="music-player">
     <!-- 侧边栏 -->
-    <Sidebar :sidebar-items="sidebarItems" :search-query="searchQuery" @search-update="handleSearchUpdate"
+    <Sidebar :sidebar-items="sidebarItems" :search-query="searchQuery" :is-dark="isDarkTheme"
+      @search-update="handleSearchUpdate"
       @nav-item-click="handleNavItemClick" @add-tag="handleAddTag" @add-playlist="handleAddPlaylist"
       @add-plugin="handleAddPlugin" />
 
@@ -478,7 +483,7 @@ onMounted(async () => {
             @album-play="handleAlbumPlay" @artist-select="handleArtistSelect" @artist-play="handleArtistPlay"
             @artist-follow="handleArtistFollow" @playlist-play="handlePlaylistPlay" @navigate="handleNavigate"
             @header-control-click="handleHeaderControlClick" @effects-change="handleEffectsChange"
-            class="main-content" />
+            />
         </KeepAlive>
       </MotionTransition>
     </div>
@@ -532,18 +537,18 @@ onMounted(async () => {
 }
 
 body {
-  background: #1a1a1a;
-  color: #ffffff;
+  background: rgb(var(--background-color));
+  color: rgb(var(--text-color));
   overflow: hidden;
 }
 
 /* Banner 样式 */
 .music-banner {
-  width: calc(100% + 100px);
-  height: 300px;
+  width: 100%;
+  height: 190px;
   position: relative;
-  margin: -20px -50px;
-  margin-bottom: 20px;
+  overflow: hidden;
+  border-radius: 0 0 18px 18px;
 }
 
 .image-container {
@@ -561,14 +566,14 @@ body {
 
 .music-banner .background-image {
   width: 100%;
-  height: 300px;
+  height: 190px;
   object-fit: cover;
 }
 
 .banner-content {
   position: absolute;
-  top: 30px;
-  padding: 15px 45px;
+  inset: 0 auto auto 0;
+  padding: 22px 28px;
 }
 
 .banner-content .title {
@@ -624,23 +629,17 @@ body {
   display: grid;
   grid-template-columns: 280px 1fr;
   grid-template-rows: 1fr;
-  grid-template-areas:
-    "sidebar main detail"
-    "controls controls controls";
+  grid-template-areas: "sidebar main";
   height: 100vh;
-  background: var(--md-sys-color-background);
-  color: #ffffff;
-  font-family: Microsoft YaHei, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: rgb(var(--background-color));
+  color: rgb(var(--text-color));
+  font-family: MiSans, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .main-content-wrapper {
   grid-area: main;
   position: relative;
+  min-width: 0;
   overflow: hidden;
-}
-
-.main-content {
-  height: 100%;
-  overflow-y: auto;
 }
 </style>

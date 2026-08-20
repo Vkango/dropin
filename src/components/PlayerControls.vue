@@ -147,7 +147,7 @@ const handleProgressClick = (event) => {
 
 .playing-artist {
     font-size: 12px;
-    color: #888;
+    color: rgba(var(--text-color), 0.6);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -162,7 +162,7 @@ const handleProgressClick = (event) => {
 .control-button {
     background: none;
     border: none;
-    color: #ffffff;
+    color: rgb(var(--text-color));
     cursor: pointer;
     font-size: 16px;
     padding: 8px;
@@ -184,14 +184,14 @@ const handleProgressClick = (event) => {
 
 .time {
     font-size: 12px;
-    color: #888;
+    color: rgba(var(--text-color), 0.6);
     min-width: 40px;
 }
 
 .progress-bar {
     flex: 1;
     height: 4px;
-    background: #3a3a3a;
+    background: rgba(var(--outline-color), 0.3);
     border-radius: 2px;
     position: relative;
     cursor: pointer;
@@ -199,7 +199,7 @@ const handleProgressClick = (event) => {
 
 .progress-fill {
     height: 100%;
-    background: #4a9eff;
+    background: rgb(var(--primary-color));
     border-radius: 2px;
 }
 

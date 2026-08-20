@@ -1,7 +1,8 @@
 <template>
-    <div class="home-page">
-        <!-- 顶部问候区域 -->
-        <div class="music-banner" @click="showAlbumDetail">
+    <PageLayout>
+        <template #header>
+            <!-- 顶部问候区域 -->
+            <div class="music-banner" @click="showAlbumDetail">
             <div class="image-container">
                 <MotionTransition variant="banner">
                     <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
@@ -14,12 +15,14 @@
                 <div class="description">这东西一次能吃一袋我丢
                 </div>
             </div>
-        </div>
-        <div class="recently-played">
+            </div>
+        </template>
+        <div class="home-page">
+            <div class="recently-played">
             <div class="section-header">
                 <h2 class="section-title">最近播放</h2>
-                <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }"
-                    :transition="microTransition" @click="$emit('navigate', 'library')">查看全部</MotionButton>
+                <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }" :transition="microTransition"
+                    @click="$emit('navigate', 'library')">查看全部</MotionButton>
             </div>
             <div class="recent-grid">
                 <MotionDiv v-for="item in recentlyPlayed" :key="item.id" class="recent-item" initial="rest"
@@ -39,14 +42,14 @@
                     </div>
                 </MotionDiv>
             </div>
-        </div>
+            </div>
 
-        <!-- 推荐播放列表 -->
-        <div class="recommended-playlists">
+            <!-- 推荐播放列表 -->
+            <div class="recommended-playlists">
             <div class="section-header">
                 <h2 class="section-title">为您推荐</h2>
-                <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }"
-                    :transition="microTransition" @click="$emit('navigate', 'playlists')">查看全部</MotionButton>
+                <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }" :transition="microTransition"
+                    @click="$emit('navigate', 'playlists')">查看全部</MotionButton>
             </div>
             <div class="playlist-grid">
                 <MotionDiv v-for="playlist in recommendedPlaylists" :key="playlist.id" class="playlist-item"
@@ -64,13 +67,15 @@
                     </div>
                 </MotionDiv>
             </div>
+            </div>
         </div>
-    </div>
+    </PageLayout>
 </template>
 
 <script setup>
 import { computed, onMounted, ref, inject } from 'vue'
 import Icon from './Icon.vue'
+import PageLayout from './PageLayout.vue'
 import MotionTransition from './MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
@@ -132,9 +137,7 @@ onMounted(() => {
 
 <style scoped>
 .home-page {
-    padding: 20px 50px;
-    height: 100%;
-    overflow-y: auto;
+    width: 100%;
 }
 
 /* 问候区域 */

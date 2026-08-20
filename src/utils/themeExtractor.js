@@ -162,6 +162,18 @@ class MonetThemeExtractor {
     }
 
     /**
+     * 将封面主色轻量混入明/暗中性色，避免背景过于饱和。
+     */
+    blendColors(color, neutral, colorWeight) {
+        const neutralWeight = 1 - colorWeight;
+        return {
+            r: Math.round(color.r * colorWeight + neutral.r * neutralWeight),
+            g: Math.round(color.g * colorWeight + neutral.g * neutralWeight),
+            b: Math.round(color.b * colorWeight + neutral.b * neutralWeight)
+        };
+    }
+
+    /**
      * 选择主色调
      */
     selectPrimaryColor(colors) {
@@ -181,10 +193,13 @@ class MonetThemeExtractor {
      */
     generateLightTheme(primaryColor) {
         const hsl = this.rgbToHsl(primaryColor);
+        const primary = this.hslToRgb({ h: hsl.h, s: 0.7, l: 0.45 });
+        const background = this.blendColors(primary, { r: 250, g: 250, b: 250 }, 0.1);
+        const surface = this.blendColors(primary, { r: 255, g: 255, b: 255 }, 0.15);
 
         return {
             // 主色系
-            primary: this.hslToRgb({ h: hsl.h, s: 0.7, l: 0.45 }),
+            primary,
             primaryContainer: this.hslToRgb({ h: hsl.h, s: 0.4, l: 0.9 }),
             onPrimary: { r: 255, g: 255, b: 255 },
             onPrimaryContainer: this.hslToRgb({ h: hsl.h, s: 0.8, l: 0.15 }),
@@ -202,9 +217,9 @@ class MonetThemeExtractor {
             onTertiaryContainer: this.hslToRgb({ h: (hsl.h + 120) % 360, s: 0.6, l: 0.2 }),
 
             // 背景色系
-            background: { r: 254, g: 251, b: 255 },
+            background,
             onBackground: { r: 28, g: 27, b: 31 },
-            surface: { r: 254, g: 251, b: 255 },
+            surface,
             onSurface: { r: 28, g: 27, b: 31 },
             surfaceVariant: { r: 231, g: 224, b: 236 },
             onSurfaceVariant: { r: 73, g: 69, b: 79 },
@@ -236,10 +251,13 @@ class MonetThemeExtractor {
      */
     generateDarkTheme(primaryColor) {
         const hsl = this.rgbToHsl(primaryColor);
+        const primary = this.hslToRgb({ h: hsl.h, s: 0.6, l: 0.8 });
+        const background = this.blendColors(primary, { r: 16, g: 16, b: 18 }, 0.12);
+        const surface = this.blendColors(primary, { r: 28, g: 28, b: 31 }, 0.16);
 
         return {
             // 主色系
-            primary: this.hslToRgb({ h: hsl.h, s: 0.6, l: 0.8 }),
+            primary,
             primaryContainer: this.hslToRgb({ h: hsl.h, s: 0.7, l: 0.3 }),
             onPrimary: this.hslToRgb({ h: hsl.h, s: 0.8, l: 0.15 }),
             onPrimaryContainer: this.hslToRgb({ h: hsl.h, s: 0.4, l: 0.9 }),
@@ -257,9 +275,9 @@ class MonetThemeExtractor {
             onTertiaryContainer: this.hslToRgb({ h: (hsl.h + 120) % 360, s: 0.3, l: 0.92 }),
 
             // 背景色系
-            background: { r: 16, g: 15, b: 19 },
+            background,
             onBackground: { r: 230, g: 225, b: 229 },
-            surface: { r: 16, g: 15, b: 19 },
+            surface,
             onSurface: { r: 230, g: 225, b: 229 },
             surfaceVariant: { r: 73, g: 69, b: 79 },
             onSurfaceVariant: { r: 202, g: 182, b: 224 },

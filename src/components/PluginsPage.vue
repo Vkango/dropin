@@ -1,5 +1,6 @@
 <template>
-    <div class="plugins-page">
+    <PageLayout>
+        <div class="plugins-page">
         <!-- 页面标题 -->
         <div class="page-header">
             <h1 class="page-title">扩展插件</h1>
@@ -103,12 +104,14 @@
             <h3>没有找到插件</h3>
             <p>尝试切换到其他分类或刷新插件列表</p>
         </div>
-    </div>
+        </div>
+    </PageLayout>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
 import Icon from './Icon.vue'
+import PageLayout from './PageLayout.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 const emit = defineEmits(['plugin-install', 'plugin-uninstall', 'plugin-enable', 'plugin-disable'])
@@ -278,9 +281,7 @@ const disablePlugin = (plugin) => {
 
 <style scoped>
 .plugins-page {
-    padding: 20px 50px;
-    height: 100%;
-    overflow-y: auto;
+    width: 100%;
 }
 
 /* 页面标题 */

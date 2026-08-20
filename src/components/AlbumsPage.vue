@@ -1,5 +1,6 @@
 <template>
-    <div class="albums-page">
+    <PageLayout>
+        <template #header>
         <!-- 页面标题 -->
         <div class="music-banner" @click="showAlbumDetail">
             <div class="image-container">
@@ -15,6 +16,8 @@
                 </div>
             </div>
         </div>
+        </template>
+        <div class="albums-page">
         <div class="page-header">
             <h1 class="page-title"></h1>
             <div class="view-controls">
@@ -107,13 +110,15 @@
                 </MotionDiv>
             </div>
         </MotionTransition>
-    </div>
+        </div>
+    </PageLayout>
 </template>
 
 <script setup>
 import { ref, computed, inject } from 'vue'
 import Icon from './Icon.vue'
 import MotionTransition from './MotionTransition.vue'
+import PageLayout from './PageLayout.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
@@ -179,9 +184,7 @@ const filteredAlbums = computed(() => {
 
 <style scoped>
 .albums-page {
-    padding: 20px 50px;
-    height: 100%;
-    overflow-y: auto;
+    width: 100%;
 }
 
 /* 页面标题 */

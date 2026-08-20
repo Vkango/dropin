@@ -37,7 +37,7 @@ const props = defineProps({
 <style scoped>
 .detail-panel {
     grid-area: detail;
-    background: #2a2a2a;
+    background: rgba(var(--surface-color), 0.8);
     padding: 20px;
     border-left: 1px solid #3a3a3a;
 }
@@ -67,7 +67,7 @@ const props = defineProps({
 }
 
 .info-label {
-    color: #888;
+    color: rgba(var(--text-color), 0.6);
     font-size: 14px;
 }
 
