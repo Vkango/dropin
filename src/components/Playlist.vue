@@ -6,7 +6,8 @@
         </header>
 
         <div v-if="songs.length" class="playlist-items" role="list">
-            <MotionButton v-for="song in songs" :key="song.id" class="playlist-item"
+            <MotionButton v-for="(song, index) in songs" :key="songItemKey(song, index)"
+                :ref="setItemRef(songItemKey(song, index))" class="playlist-item"
                 :class="{ 'is-current': isCurrentSong(song) }" type="button" role="listitem"
                 :aria-current="isCurrentSong(song) ? 'true' : undefined" :aria-label="songLabel(song)"
                 :while-hover="itemHover" :while-press="itemPress" :transition="microTransition"
@@ -33,7 +34,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { Pause, Play } from '@lucide/vue'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
@@ -67,6 +68,8 @@ const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const itemHover = { x: -2, backgroundColor: 'rgba(var(--primary-color), 0.1)' }
 const itemPress = { scale: 0.985 }
+const itemRefs = new Map()
+const measureFrame = ref(null)
 
 const isCurrentSong = (song) => {
     if (!props.currentSong) return false
@@ -75,6 +78,49 @@ const isCurrentSong = (song) => {
 }
 
 const songLabel = (song) => `${song.title} - ${song.artist || '未知艺术家'}${isCurrentSong(song) ? '，正在播放' : ''}`
+
+const songItemKey = (song, index) => song.id ?? `${song.title}-${song.artist || ''}-${index}`
+
+const setItemRef = (key) => (value) => {
+    const element = value?.$el ?? value
+    if (element) itemRefs.set(key, element)
+    else itemRefs.delete(key)
+}
+
+const scrollToCurrent = async () => {
+    await nextTick()
+    const currentIndex = props.songs.findIndex(isCurrentSong)
+    if (currentIndex < 0) return
+
+    const currentSong = props.songs[currentIndex]
+    const element = itemRefs.get(songItemKey(currentSong, currentIndex))
+    if (!element?.scrollIntoView) return
+
+    element.scrollIntoView({
+        behavior: reducedMotion.value ? 'auto' : 'smooth',
+        block: 'center',
+        inline: 'nearest'
+    })
+}
+
+const scheduleScrollToCurrent = () => {
+    if (measureFrame.value) window.cancelAnimationFrame(measureFrame.value)
+    measureFrame.value = window.requestAnimationFrame(() => {
+        measureFrame.value = null
+        scrollToCurrent()
+    })
+}
+
+onMounted(scheduleScrollToCurrent)
+watch([
+    () => props.currentSong?.id,
+    () => props.songs.map((song, index) => songItemKey(song, index)).join('|')
+], scheduleScrollToCurrent, { flush: 'post' })
+
+onUnmounted(() => {
+    if (measureFrame.value) window.cancelAnimationFrame(measureFrame.value)
+    itemRefs.clear()
+})
 </script>
 
 <style scoped>
