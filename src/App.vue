@@ -11,6 +11,8 @@ import DetailPanel from './components/DetailPanel.vue'
 import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
 import MotionTransition from './components/MotionTransition.vue'
+import Drawer from './components/Drawer.vue'
+import Playlist from './components/Playlist.vue'
 import { themeManager } from './utils/themeManager.js'
 import { bassCall } from './services/bassApi.js'
 import { useLibraryStore } from './stores/libraryStore.js'
@@ -56,6 +58,7 @@ const totalTime = ref('00:00')
 const progress = ref(0)
 const activeChannelId = ref(null)
 const playbackQueue = ref(null)
+const isQueueDrawerOpen = ref(false)
 const fullscreenBackgroundMode = ref('flowing')
 let snapshotTimer = null
 let seekTimer = null
@@ -392,6 +395,10 @@ const currentPageComponent = computed(() => {
   return pageComponents[currentPage.value] || HomePage
 })
 
+const effectiveQueue = computed(() => {
+  return playbackQueue.value?.length ? playbackQueue.value : libraryStore.tracks.value
+})
+
 // 事件处理函数
 const handleSearchUpdate = (query) => {
   searchQuery.value = query
@@ -671,7 +678,15 @@ const handleMenu = () => {
 }
 
 const handleQueue = () => {
-  console.log('播放队列')
+  isQueueDrawerOpen.value = true
+}
+
+const handleQueueDrawerClose = () => {
+  isQueueDrawerOpen.value = false
+}
+
+const handleQueueSongSelect = (song) => {
+  playSong(song, effectiveQueue.value)
 }
 
 const handleAdd = () => {
@@ -771,11 +786,18 @@ onBeforeUnmount(() => {
     <PlayerSurface :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
       :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress" :lyrics="lyricsPayload"
       :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer" :channel-id="activeChannelId"
-      :background-mode="fullscreenBackgroundMode" @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay"
+      :background-mode="fullscreenBackgroundMode" :queue-songs="effectiveQueue"
+      @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay"
       @previous="handlePrevious" @next="handleNext" @progress-change="handleProgressChange"
       @progress-commit="handleProgressCommit" @volume-change="(volume) => console.log('音量变化:', volume)"
       @shuffle="() => console.log('随机播放')" @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')"
-      @queue="handleQueue" @background-mode-change="handleBackgroundModeChange" />
+      @playlist-song-select="handleQueueSongSelect" @background-mode-change="handleBackgroundModeChange" />
+
+    <Drawer :open="isQueueDrawerOpen" title="正在播放" placement="right" close-label="关闭播放列表"
+      @close="handleQueueDrawerClose">
+      <Playlist :songs="effectiveQueue" :current-song="currentSong" :is-playing="isPlaying"
+        @song-select="handleQueueSongSelect" />
+    </Drawer>
   </div>
 </template>
 
@@ -784,6 +806,27 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* 播放器界面以点击和拖拽为主，避免交互时误选中界面文字。 */
+.music-player *,
+.title-bar-player *,
+.drawer-layer * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.music-player input,
+.music-player textarea,
+.music-player [contenteditable='true'],
+.title-bar-player input,
+.title-bar-player textarea,
+.title-bar-player [contenteditable='true'],
+.drawer-layer input,
+.drawer-layer textarea,
+.drawer-layer [contenteditable='true'] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 html,

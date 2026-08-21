@@ -2,89 +2,36 @@
   <div ref="rootRef" class="combobox" :class="{ 'is-open': isOpen, 'is-disabled': disabled }">
     <div class="combobox-control">
       <div v-if="!isOpen && selectedOption" class="combobox-selected-value" aria-hidden="true">
-        <slot
-          name="selected"
-          :option="selectedOption.option"
-          :value="selectedOption.value"
-          :label="selectedOption.label"
-          :selected="true"
-          :active="false"
-          :disabled="selectedOption.disabled"
-        >
+        <slot name="selected" :option="selectedOption.option" :value="selectedOption.value"
+          :label="selectedOption.label" :selected="true" :active="false" :disabled="selectedOption.disabled">
           <span>{{ selectedOption.label }}</span>
         </slot>
       </div>
-      <input
-        ref="inputRef"
-        class="combobox-input"
-        :id="inputId"
-        :value="isOpen ? searchQuery : selectedLabel"
-        :placeholder="placeholder"
-        :disabled="disabled"
-        role="combobox"
-        aria-autocomplete="list"
-        :aria-expanded="isOpen"
-        :aria-controls="listId"
-        :aria-activedescendant="activeDescendantId"
-        :aria-valuetext="selectedLabel || undefined"
-        autocomplete="off"
-        @focus="openDropdown"
-        @input="handleInput"
-        @keydown="handleKeydown"
-      />
-      <button
-        class="combobox-trigger"
-        type="button"
-        tabindex="-1"
-        :disabled="disabled"
-        :aria-label="isOpen ? '关闭选项' : '打开选项'"
-        @mousedown.prevent
-        @click="toggleDropdown"
-      >
+      <input ref="inputRef" class="combobox-input" :id="inputId" :value="isOpen ? searchQuery : selectedLabel"
+        :placeholder="placeholder" :disabled="disabled" role="combobox" aria-autocomplete="list" :aria-expanded="isOpen"
+        :aria-controls="listId" :aria-activedescendant="activeDescendantId" :aria-valuetext="selectedLabel || undefined"
+        autocomplete="off" @focus="openDropdown" @input="handleInput" @keydown="handleKeydown" />
+      <button class="combobox-trigger" type="button" tabindex="-1" :disabled="disabled"
+        :aria-label="isOpen ? '关闭选项' : '打开选项'" @mousedown.prevent @click="toggleDropdown">
         <span class="combobox-chevron" aria-hidden="true"></span>
       </button>
     </div>
 
     <AnimatePresence :initial="false">
-      <MotionDiv
-        v-if="isOpen"
-        :id="listId"
-        key="combobox-menu"
-        class="combobox-menu"
-        role="listbox"
-        :aria-labelledby="inputId"
-        :initial="{ opacity: 0, y: -5, scale: 0.98 }"
-        :animate="{ opacity: 1, y: 0, scale: 1 }"
-        :exit="{ opacity: 0, y: -4, scale: 0.98 }"
-        :transition="menuTransition"
-      >
+      <MotionDiv v-if="isOpen" :id="listId" key="combobox-menu" class="combobox-menu" role="listbox"
+        :aria-labelledby="inputId" :initial="{ opacity: 0, y: -5, scale: 0.98 }"
+        :animate="{ opacity: 1, y: 0, scale: 1 }" :exit="{ opacity: 0, y: -4, scale: 0.98 }"
+        :transition="menuTransition">
         <div v-if="filteredOptions.length" class="combobox-options">
-          <div
-            v-for="(item, index) in filteredOptions"
-            :id="optionId(item)"
-            :key="item.key"
-            class="combobox-option"
+          <div v-for="(item, index) in filteredOptions" :id="optionId(item)" :key="item.key" class="combobox-option"
             :class="{
               'is-active': index === activeIndex,
               'is-selected': isSelected(item),
               'is-disabled': item.disabled
-            }"
-            role="option"
-            :aria-selected="isSelected(item)"
-            :aria-disabled="item.disabled || undefined"
-            @mousedown.prevent
-            @mouseenter="setActiveIndex(index)"
-            @click="selectOption(item)"
-          >
-            <slot
-              name="option"
-              :option="item.option"
-              :value="item.value"
-              :label="item.label"
-              :selected="isSelected(item)"
-              :active="index === activeIndex"
-              :disabled="item.disabled"
-            >
+            }" role="option" :aria-selected="isSelected(item)" :aria-disabled="item.disabled || undefined"
+            @mousedown.prevent @mouseenter="setActiveIndex(index)" @click="selectOption(item)">
+            <slot name="option" :option="item.option" :value="item.value" :label="item.label"
+              :selected="isSelected(item)" :active="index === activeIndex" :disabled="item.disabled">
               <span>{{ item.label }}</span>
             </slot>
           </div>
@@ -432,7 +379,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
 }
 
 .combobox-option.is-selected {
-  color: rgb(var(--primary-hover-color));
+  color: rgb(var(--text-color));
   font-weight: 600;
 }
 

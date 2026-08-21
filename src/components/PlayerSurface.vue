@@ -14,13 +14,14 @@
             <FullscreenPlayer :is-visible="isFullscreen" :current-song="currentSong" :is-playing="isPlaying"
                 :current-time="currentTime" :current-time-ms="currentTimeMs" :total-time="totalTime"
                 :progress="progress" :lyrics="lyrics" :lyrics-loading="lyricsLoading" :channel-id="channelId"
-                :background-mode="backgroundMode" @close="$emit('close')"
+                :background-mode="backgroundMode" :queue-songs="queueSongs" @close="$emit('close')"
                 @toggle-play="$emit('toggle-play')" @previous="$emit('previous')" @next="$emit('next')"
                 @progress-change="$emit('progress-change', $event)"
                 @progress-commit="$emit('progress-commit', $event)"
                 @volume-change="$emit('volume-change', $event)" @shuffle="$emit('shuffle')"
                 @repeat="$emit('repeat')" @add-to-playlist="$emit('add-to-playlist')"
-                @queue="$emit('queue')" @background-mode-change="$emit('background-mode-change', $event)" />
+                @playlist-song-select="$emit('playlist-song-select', $event)"
+                @background-mode-change="$emit('background-mode-change', $event)" />
         </MotionDiv>
     </AnimatePresence>
 </template>
@@ -72,6 +73,10 @@ defineProps({
         type: String,
         default: 'flowing'
     },
+    queueSongs: {
+        type: Array,
+        default: () => []
+    },
     isFullscreen: {
         type: Boolean,
         default: false
@@ -89,7 +94,7 @@ defineEmits([
     'shuffle',
     'repeat',
     'add-to-playlist',
-    'queue',
+    'playlist-song-select',
     'background-mode-change'
 ])
 

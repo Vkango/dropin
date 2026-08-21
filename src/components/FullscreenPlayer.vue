@@ -45,42 +45,68 @@
                     </MotionTransition>
                 </section>
 
-                <section class="lyrics-column" aria-label="歌词">
-                    <div ref="lyricsWindowRef" class="lyrics-window">
-                        <MotionDiv v-if="lyricRows.length" class="lyrics-track" :animate="{ y: lyricOffset }"
-                            :transition="contentTransition">
-                            <MotionDiv v-for="(row, index) in lyricRows" :ref="setLyricRowRef(row.key)" :key="row.key"
-                                class="lyric-line" :class="{ 'lyric-interlude-row': row.type === 'interlude' }"
-                                :aria-label="row.type === 'interlude' && activeLyricRowIndex === index ? '间奏' : undefined"
-                                :animate="getLyricState(index)"
-                                :transition="row.type === 'interlude' ? instantTransition : contentTransition">
-                                <template v-if="row.type === 'interlude'">
-                                    <MoreHorizontal v-if="activeLyricRowIndex === index" class="lyric-interlude-icon"
-                                        :size="32" :stroke-width="2.5" fill="currentColor" aria-hidden="true" />
-                                </template>
-                                <template v-else>
-                                    <div class="lyric-primary">{{ row.line.text }}</div>
-                                    <div v-for="secondary in row.line.secondary" :key="secondary"
-                                        class="lyric-secondary">
-                                        {{ secondary }}
+                <section class="lyrics-column" aria-label="歌词和播放列表">
+                    <AnimatePresence mode="wait" :initial="false">
+                        <MotionDiv v-if="!isPlaylistOpen" key="lyrics-view" class="lyrics-view"
+                            :initial="playlistViewInitial" :animate="playlistViewAnimate" :exit="playlistViewExit"
+                            :transition="playlistTransition" @animation-complete="handleLyricsViewAnimationComplete">
+                            <div ref="lyricsWindowRef" class="lyrics-window">
+                                <MotionDiv v-if="lyricRows.length" class="lyrics-track" :animate="{ y: lyricOffset }"
+                                    :transition="contentTransition">
+                                    <MotionDiv v-for="(row, index) in lyricRows" :ref="setLyricRowRef(row.key)"
+                                        :key="row.key" class="lyric-line"
+                                        :class="{ 'lyric-interlude-row': row.type === 'interlude' }"
+                                        :aria-label="row.type === 'interlude' && activeLyricRowIndex === index ? '间奏' : undefined"
+                                        :animate="getLyricState(index)"
+                                        :transition="row.type === 'interlude' ? instantTransition : contentTransition">
+                                        <template v-if="row.type === 'interlude'">
+                                            <MoreHorizontal v-if="activeLyricRowIndex === index"
+                                                class="lyric-interlude-icon" :size="32" :stroke-width="2.5"
+                                                fill="currentColor" aria-hidden="true" />
+                                        </template>
+                                        <template v-else>
+                                            <div class="lyric-primary">{{ row.line.text }}</div>
+                                            <div v-for="secondary in row.line.secondary" :key="secondary"
+                                                class="lyric-secondary">
+                                                {{ secondary }}
+                                            </div>
+                                        </template>
+                                    </MotionDiv>
+                                </MotionDiv>
+                                <MotionDiv v-else-if="lyricsLoading" class="lyrics-status" :initial="{ opacity: 0 }"
+                                    :animate="{ opacity: 1 }" :transition="microTransition">
+                                    正在读取歌词...
+                                </MotionDiv>
+                                <div v-else-if="plainLyrics.length" class="plain-lyrics">
+                                    <div v-for="line in plainLyrics" :key="line" class="plain-lyric-line">
+                                        {{ line }}
                                     </div>
-                                </template>
-                            </MotionDiv>
-                        </MotionDiv>
-                        <MotionDiv v-else-if="lyricsLoading" class="lyrics-status" :initial="{ opacity: 0 }"
-                            :animate="{ opacity: 1 }" :transition="microTransition">
-                            正在读取歌词...
-                        </MotionDiv>
-                        <div v-else-if="plainLyrics.length" class="plain-lyrics">
-                            <div v-for="line in plainLyrics" :key="line" class="plain-lyric-line">
-                                {{ line }}
+                                </div>
+                                <MotionDiv v-else class="lyrics-status" :initial="{ opacity: 0 }"
+                                    :animate="{ opacity: 1 }" :transition="microTransition">
+                                    暂无同步歌词
+                                </MotionDiv>
                             </div>
-                        </div>
-                        <MotionDiv v-else class="lyrics-status" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
-                            :transition="microTransition">
-                            暂无同步歌词
                         </MotionDiv>
-                    </div>
+
+                        <MotionDiv v-else key="playlist-view" class="fullscreen-playlist-view"
+                            :initial="playlistViewInitial" :animate="playlistViewAnimate" :exit="playlistViewExit"
+                            :transition="playlistTransition">
+                            <div class="fullscreen-playlist-scroll">
+                                <div class="fullscreen-playlist-header">
+                                    <MotionButton class="fullscreen-playlist-back" :while-hover="buttonHover"
+                                        :while-press="buttonPress" :transition="microTransition" aria-label="返回歌词"
+                                        @click="closePlaylist">
+                                        <ArrowLeft :size="18" :stroke-width="1.8" />
+                                    </MotionButton>
+                                    <strong>播放列表</strong>
+                                </div>
+                                <Playlist :songs="queueSongs" :current-song="currentSong" :is-playing="isPlaying"
+                                    :show-header="false" title="播放列表"
+                                    @song-select="$emit('playlist-song-select', $event)" />
+                            </div>
+                        </MotionDiv>
+                    </AnimatePresence>
                 </section>
             </main>
 
@@ -170,7 +196,7 @@
                                 </MotionButton>
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
                                     :while-press="buttonPress" :transition="microTransition" aria-label="播放队列"
-                                    @click="$emit('queue')">
+                                    @click="togglePlaylist">
                                     <ListMusic :size="18" :stroke-width="1.5" />
                                 </MotionButton>
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
@@ -250,6 +276,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
 import FlowingBackground from './FlowingBackground.vue'
+import Playlist from './Playlist.vue'
 import { bassCall } from '../services/bassApi.js'
 import { APPLE_SPRING, INSTANT_MOTION, LINEAR_LOOP, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
 import { User2Icon } from '@lucide/vue'
@@ -299,6 +326,10 @@ const props = defineProps({
     backgroundMode: {
         type: String,
         default: 'flowing'
+    },
+    queueSongs: {
+        type: Array,
+        default: () => []
     }
 })
 
@@ -313,7 +344,7 @@ const emit = defineEmits([
     'shuffle',
     'repeat',
     'add-to-playlist',
-    'queue',
+    'playlist-song-select',
     'background-mode-change'
 ])
 
@@ -323,6 +354,7 @@ const reducedMotion = useReducedMotion()
 const isProgressDragging = ref(false)
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const contentTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : SOFT_SPRING)
+const playlistTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const instantTransition = computed(() => INSTANT_MOTION)
 const progressTransition = computed(() => isProgressDragging.value ? INSTANT_MOTION : microTransition.value)
 const loopTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : LINEAR_LOOP)
@@ -330,6 +362,9 @@ const footerTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : A
 const footerViewInitial = { opacity: 0, y: 96, filter: 'blur(8px)' }
 const footerViewAnimate = { opacity: 1, y: 0, filter: 'blur(0px)' }
 const footerViewExit = { opacity: 0, y: 96, filter: 'blur(8px)' }
+const playlistViewInitial = { opacity: 0, y: 44 }
+const playlistViewAnimate = { opacity: 1, y: 0 }
+const playlistViewExit = { opacity: 0, y: -44 }
 const settingsItemInitial = { opacity: 0, y: 16 }
 const settingsItemAnimate = { opacity: 1, y: 0 }
 const settingsItemTransition = (index) => reducedMotion.value
@@ -458,6 +493,18 @@ const songTags = computed(() => {
 })
 
 const normalizedBackgroundMode = computed(() => props.backgroundMode === 'blur' ? 'blur' : 'flowing')
+const isPlaylistOpen = ref(false)
+const togglePlaylist = () => {
+    isPlaylistOpen.value = !isPlaylistOpen.value
+    if (isPlaylistOpen.value) isPlaybackOptionsOpen.value = false
+}
+const closePlaylist = () => {
+    isPlaylistOpen.value = false
+}
+
+const handleLyricsViewAnimationComplete = () => {
+    scheduleLyricsMeasure()
+}
 
 const stopAudioBands = () => {
     if (audioBandsTimer) window.clearInterval(audioBandsTimer)
@@ -557,6 +604,7 @@ const lyricRowRefs = new Map()
 const albumSize = ref(0)
 let albumResizeObserver
 let lyricsResizeObserver
+let lyricsMeasureFrame
 const tickCount = 52
 const ticks = Array.from({ length: tickCount }, (_, index) => (index * 360) / tickCount)
 const syncedLyrics = computed(() => props.lyrics?.lines || [])
@@ -609,7 +657,8 @@ const measureLyrics = async () => {
     const windowElement = lyricsWindowRef.value
     const activeRowKey = activeLyricTimelineRow.value?.key
     const lineElement = activeRowKey ? lyricRowRefs.get(activeRowKey) : null
-    if (!windowElement || !lineElement || !activeRowKey) {
+    if (!windowElement) return
+    if (!lineElement || !activeRowKey) {
         lyricOffset.value = 0
         return
     }
@@ -617,6 +666,14 @@ const measureLyrics = async () => {
     lyricOffset.value = windowElement.clientHeight / 2
         - lineElement.offsetTop
         - lineElement.offsetHeight / 2
+}
+
+const scheduleLyricsMeasure = () => {
+    if (lyricsMeasureFrame) window.cancelAnimationFrame(lyricsMeasureFrame)
+    lyricsMeasureFrame = window.requestAnimationFrame(() => {
+        lyricsMeasureFrame = undefined
+        measureLyrics()
+    })
 }
 const albumVisualStyle = computed(() => {
     const size = albumSize.value || 300
@@ -691,7 +748,8 @@ const handleKeydown = (event) => {
 
     switch (event.key) {
         case 'Escape':
-            if (isPlaybackOptionsOpen.value) closePlaybackOptions()
+            if (isPlaylistOpen.value) closePlaylist()
+            else if (isPlaybackOptionsOpen.value) closePlaybackOptions()
             else emit('close')
             break
         case ' ':
@@ -722,7 +780,7 @@ onMounted(() => {
     window.addEventListener('resize', updateCompactViewport)
     albumResizeObserver = new ResizeObserver(updateAlbumSize)
     if (albumStageRef.value) albumResizeObserver.observe(albumStageRef.value)
-    lyricsResizeObserver = new ResizeObserver(measureLyrics)
+    lyricsResizeObserver = new ResizeObserver(scheduleLyricsMeasure)
     if (lyricsWindowRef.value) lyricsResizeObserver.observe(lyricsWindowRef.value)
     requestAnimationFrame(updateAlbumSize)
     measureLyrics()
@@ -735,6 +793,7 @@ onUnmounted(() => {
     window.removeEventListener('resize', updateCompactViewport)
     albumResizeObserver?.disconnect()
     lyricsResizeObserver?.disconnect()
+    if (lyricsMeasureFrame) window.cancelAnimationFrame(lyricsMeasureFrame)
     lyricRowRefs.clear()
     stopAudioBands()
     stopBassTrackInfo()
@@ -746,7 +805,18 @@ onUnmounted(() => {
     }).catch(() => { })
 })
 
-watch([lyricRows, activeLyricRowIndex, activeLyricTimelineRow], measureLyrics, { deep: true, flush: 'post' })
+watch([lyricRows, activeLyricRowIndex, activeLyricTimelineRow, lyricsFontSizeValue], scheduleLyricsMeasure, {
+    deep: true,
+    flush: 'post'
+})
+watch(isPlaylistOpen, async () => {
+    await nextTick()
+    lyricsResizeObserver?.disconnect()
+    if (!isPlaylistOpen.value && lyricsWindowRef.value) {
+        lyricsResizeObserver?.observe(lyricsWindowRef.value)
+        scheduleLyricsMeasure()
+    }
+}, { flush: 'post' })
 watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], startAudioBands)
 watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.currentSong?.title], startBassTrackInfo, { immediate: true })
 </script>
@@ -959,6 +1029,102 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     overflow: hidden;
 }
 
+.lyrics-view,
+.fullscreen-playlist-view {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex-direction: column;
+    will-change: transform, opacity;
+}
+
+.fullscreen-playlist-view {
+    overflow: hidden;
+}
+
+.fullscreen-playlist-header {
+    display: flex;
+    align-items: center;
+    flex: 0 0 auto;
+    gap: 14px;
+    margin: 0 0 12px;
+    color: #ffffff;
+}
+
+.fullscreen-playlist-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+}
+
+.fullscreen-playlist-header span {
+    display: block;
+    margin-top: 4px;
+    color: rgba(255, 255, 255, 0.56);
+    font-size: 12px;
+}
+
+.fullscreen-playlist-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border-radius: 50%;
+    color: #ffffff;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+}
+
+.fullscreen-playlist-scroll {
+    position: absolute;
+    inset: 6% 8% 10% 2%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    scrollbar-gutter: stable;
+    padding: 48px 0 64px;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    padding-right: 30px;
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 11%, #000 88%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 11%, #000 88%, transparent 100%);
+    height: 90%
+}
+
+.fullscreen-playlist-scroll:hover {
+    overflow: auto
+}
+
+.fullscreen-playlist-scroll::-webkit-scrollbar-track {
+    margin-top: 48px;
+    margin-bottom: 64px;
+}
+
+.fullscreen-playlist-scroll :deep(.playlist) {
+    padding-right: 0;
+    padding-left: 0;
+}
+
+.fullscreen-playlist-scroll :deep(.playlist-item) {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.fullscreen-playlist-scroll :deep(.playlist-item-artist),
+.fullscreen-playlist-scroll :deep(.playlist-item-duration) {
+    color: rgba(255, 255, 255, 0.52);
+}
+
+.fullscreen-playlist-scroll :deep(.playlist-item.is-current) {
+    color: #ffffff;
+    background: rgba(var(--primary-color), 0.22);
+}
+
 .lyrics-window {
     position: absolute;
     inset: 6% 8% 10% 2%;
@@ -968,7 +1134,7 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     justify-content: center;
     mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
-    height: 95%
+    height: 90%;
 }
 
 .lyrics-track {
@@ -1433,6 +1599,16 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
 
     .lyrics-window {
         inset: 0 24px;
+    }
+
+    .fullscreen-playlist-view {
+        inset: 0;
+    }
+
+    .fullscreen-playlist-scroll {
+        inset: 0 24px 5% 24px;
+        padding-top: 40px;
+        padding-bottom: 52px;
     }
 
     .lyrics-track {

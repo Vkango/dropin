@@ -2,17 +2,20 @@
     <div class="player-controls">
         <div class="player-layout">
             <div class="left-zone">
-                <div class="now-playing" @mousedown.stop>
+                <div class="now-playing">
                     <MotionButton class="mini-cover-container" :while-hover="{ scale: 1.05 }"
                         :while-press="{ scale: 0.96 }" :transition="microTransition" aria-label="打开全屏播放器"
-                        @click.stop="$emit('expand-player')">
+                        @mousedown.stop @click.stop="$emit('expand-player')">
                         <MotionTransition variant="miniCover" mode="out-in">
                             <MotionImg :key="currentSong.cover" :src="currentSong.cover" :alt="currentSong.title"
                                 :while-hover="{ scale: 1.05 }" :transition="microTransition" class="mini-cover" />
                         </MotionTransition>
                     </MotionButton>
 
-                    <div class="song-info-section">
+                    <div class="song-info-section" data-tauri-drag-region role="button" tabindex="0"
+                        aria-label="打开全屏播放器" @click.stop="$emit('expand-player')"
+                        @keydown.enter.stop="$emit('expand-player')"
+                        @keydown.space.prevent.stop="$emit('expand-player')">
                         <div class="playing-title">
                             <span class="playing-artist">{{ currentSong.title }}</span>
 
@@ -335,11 +338,16 @@ const handleProgressPointerUp = (event) => {
 }
 
 .song-info-section {
+    flex: 1 1 180px;
     min-width: 0;
+    min-height: 36px;
     overflow: hidden;
     display: flex;
     gap: 10px;
     align-items: center;
+    padding: 0 4px;
+    border-radius: 8px;
+    cursor: pointer;
 }
 
 .playing-title,
