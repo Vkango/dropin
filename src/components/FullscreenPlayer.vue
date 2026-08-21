@@ -57,9 +57,13 @@
                                     <MotionDiv v-for="(row, index) in lyricRows" :ref="setLyricRowRef(row.key)"
                                         :key="row.key" class="lyric-line"
                                         :class="{ 'lyric-interlude-row': row.type === 'interlude' }"
-                                        :aria-label="row.type === 'interlude' && activeLyricRowIndex === index ? '间奏' : undefined"
+                                        role="button" tabindex="0"
+                                        :aria-current="activeLyricRowIndex === index ? 'true' : undefined"
+                                        :aria-label="row.type === 'interlude' ? '跳转到间奏' : undefined"
                                         :animate="getLyricState(index)"
-                                        :transition="row.type === 'interlude' ? instantTransition : contentTransition">
+                                        :transition="row.type === 'interlude' ? instantTransition : contentTransition"
+                                        @pointerdown.stop @click.stop="handleLyricClick(row)"
+                                        @keydown.stop="handleLyricKeydown($event, row)">
                                         <template v-if="row.type === 'interlude'">
                                             <MoreHorizontal v-if="activeLyricRowIndex === index"
                                                 class="lyric-interlude-icon" :size="32" :stroke-width="2.5"
@@ -723,6 +727,33 @@ const handleLyricsScroll = () => {
     markLyricsAsManuallyScrolled()
 }
 
+const parseDurationMs = (value) => {
+    const parts = String(value || '').trim().split(':').map(Number)
+    if (!parts.length || parts.some((part) => !Number.isFinite(part))) return 0
+
+    const seconds = parts.length === 3
+        ? parts[0] * 3600 + parts[1] * 60 + parts[2]
+        : parts.length === 2
+            ? parts[0] * 60 + parts[1]
+            : parts[0]
+    return seconds > 0 ? seconds * 1000 : 0
+}
+
+const handleLyricClick = (row) => {
+    const durationMs = parseDurationMs(props.totalTime)
+    if (!Number.isFinite(row.startTimeMs) || durationMs <= 0) return
+
+    const targetProgress = Math.max(0, Math.min(100, row.startTimeMs / durationMs * 100))
+    emit('progress-change', targetProgress)
+    emit('progress-commit', targetProgress)
+}
+
+const handleLyricKeydown = (event, row) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    handleLyricClick(row)
+}
+
 const scheduleLyricsMeasure = () => {
     if (lyricsMeasureFrame) window.cancelAnimationFrame(lyricsMeasureFrame)
     lyricsMeasureFrame = window.requestAnimationFrame(() => {
@@ -1246,6 +1277,7 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
 }
 
 .lyric-line {
+    position: relative;
     width: 100%;
     flex: 0 0 auto;
     min-height: 44px;
@@ -1257,6 +1289,28 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     text-align: left;
     transform-origin: left center;
     will-change: transform, opacity, filter;
+    cursor: pointer;
+}
+
+.lyric-line::after {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    border-radius: 999px;
+    background: rgb(var(--primary-color));
+    content: '';
+    opacity: 0;
+    transform: scaleX(0.35);
+    transform-origin: left center;
+    transition: opacity 160ms ease, transform 220ms ease;
+}
+
+.lyric-line:hover::after,
+.lyric-line:focus-visible::after {
+    opacity: 1;
+    transform: scaleX(1);
 }
 
 .lyric-primary {
