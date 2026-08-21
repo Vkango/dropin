@@ -1,10 +1,10 @@
 <template>
-    <div class="alphabet-filter" data-alphabet-filter aria-label="首字母导航"
+    <div class="alphabet-filter" data-alphabet-filter :aria-label="t('generic.alphabetNavigation')"
         :style="{ marginTop: `${topOffset}px` }">
         <button v-for="option in alphabetOptions" :key="option.value" type="button" class="alphabet-btn"
             :class="{ active: activeInitial === option.value, disabled: isDisabled(option.value) }"
             :disabled="isDisabled(option.value)" :aria-pressed="activeInitial === option.value"
-            :aria-label="`跳转到 ${option.label}`" @click="select(option.value)">
+            :aria-label="t('generic.jumpTo', { letter: option.label })" @click="select(option.value)">
             {{ option.label }}
         </button>
     </div>
@@ -13,6 +13,9 @@
 <script setup>
 import { computed } from 'vue'
 import { alphabetOptions, ALL_INITIAL } from '../utils/alphabet.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     activeInitial: {

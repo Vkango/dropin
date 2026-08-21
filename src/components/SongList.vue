@@ -3,12 +3,12 @@
         <div class="list-header">
             <div class="col-play">
                 <PlayIcon fill="rgb(var(--global-inverse-color))" color="rgb(var(--global-inverse-color))" size="12" />
-                添加到播放列表
+                {{ t('library.addToPlaylist') }}
             </div>
             <div class="col-play">
                 <ListFilter fill="rgb(var(--global-inverse-color))" color="rgb(var(--global-inverse-color))"
                     size="12" />
-                筛选
+                {{ t('library.filter') }}
             </div>
         </div>
 
@@ -41,6 +41,9 @@ import { groupByInitial } from '../utils/alphabet.js'
 import GroupLabel from './GroupLabel.vue'
 import { PlayIcon } from '@lucide/vue'
 import { ListFilter } from '@lucide/vue'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     songs: {

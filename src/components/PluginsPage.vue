@@ -10,8 +10,8 @@
                 </MotionTransition>
             </div>
             <div class="banner-content">
-                <div class="title">DROPIN MUSIC PLAYER</div>
-                <h2 class="library-title">扩展插件</h2>
+                <div class="title">{{ t('app.name') }}</div>
+                <h2 class="library-title">{{ t('plugins.title') }}</h2>
             </div>
         </div>
         </template>
@@ -56,23 +56,23 @@
                     <MotionButton v-if="!plugin.installed" class="action-btn install"
                         :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.8)' }"
                         :while-press="{ scale: 0.96 }" :transition="microTransition" @click="installPlugin(plugin)">
-                        安装
+                        {{ t('plugins.install') }}
                     </MotionButton>
                     <MotionButton v-else-if="plugin.disabled" class="action-btn enable"
                         :while-hover="{ y: -1, backgroundColor: '#45a049' }" :while-press="{ scale: 0.96 }"
                         :transition="microTransition" @click="enablePlugin(plugin)">
-                        启用
+                        {{ t('plugins.enable') }}
                     </MotionButton>
                     <div v-else class="installed-actions">
                         <MotionButton class="action-btn disable"
                             :while-hover="{ backgroundColor: 'rgba(var(--outline-color), 0.2)' }"
                             :while-press="{ scale: 0.96 }" :transition="microTransition" @click="disablePlugin(plugin)">
-                            禁用
+                            {{ t('plugins.disable') }}
                         </MotionButton>
                         <MotionButton class="action-btn uninstall"
                             :while-hover="{ backgroundColor: 'rgba(244, 67, 54, 0.2)' }"
                             :while-press="{ scale: 0.96 }" :transition="microTransition" @click="uninstallPlugin(plugin)">
-                            卸载
+                            {{ t('plugins.uninstall') }}
                         </MotionButton>
                     </div>
                 </div>
@@ -82,7 +82,7 @@
         <!-- 空状态 -->
         <div v-if="filteredPlugins.length === 0" class="empty-state">
             <Icon src="/assets/plugin.svg" size="xl" />
-            <h3>没有找到插件</h3>
+            <h3>{{ t('plugins.empty') }}</h3>
         </div>
         </div>
     </PageLayout>
@@ -95,6 +95,9 @@ import MotionTransition from './MotionTransition.vue'
 import PageLayout from './PageLayout.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 const emit = defineEmits(['plugin-install', 'plugin-uninstall', 'plugin-enable', 'plugin-disable'])
 
 const currentSong = inject('currentSong')
@@ -111,11 +114,11 @@ const cardVariants = {
 const activeCategory = ref('all')
 
 const categoryOptions = [
-    { id: 'all', label: '全部' },
-    { id: 'effects', label: '音效' },
-    { id: 'visualizer', label: '可视化' },
-    { id: 'utility', label: '工具' },
-    { id: 'theme', label: '主题' }
+    { id: 'all', label: t('plugins.categoryAll') },
+    { id: 'effects', label: t('plugins.categoryEffects') },
+    { id: 'visualizer', label: t('plugins.categoryVisualizer') },
+    { id: 'utility', label: t('plugins.categoryUtility') },
+    { id: 'theme', label: t('plugins.categoryTheme') }
 ]
 
 const plugins = ref([
@@ -226,8 +229,8 @@ const categories = computed(() => categoryOptions.map((category) => ({
 })))
 
 const statusLabel = (plugin) => {
-    if (!plugin.installed) return '未安装'
-    return plugin.disabled ? '已停用' : '已启用'
+    if (!plugin.installed) return t('plugins.statusAvailable')
+    return plugin.disabled ? t('plugins.statusDisabled') : t('plugins.statusInstalled')
 }
 
 const installPlugin = (plugin) => {

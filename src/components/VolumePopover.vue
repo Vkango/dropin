@@ -2,13 +2,13 @@
     <PopoverCard :open="open" :anchor-id="anchorId" :anchor="anchor" :placement="placement" :gap="gap"
         :width="218" @close="$emit('close')">
             <div class="volume-slider-row">
-                <button class="mute-button" type="button" aria-label="切换静音" :aria-pressed="muted"
+                <button class="mute-button" type="button" :aria-label="t('player.mute')" :aria-pressed="muted"
                     @click="$emit('mute-change', !muted)">
                     <VolumeX v-if="muted" :size="17" :stroke-width="1.8" />
                     <Volume1 v-else-if="volume < 50" :size="17" :stroke-width="1.8" />
                     <Volume2 v-else :size="17" :stroke-width="1.8" />
                 </button>
-                <RangeSlider :model-value="muted ? 0 : volume" :min="0" :max="100" aria-label="音量"
+                <RangeSlider :model-value="muted ? 0 : volume" :min="0" :max="100" :aria-label="t('player.volume')"
                     :aria-value-text="`${Math.round(volume)}%`"
                     @update:model-value="$emit('update:volume', $event)" />
                 <output>{{ Math.round(volume) }}%</output>
@@ -20,6 +20,9 @@
 import { Volume1, Volume2, VolumeX } from '@lucide/vue'
 import RangeSlider from './RangeSlider.vue'
 import PopoverCard from './PopoverCard.vue'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     open: Boolean,

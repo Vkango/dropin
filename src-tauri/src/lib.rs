@@ -1,4 +1,5 @@
 mod bass_bridge;
+mod i18n;
 mod lyrics;
 mod media_library;
 mod settings;
@@ -64,6 +65,8 @@ pub fn run() {
             media_library::media_playback_open,
             settings::app_settings_read,
             settings::app_settings_write,
+            i18n::i18n_list_custom,
+            i18n::i18n_load_custom,
             smtc_bridge::smtc_call
         ])
         .run(tauri::generate_context!())

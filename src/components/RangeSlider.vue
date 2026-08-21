@@ -5,7 +5,7 @@
             <div class="range-thumb" :style="{ left: `${progress}%` }"></div>
         </div>
         <input ref="rangeRef" class="range-input" type="range" :min="min" :max="max" :step="step"
-            :value="modelValue" :aria-label="ariaLabel" :aria-valuenow="modelValue" :aria-valuemin="min"
+            :value="modelValue" :aria-label="ariaLabel || t('generic.value')" :aria-valuenow="modelValue" :aria-valuemin="min"
             :aria-valuemax="max" :aria-valuetext="ariaValueText" @input="handleInput"
             @change="emit('change', normalizedValue($event.target.value))" @keydown="handleKeydown"
             @pointerdown="isDragging = true" @pointerup="isDragging = false"
@@ -15,7 +15,9 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { useI18n } from '../i18n/index.js'
 
+const { t } = useI18n()
 const props = defineProps({
     modelValue: {
         type: Number,
@@ -35,7 +37,7 @@ const props = defineProps({
     },
     ariaLabel: {
         type: String,
-        default: '数值'
+        default: ''
     },
     ariaValueText: {
         type: String,

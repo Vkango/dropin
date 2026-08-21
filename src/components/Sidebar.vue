@@ -27,7 +27,7 @@
                         <Icon class="section-chevron" :class="{ collapsed: !sections.tags }"
                             src="/assets/chevrondown.svg" :color="iconColor" />
                         <Icon class="section-icon" src="/assets/bookmark.svg" :color="iconColor" />
-                        <span class="section-title">我的标签</span>
+                        <span class="section-title">{{ t('sidebar.myTags') }}</span>
                         <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
                             :transition="microTransition" @click.stop="$emit('add-tag')">+</MotionButton>
                     </div>
@@ -36,7 +36,7 @@
                             <span class="section-icon">
                                 <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
                             </span>
-                            <span class="nav-label">未分类标签001</span>
+                            <span class="nav-label">{{ t('sidebar.untagged') }}</span>
                         </MotionDiv>
                     </div>
                 </div>
@@ -49,7 +49,7 @@
                         <Icon class="section-chevron" :class="{ collapsed: !sections.playlists }"
                             src="/assets/chevrondown.svg" :color="iconColor" />
                         <Icon class="section-icon" src="/assets/playlist.svg" style="scale: 0.8" :color="iconColor" />
-                        <span class="section-title">播放列表</span>
+                        <span class="section-title">{{ t('sidebar.playlists') }}</span>
                         <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
                             :transition="microTransition" @click.stop="$emit('add-playlist')">+</MotionButton>
                     </div>
@@ -63,18 +63,18 @@
                         <Icon class="section-chevron" :class="{ collapsed: !sections.plugins }"
                             src="/assets/chevrondown.svg" :color="iconColor" />
                         <Icon class="section-icon" src="/assets/plugin.svg" :color="iconColor" />
-                        <span class="section-title">扩展插件</span>
+                        <span class="section-title">{{ t('sidebar.pluginsSection') }}</span>
                         <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
                             :transition="microTransition" @click.stop="$emit('add-plugin')">+</MotionButton>
                     </div>
                     <div v-if="sections.plugins" class="section-content">
                         <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition">
                             <span class="nav-icon">👣</span>
-                            <span class="nav-label">我的足迹</span>
+                            <span class="nav-label">{{ t('sidebar.footprints') }}</span>
                         </MotionDiv>
                         <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition">
                             <span class="nav-icon">⏰</span>
-                            <span class="nav-label">定时停止</span>
+                            <span class="nav-label">{{ t('sidebar.timedStop') }}</span>
                         </MotionDiv>
                     </div>
 
@@ -92,7 +92,7 @@
                     <span class="nav-icon">
                         <Icon src="/assets/setting.svg" />
                     </span>
-                    <span class="nav-label">设置</span>
+                    <span class="nav-label">{{ t('sidebar.settings') }}</span>
                 </MotionDiv>
             </div>
         </div>
@@ -104,6 +104,9 @@ import { defineProps, defineEmits, computed, reactive } from 'vue'
 import Icon from './Icon.vue';
 import { motion, useReducedMotion } from 'motion-v'
 import { APPLE_SPRING, INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     sidebarItems: {
@@ -138,7 +141,7 @@ const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const activeIndicatorTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : APPLE_SPRING)
 const iconColor = computed(() => props.isDark ? 'rgba(255, 255, 255)' : 'rgba(0, 0, 0)')
-const settingsItem = { id: 'settings', icon: 'setting.svg', label: '设置' }
+const settingsItem = computed(() => ({ id: 'settings', icon: 'setting.svg', label: t('sidebar.settings') }))
 const sections = reactive({
     tags: true,
     playlists: true,

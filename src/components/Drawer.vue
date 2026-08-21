@@ -13,10 +13,10 @@
                     <header class="drawer-header">
                         <MotionButton ref="closeButtonRef" class="drawer-close-button" type="button"
                             :while-hover="buttonHover" :while-press="buttonPress" :transition="microTransition"
-                            :aria-label="closeLabel" @click="requestClose">
+                            :aria-label="closeLabel || t('drawer.close')" @click="requestClose">
                             <ArrowLeft :size="20" :stroke-width="1.8" />
                         </MotionButton>
-                        <h2 :id="titleId" class="drawer-title">{{ title }}</h2>
+                        <h2 :id="titleId" class="drawer-title">{{ title || t('drawer.defaultTitle') }}</h2>
                         <div class="drawer-header-actions">
                             <slot name="header-actions" />
                         </div>
@@ -36,6 +36,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import { ArrowLeft } from '@lucide/vue'
 import { APPLE_SPRING, INSTANT_MOTION, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     open: {
@@ -44,7 +47,7 @@ const props = defineProps({
     },
     title: {
         type: String,
-        default: '抽屉'
+        default: ''
     },
     placement: {
         type: String,
@@ -53,7 +56,7 @@ const props = defineProps({
     },
     closeLabel: {
         type: String,
-        default: '关闭'
+        default: ''
     }
 })
 

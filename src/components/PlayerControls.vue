@@ -4,7 +4,8 @@
             <div class="left-zone">
                 <div class="now-playing">
                     <MotionButton class="mini-cover-container" :while-hover="{ scale: 1.05 }"
-                        :while-press="{ scale: 0.96 }" :transition="microTransition" aria-label="打开全屏播放器"
+                        :while-press="{ scale: 0.96 }" :transition="microTransition"
+                        :aria-label="t('player.openFullscreen')"
                         @mousedown.stop @click.stop="$emit('expand-player')">
                         <MotionTransition variant="miniCover" mode="out-in">
                             <MotionImg :key="currentSong.cover" :src="currentSong.cover" :alt="currentSong.title"
@@ -13,7 +14,7 @@
                     </MotionButton>
 
                     <div class="song-info-section" data-tauri-drag-region role="button" tabindex="0"
-                        aria-label="打开全屏播放器" @click.stop="$emit('expand-player')"
+                        :aria-label="t('player.openFullscreen')" @click.stop="$emit('expand-player')"
                         @keydown.enter.stop="$emit('expand-player')"
                         @keydown.space.prevent.stop="$emit('expand-player')">
                         <div class="playing-title">
@@ -30,14 +31,15 @@
                     </div>
                 </div>
 
-                <div class="drag-region drag-region-left" data-tauri-drag-region aria-label="拖动窗口"></div>
+                <div class="drag-region drag-region-left" data-tauri-drag-region :aria-label="t('player.dragWindow')"></div>
             </div>
 
-            <div class="controls" aria-label="播放控制" @mousedown.stop>
+            <div class="controls" :aria-label="t('player.playbackMode')" @mousedown.stop>
                 <div class="transport-buttons">
                     <div id="mini-playback-anchor" ref="miniPopoverAnchorRef" class="mini-popover-anchor">
                         <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
-                            :while-press="buttonPress" :transition="microTransition" aria-label="音量和播放顺序"
+                            :while-press="buttonPress" :transition="microTransition"
+                            :aria-label="t('player.volumeAndOrder')"
                             :aria-expanded="isPlaybackModePopoverOpen"
                             @click.stop="isPlaybackModePopoverOpen = !isPlaybackModePopoverOpen">
                             <Menu :size="14" :stroke-width="1.8" />
@@ -51,29 +53,30 @@
                             @close="isPlaybackModePopoverOpen = false" />
                     </div>
                     <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
-                        :transition="microTransition" aria-label="上一首" @click.stop="$emit('previous')">
+                        :transition="microTransition" :aria-label="t('player.previous')" @click.stop="$emit('previous')">
                         <SkipBack :size="14" :stroke-width="1.8" />
                     </MotionButton>
                     <MotionButton class="control-button play-pause" :while-hover="buttonHover"
-                        :while-press="buttonPress" :transition="microTransition" :aria-label="isPlaying ? '暂停' : '播放'"
+                        :while-press="buttonPress" :transition="microTransition"
+                        :aria-label="isPlaying ? t('player.pause') : t('player.play')"
                         @click.stop="$emit('toggle-play')">
                         <Pause v-if="isPlaying" :size="15" :stroke-width="1.8" />
                         <Play v-else :size="18" :stroke-width="1.8" />
                     </MotionButton>
                     <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
-                        :transition="microTransition" aria-label="下一首" @click.stop="$emit('next')">
+                        :transition="microTransition" :aria-label="t('player.next')" @click.stop="$emit('next')">
                         <SkipForward :size="14" :stroke-width="1.8" />
                     </MotionButton>
 
                     <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
-                        :while-press="buttonPress" :transition="microTransition" aria-label="播放列表"
+                        :while-press="buttonPress" :transition="microTransition" :aria-label="t('player.queue')"
                         @click.stop="$emit('queue')">
                         <ListMusic :size="14" :stroke-width="1.8" />
                     </MotionButton>
                 </div>
 
                 <div ref="progressRef" class="top-progress" role="slider" tabindex="0" :aria-valuenow="clampedProgress"
-                    aria-valuemin="0" aria-valuemax="100" aria-label="播放进度"
+                    aria-valuemin="0" aria-valuemax="100" :aria-label="t('player.progress')"
                     :class="{ 'is-dragging': isProgressDragging }" @mousedown.stop
                     @pointerdown.stop.prevent="handleProgressPointerDown"
                     @keydown.left.prevent="emitProgressCommit(clampedProgress - 5)"
@@ -85,7 +88,7 @@
                 </div>
             </div>
 
-            <div class="drag-region drag-region-right" data-tauri-drag-region aria-label="拖动窗口"></div>
+            <div class="drag-region drag-region-right" data-tauri-drag-region :aria-label="t('player.dragWindow')"></div>
         </div>
     </div>
 </template>
@@ -97,6 +100,9 @@ import { motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
 import PlaybackModePopover from './PlaybackModePopover.vue'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     currentSong: {
@@ -179,11 +185,11 @@ const activeLyric = computed(() => syncedLyrics.value.find((line) =>
     props.currentTimeMs >= line.startTimeMs && props.currentTimeMs < line.endTimeMs
 ))
 const miniLyricText = computed(() => {
-    if (props.lyricsLoading) return '正在读取歌词...'
+    if (props.lyricsLoading) return t('player.loadingLyrics')
     if (activeLyric.value?.text) return activeLyric.value.text
     if (syncedLyrics.value.length) return '...'
     if (plainLyrics.value.length) return plainLyrics.value[0]
-    return '暂无歌词'
+    return t('player.noLyrics')
 })
 
 const clampedProgress = computed(() => Math.max(0, Math.min(100, Number(props.progress) || 0)))

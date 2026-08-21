@@ -10,9 +10,9 @@
                 </MotionTransition>
             </div>
             <div class="banner-content">
-                <div class="title">DROPIN MUSIC PLAYER</div>
-                <h2 class="library-title">声音效果</h2>
-                <div class="description">音效调节实时生效，尽情尝试以达到理想音效！
+                <div class="title">{{ t('app.name') }}</div>
+                <h2 class="library-title">{{ t('effects.title') }}</h2>
+                <div class="description">{{ t('effects.bannerDescription') }}
                 </div>
                 <div class="header-content">
                     <div class="preset-controls">
@@ -28,23 +28,23 @@
         <!-- 警告提示 -->
         <div class="warning-banner">
             <Icon src="/assets/info.svg" size="sm" />
-            <span>自定义调整的文件会被自动保存。你可以点击上方查看。</span>
+            <span>{{ t('effects.warning') }}</span>
         </div>
 
         <!-- 音效控制面板 -->
         <div class="effects-grid">
             <!-- 播放控制 -->
             <div class="effect-section">
-                <h3 class="section-title">播放控制</h3>
+                <h3 class="section-title">{{ t('effects.playback') }}</h3>
                 <div class="controls-group">
                     <div class="control-item">
                         <label class="control-label">
                             <input type="checkbox" v-model="effects.playback.reverse" class="checkbox" />
-                            反转播放
+                            {{ t('effects.reverse') }}
                         </label>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">速度</label>
+                        <label class="control-label">{{ t('effects.speed') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.playback.speed" min="-100" max="100" step="1"
                                 class="slider" />
@@ -52,7 +52,7 @@
                         </div>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">音调</label>
+                        <label class="control-label">{{ t('effects.pitch') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.playback.pitch" min="-100" max="100" step="1"
                                 class="slider" />
@@ -60,7 +60,7 @@
                         </div>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">频率</label>
+                        <label class="control-label">{{ t('effects.frequency') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.playback.freq" min="0" max="2" step="0.1"
                                 class="slider" />
@@ -68,7 +68,7 @@
                         </div>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">音量</label>
+                        <label class="control-label">{{ t('effects.volume') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.playback.volume" min="0" max="3000" step="10"
                                 class="slider" />
@@ -81,14 +81,14 @@
             <!-- 均衡器 -->
             <div class="effect-section">
                 <h3 class="section-title">
-                    均衡器
-                    <span class="section-subtitle">提升/削减特定频率以实现音调平衡。</span>
+                    {{ t('effects.equalizer') }}
+                    <span class="section-subtitle">{{ t('effects.equalizerHint') }}</span>
                 </h3>
                 <div class="controls-group">
                     <div class="control-item">
                         <label class="control-label">
                             <input type="checkbox" v-model="effects.equalizer.enable" class="checkbox" />
-                            启用
+                            {{ t('effects.enable') }}
                         </label>
                     </div>
                     <div class="eq-container">
@@ -113,18 +113,18 @@
             <!-- 相位器 -->
             <div class="effect-section">
                 <h3 class="section-title">
-                    相位器
-                    <span class="section-subtitle">创建旋转效果，使用反馈和速率。</span>
+                    {{ t('effects.phaser') }}
+                    <span class="section-subtitle">{{ t('effects.phaserHint') }}</span>
                 </h3>
                 <div class="controls-group">
                     <div class="control-item">
                         <label class="control-label">
                             <input type="checkbox" v-model="effects.phaser.enable" class="checkbox" />
-                            启用
+                            {{ t('effects.enable') }}
                         </label>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">干信号</label>
+                        <label class="control-label">{{ t('effects.dry') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.phaser.dry" min="0" max="1000" step="1"
                                 class="slider" />
@@ -132,7 +132,7 @@
                         </div>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">湿信号</label>
+                        <label class="control-label">{{ t('effects.wet') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.phaser.wet" min="-500" max="500" step="1"
                                 class="slider" />
@@ -140,7 +140,7 @@
                         </div>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">反馈</label>
+                        <label class="control-label">{{ t('effects.feedback') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.phaser.feedback" min="0" max="1000" step="1"
                                 class="slider" />
@@ -148,7 +148,7 @@
                         </div>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">比率</label>
+                        <label class="control-label">{{ t('effects.rate') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.phaser.rate" min="0" max="10" step="0.1"
                                 class="slider" />
@@ -161,18 +161,18 @@
             <!-- 混响 -->
             <div class="effect-section">
                 <h3 class="section-title">
-                    混响
-                    <span class="section-subtitle">增加空间深度，使用混合（湿/干平衡）和时间。</span>
+                    {{ t('effects.reverb') }}
+                    <span class="section-subtitle">{{ t('effects.reverbHint') }}</span>
                 </h3>
                 <div class="controls-group">
                     <div class="control-item">
                         <label class="control-label">
                             <input type="checkbox" v-model="effects.reverb.enable" class="checkbox" />
-                            启用
+                            {{ t('effects.enable') }}
                         </label>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">混合</label>
+                        <label class="control-label">{{ t('effects.mix') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.reverb.mix" min="0" max="100" step="1"
                                 class="slider" />
@@ -180,7 +180,7 @@
                         </div>
                     </div>
                     <div class="control-item">
-                        <label class="control-label">时间</label>
+                        <label class="control-label">{{ t('effects.time') }}</label>
                         <div class="slider-container">
                             <input type="range" v-model="effects.reverb.time" min="0" max="1000" step="10"
                                 class="slider" />
@@ -193,14 +193,14 @@
             <!-- 回声 -->
             <div class="effect-section">
                 <h3 class="section-title">
-                    回声
-                    <span class="section-subtitle">生成带有反馈和延迟时间的重复延迟。</span>
+                    {{ t('effects.echo') }}
+                    <span class="section-subtitle">{{ t('effects.echoHint') }}</span>
                 </h3>
                 <div class="controls-group">
                     <div class="control-item">
                         <label class="control-label">
                             <input type="checkbox" v-model="effects.echo.enable" class="checkbox" />
-                            启用
+                            {{ t('effects.enable') }}
                         </label>
                     </div>
                     <div class="control-item">
@@ -250,6 +250,9 @@ import PageLayout from './PageLayout.vue'
 import MotionTransition from './MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 const currentSong = inject('currentSong')
 const emit = defineEmits(['effects-change'])
 const MotionButton = motion.button

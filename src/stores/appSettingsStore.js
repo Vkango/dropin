@@ -2,12 +2,14 @@ import { invoke } from '@tauri-apps/api/core'
 import { computed, reactive } from 'vue'
 import { frameRateLimits, setGlobalAnimationFrameRate } from '../utils/frameRateScheduler.js'
 
-const SETTINGS_VERSION = 2
+const SETTINGS_VERSION = 3
 const SAVE_DELAY_MS = 220
 const DEFAULT_THEME_MODE = 'system'
 const DEFAULT_AUTO_ALBUM_THEME = true
 const DEFAULT_MANUAL_THEME_COLOR = '#88d0ec'
+const DEFAULT_LANGUAGE = 'system'
 const THEME_MODES = ['system', 'light', 'dark']
+const LANGUAGE_PATTERN = /^[a-zA-Z0-9_-]{1,32}$/
 
 const state = reactive({
   version: SETTINGS_VERSION,
@@ -15,6 +17,7 @@ const state = reactive({
   themeMode: DEFAULT_THEME_MODE,
   autoAlbumTheme: DEFAULT_AUTO_ALBUM_THEME,
   manualThemeColor: DEFAULT_MANUAL_THEME_COLOR,
+  language: DEFAULT_LANGUAGE,
   loading: false,
   saving: false,
   error: null
@@ -38,12 +41,19 @@ const normalizeManualThemeColor = (value) => {
   return value.toLowerCase()
 }
 
+const normalizeLanguage = (value) => {
+  if (typeof value !== 'string') return DEFAULT_LANGUAGE
+  const trimmed = value.trim()
+  return LANGUAGE_PATTERN.test(trimmed) ? trimmed : DEFAULT_LANGUAGE
+}
+
 const normalizeSettings = (settings = {}) => ({
   version: SETTINGS_VERSION,
   animationFrameRate: normalizeFrameRate(settings.animationFrameRate),
   themeMode: normalizeThemeMode(settings.themeMode),
   autoAlbumTheme: settings.autoAlbumTheme !== false,
-  manualThemeColor: normalizeManualThemeColor(settings.manualThemeColor)
+  manualThemeColor: normalizeManualThemeColor(settings.manualThemeColor),
+  language: normalizeLanguage(settings.language)
 })
 
 const applySettings = (settings) => {
@@ -53,6 +63,7 @@ const applySettings = (settings) => {
   state.themeMode = normalized.themeMode
   state.autoAlbumTheme = normalized.autoAlbumTheme
   state.manualThemeColor = normalized.manualThemeColor
+  state.language = normalized.language
   setGlobalAnimationFrameRate(normalized.animationFrameRate)
   return normalized
 }
@@ -118,6 +129,11 @@ export function updateManualThemeColor(value) {
   scheduleSave()
 }
 
+export function updateLanguage(value) {
+  state.language = normalizeLanguage(value)
+  scheduleSave()
+}
+
 export function useAppSettingsStore() {
   return {
     state,
@@ -127,7 +143,8 @@ export function useAppSettingsStore() {
     updateAnimationFrameRate,
     updateThemeMode,
     updateAutoAlbumTheme,
-    updateManualThemeColor
+    updateManualThemeColor,
+    updateLanguage
   }
 }
 
@@ -136,5 +153,6 @@ export {
   DEFAULT_THEME_MODE,
   DEFAULT_AUTO_ALBUM_THEME,
   DEFAULT_MANUAL_THEME_COLOR,
+  DEFAULT_LANGUAGE,
   THEME_MODES
 }

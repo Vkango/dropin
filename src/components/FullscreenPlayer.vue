@@ -9,7 +9,7 @@
 
         <div class="player-container" @click.stop>
             <main class="player-main">
-                <section class="visual-column" aria-label="歌曲信息">
+                <section class="visual-column" :aria-label="t('generic.songInfo')">
                     <div ref="albumStageRef" class="album-stage">
                         <div ref="albumVisualRef" class="album-visual" :style="albumVisualStyle">
                             <!--<div class="tick-ring" aria-hidden="true">
@@ -48,20 +48,20 @@
                     </MotionTransition>
                 </section>
 
-                <section class="lyrics-column" aria-label="歌词和播放列表">
+                <section class="lyrics-column" :aria-label="t('generic.lyricsAndPlaylist')">
                     <AnimatePresence mode="wait" :initial="false">
                         <MotionDiv v-if="!isPlaylistOpen" key="lyrics-view" class="lyrics-view"
                             :initial="playlistViewInitial" :animate="playlistViewAnimate" :exit="playlistViewExit"
                             :transition="playlistTransition" @animation-complete="handleLyricsViewAnimationComplete">
-                            <div ref="lyricsWindowRef" class="lyrics-window" tabindex="0" aria-label="歌词"
+                            <div ref="lyricsWindowRef" class="lyrics-window" tabindex="0" :aria-label="t('player.lyrics')"
                                 @wheel="handleLyricsWheel" @pointerdown="handleLyricsPointerDown"
                                 @scroll="handleLyricsScroll">
-                                <MotionDiv v-if="lyricRows.length" class="lyrics-track">
+                                <MotionDiv v-if="lyricRows.length" class="lyrics-track" :aria-label="t('player.lyrics')">
                                     <MotionDiv v-for="(row, index) in lyricRows" :ref="setLyricRowRef(row.key)"
                                         :key="row.key" class="lyric-line"
                                         :class="{ 'lyric-interlude-row': row.type === 'interlude' }" role="button"
                                         tabindex="0" :aria-current="activeLyricRowIndex === index ? 'true' : undefined"
-                                        :aria-label="row.type === 'interlude' ? '跳转到间奏' : undefined"
+                                        :aria-label="row.type === 'interlude' ? t('player.interlude') : undefined"
                                         :animate="getLyricState(index)"
                                         :transition="row.type === 'interlude' ? instantTransition : contentTransition"
                                         @pointerdown.stop @click.stop="handleLyricClick(row)"
@@ -82,7 +82,7 @@
                                 </MotionDiv>
                                 <MotionDiv v-else-if="lyricsLoading" class="lyrics-status" :initial="{ opacity: 0 }"
                                     :animate="{ opacity: 1 }" :transition="microTransition">
-                                    正在读取歌词...
+                                    {{ t('player.loadingLyrics') }}
                                 </MotionDiv>
                                 <div v-else-if="plainLyrics.length" class="plain-lyrics">
                                     <div v-for="line in plainLyrics" :key="line" class="plain-lyric-line">
@@ -91,7 +91,7 @@
                                 </div>
                                 <MotionDiv v-else class="lyrics-status" :initial="{ opacity: 0 }"
                                     :animate="{ opacity: 1 }" :transition="microTransition">
-                                    暂无同步歌词
+                                    {{ t('player.noSyncedLyrics') }}
                                 </MotionDiv>
                             </div>
                         </MotionDiv>
@@ -102,14 +102,15 @@
                             <div class="fullscreen-playlist-scroll">
                                 <div class="fullscreen-playlist-header">
                                     <MotionButton class="fullscreen-playlist-back" :while-hover="buttonHover"
-                                        :while-press="buttonPress" :transition="microTransition" aria-label="返回歌词"
+                                        :while-press="buttonPress" :transition="microTransition"
+                                        :aria-label="t('player.backToLyrics')"
                                         @click="closePlaylist">
                                         <ArrowLeft :size="18" :stroke-width="1.8" />
                                     </MotionButton>
-                                    <strong>播放列表</strong>
+                                    <strong>{{ t('player.queue') }}</strong>
                                 </div>
                                 <Playlist :songs="queueSongs" :current-song="currentSong" :is-playing="isPlaying"
-                                    :show-header="false" title="播放列表"
+                                    :show-header="false" :title="t('player.queue')"
                                     @song-select="$emit('playlist-song-select', $event)" />
                             </div>
                         </MotionDiv>
@@ -125,18 +126,20 @@
                         <div class="footer-actions">
                             <div class="footer-side footer-side-left">
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
-                                    :while-press="buttonPress" :transition="microTransition" aria-label="收起播放器"
+                                    :while-press="buttonPress" :transition="microTransition"
+                                    :aria-label="t('player.collapsePlayer')"
                                     @click="$emit('close')">
                                     <ChevronDown :size="18" :stroke-width="1.5" />
                                 </MotionButton>
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
-                                    :while-press="buttonPress" :transition="microTransition" aria-label="打开播放页选项"
+                                    :while-press="buttonPress" :transition="microTransition"
+                                    :aria-label="t('player.openPlayerOptions')"
                                     @click="openPlaybackOptions">
                                     <SquarePen :size="18" :stroke-width="1.5" />
                                 </MotionButton>
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
                                     :while-press="buttonPress" :transition="microTransition"
-                                    :aria-label="isBrowserFullscreen ? '退出全屏' : '全屏显示'"
+                                    :aria-label="isBrowserFullscreen ? t('player.exitFullscreen') : t('player.enterFullscreen')"
                                     @click="toggleBrowserFullscreen">
                                     <Minimize2 v-if="isBrowserFullscreen" :size="18" :stroke-width="1.5" />
                                     <Maximize2 v-else :size="18" :stroke-width="1.5" />
@@ -149,7 +152,8 @@
                                     <div id="fullscreen-volume-anchor" ref="volumePopoverAnchorRef"
                                         class="footer-popover-anchor volume-anchor">
                                         <MotionButton class="footer-button volume-button" :while-hover="buttonHover"
-                                            :while-press="buttonPress" :transition="microTransition" aria-label="音量"
+                                            :while-press="buttonPress" :transition="microTransition"
+                                            :aria-label="t('player.volume')"
                                             :aria-expanded="isVolumePopoverOpen"
                                             @click="isVolumePopoverOpen = !isVolumePopoverOpen; isPlaybackModePopoverOpen = false">
                                             <Volume2 :size="18" :stroke-width="1.5" />
@@ -162,25 +166,29 @@
                                             @close="isVolumePopoverOpen = false" />
                                     </div>
                                     <MotionButton class="footer-button" :while-hover="buttonHover"
-                                        :while-press="buttonPress" :transition="microTransition" aria-label="上一首"
+                                        :while-press="buttonPress" :transition="microTransition"
+                                        :aria-label="t('player.previous')"
                                         @click="$emit('previous')">
                                         <SkipBack :size="18" :stroke-width="1.5" />
                                     </MotionButton>
                                     <MotionButton class="play-button" :while-hover="{ scale: 1.06 }"
                                         :while-press="{ scale: 0.94 }" :transition="microTransition"
-                                        :aria-label="isPlaying ? '暂停' : '播放'" @click="$emit('toggle-play')">
+                                        :aria-label="isPlaying ? t('player.pause') : t('player.play')"
+                                        @click="$emit('toggle-play')">
                                         <Pause v-if="isPlaying" :size="18" :stroke-width="1.8" />
                                         <Play v-else :size="18" :stroke-width="1.8" />
                                     </MotionButton>
                                     <MotionButton class="footer-button" :while-hover="buttonHover"
-                                        :while-press="buttonPress" :transition="microTransition" aria-label="下一首"
+                                        :while-press="buttonPress" :transition="microTransition"
+                                        :aria-label="t('player.next')"
                                         @click="$emit('next')">
                                         <SkipForward :size="18" :stroke-width="1.5" />
                                     </MotionButton>
                                     <div id="fullscreen-mode-anchor" ref="modePopoverAnchorRef"
                                         class="footer-popover-anchor mode-anchor">
                                         <MotionButton class="footer-button" :while-hover="buttonHover"
-                                            :while-press="buttonPress" :transition="microTransition" aria-label="播放顺序"
+                                            :while-press="buttonPress" :transition="microTransition"
+                                            :aria-label="t('player.playbackOrder')"
                                             :aria-expanded="isPlaybackModePopoverOpen"
                                             @click="isPlaybackModePopoverOpen = !isPlaybackModePopoverOpen; isVolumePopoverOpen = false">
                                             <Shuffle v-if="props.playbackMode === 'shuffle'" :size="18"
@@ -218,20 +226,24 @@
 
                             <div class="footer-side footer-side-right">
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
-                                    :while-press="buttonPress" :transition="microTransition" aria-label="播放设置">
+                                    :while-press="buttonPress" :transition="microTransition"
+                                    :aria-label="t('player.playbackSettings')">
                                     <SlidersHorizontal :size="18" :stroke-width="1.5" />
                                 </MotionButton>
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
-                                    :while-press="buttonPress" :transition="microTransition" aria-label="歌词面板">
+                                    :while-press="buttonPress" :transition="microTransition"
+                                    :aria-label="t('player.lyricsPanel')">
                                     <PanelTop :size="18" :stroke-width="1.5" />
                                 </MotionButton>
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
-                                    :while-press="buttonPress" :transition="microTransition" aria-label="播放队列"
+                                    :while-press="buttonPress" :transition="microTransition"
+                                    :aria-label="t('player.playbackQueue')"
                                     @click="togglePlaylist">
                                     <ListMusic :size="18" :stroke-width="1.5" />
                                 </MotionButton>
                                 <MotionButton class="footer-button" :while-hover="buttonHover"
-                                    :while-press="buttonPress" :transition="microTransition" aria-label="更多操作">
+                                    :while-press="buttonPress" :transition="microTransition"
+                                    :aria-label="t('player.more')">
                                     <MoreHorizontal :size="18" :stroke-width="1.5" />
                                 </MotionButton>
                             </div>
@@ -239,56 +251,60 @@
                     </MotionDiv>
 
                     <MotionDiv v-else key="playback-options" class="footer-view playback-options" role="group"
-                        aria-label="播放页选项" :initial="footerViewInitial" :animate="footerViewAnimate"
+                        :aria-label="t('player.playbackOptions')" :initial="footerViewInitial" :animate="footerViewAnimate"
                         :exit="footerViewExit" :transition="footerTransition"
                         @animation-complete="handlePlaybackOptionsAnimationComplete">
                         <MotionDiv class="playback-options-leading" :initial="settingsItemInitial"
                             :animate="settingsItemAnimate" :transition="settingsItemTransition(0)">
                             <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                                :transition="microTransition" aria-label="收起播放器" @click="$emit('close')">
+                                :transition="microTransition" :aria-label="t('player.collapsePlayer')"
+                                @click="$emit('close')">
                                 <ChevronDown :size="18" :stroke-width="1.5" />
                             </MotionButton>
                             <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
-                                :transition="microTransition" aria-label="返回播放控制" @click="closePlaybackOptions">
+                                :transition="microTransition" :aria-label="t('player.backToLyrics')"
+                                @click="closePlaybackOptions">
                                 <ArrowLeft :size="18" :stroke-width="1.5" />
                             </MotionButton>
-                            <span class="playback-options-title">播放页选项</span>
+                            <span class="playback-options-title">{{ t('player.playbackOptions') }}</span>
                         </MotionDiv>
 
                         <MotionDiv class="playback-option lyrics-size-option" :initial="settingsItemInitial"
                             :animate="settingsItemAnimate" :transition="settingsItemTransition(1)">
                             <div class="option-label-row">
-                                <span class="option-label">歌词大小</span>
+                                <span class="option-label">{{ t('player.lyricsSize') }}</span>
                                 <output class="option-value" aria-live="polite">{{ lyricsFontSizeValue }}px</output>
                             </div>
                             <div class="lyrics-size-slider">
                                 <span class="size-mark size-mark-small" aria-hidden="true">A</span>
                                 <RangeSlider ref="lyricsRangeRef" :model-value="lyricsFontSizeValue" :min="20" :max="56"
-                                    aria-label="歌词大小" :aria-value-text="`${lyricsFontSizeValue} 像素`"
+                                    :aria-label="t('player.lyricsSize')"
+                                    :aria-value-text="`${lyricsFontSizeValue}px`"
                                     @update:model-value="handleLyricsFontSizeInput"
                                     @keydown="handleLyricsRangeKeydown" />
                                 <span class="size-mark size-mark-large" aria-hidden="true">A</span>
                             </div>
                         </MotionDiv>
-
-                        <MotionDiv class="playback-option background-option-group" role="group" aria-label="背景"
-                            :initial="settingsItemInitial" :animate="settingsItemAnimate"
+                        <MotionDiv class="playback-option background-option-group" role="group"
+                            :aria-label="t('player.background')"
+                            :initial="settingsItemInitial"
+                            :animate="settingsItemAnimate"
                             :transition="settingsItemTransition(2)">
-                            <span class="option-label">背景</span>
-                            <div class="background-options" role="radiogroup" aria-label="背景模式">
+                            <span class="option-label">{{ t('player.background') }}</span>
+                            <div class="background-options" role="radiogroup" :aria-label="t('player.background')">
                                 <MotionButton class="background-option"
                                     :class="{ active: normalizedBackgroundMode === 'flowing' }"
                                     :while-hover="buttonHover" :while-press="buttonPress" :transition="microTransition"
                                     role="radio" :aria-checked="normalizedBackgroundMode === 'flowing'"
                                     @click="setBackgroundMode('flowing')">
-                                    流沙
+                                    {{ t('player.flowing') }}
                                 </MotionButton>
                                 <MotionButton class="background-option"
                                     :class="{ active: normalizedBackgroundMode === 'blur' }" :while-hover="buttonHover"
                                     :while-press="buttonPress" :transition="microTransition" role="radio"
                                     :aria-checked="normalizedBackgroundMode === 'blur'"
                                     @click="setBackgroundMode('blur')">
-                                    高斯模糊
+                                    {{ t('player.blur') }}
                                 </MotionButton>
                             </div>
                         </MotionDiv>
@@ -314,6 +330,9 @@ import { bassCall } from '../services/bassApi.js'
 import { APPLE_SPRING, INSTANT_MOTION, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
 import { User2Icon } from '@lucide/vue'
 import { DiscAlbum } from '@lucide/vue'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     isVisible: {

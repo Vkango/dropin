@@ -15,7 +15,7 @@
                     </div>
                     <div class="album-info">
                         <div class="album-header">
-                            <div class="album-type">{{ album.type || '音乐专辑' }} · {{ album.tracks.length }}首歌</div>
+                            <div class="album-type">{{ album.type || t('albumCard.typeMusicAlbum') }} · {{ t('albumCard.tracksCount', { count: album.tracks.length }) }}</div>
                             <h2 class="album-title">{{ album.title }}</h2>
                             <div class="album-artist">
                                 <Icon src="/assets/user.svg" size="sm" />
@@ -29,7 +29,7 @@
                                 :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.3)' }"
                                 :while-press="{ scale: 0.96 }" :transition="microTransition" @click="$emit('play-all')">
                                 <Icon src="/assets/play.svg" size="sm" />
-                                <span>Play all</span>
+                                <span>{{ t('albumCard.playAll') }}</span>
                             </MotionButton>
                         </div>
 
@@ -60,7 +60,9 @@ import MotionTransition from './MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { computed } from 'vue'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { useI18n } from '../i18n/index.js'
 
+const { t } = useI18n()
 const MotionButton = motion.button
 const MotionDiv = motion.div
 const MotionImg = motion.img

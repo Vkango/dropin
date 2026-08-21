@@ -3,13 +3,14 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
-const SETTINGS_VERSION: u32 = 2;
+const SETTINGS_VERSION: u32 = 3;
 const DEFAULT_FRAME_RATE: u32 = 60;
 const MIN_FRAME_RATE: u32 = 15;
 const MAX_FRAME_RATE: u32 = 120;
 const DEFAULT_THEME_MODE: &str = "system";
 const DEFAULT_AUTO_ALBUM_THEME: bool = true;
 const DEFAULT_MANUAL_THEME_COLOR: &str = "#88d0ec";
+const DEFAULT_LANGUAGE: &str = "system";
 
 fn default_theme_mode() -> String {
     DEFAULT_THEME_MODE.to_string()
@@ -23,6 +24,10 @@ fn default_manual_theme_color() -> String {
     DEFAULT_MANUAL_THEME_COLOR.to_string()
 }
 
+fn default_language() -> String {
+    DEFAULT_LANGUAGE.to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -34,6 +39,8 @@ pub struct AppSettings {
     pub auto_album_theme: bool,
     #[serde(default = "default_manual_theme_color")]
     pub manual_theme_color: String,
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 impl Default for AppSettings {
@@ -44,6 +51,7 @@ impl Default for AppSettings {
             theme_mode: default_theme_mode(),
             auto_album_theme: default_auto_album_theme(),
             manual_theme_color: default_manual_theme_color(),
+            language: default_language(),
         }
     }
 }
@@ -71,6 +79,7 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
     } else {
         default_manual_theme_color()
     };
+    let language = normalize_language(&settings.language);
 
     Ok(AppSettings {
         version: SETTINGS_VERSION,
@@ -78,7 +87,22 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
         theme_mode,
         auto_album_theme: settings.auto_album_theme,
         manual_theme_color,
+        language,
     })
+}
+
+fn normalize_language(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.len() > 32 {
+        return default_language();
+    }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return default_language();
+    }
+    trimmed.to_string()
 }
 
 fn is_valid_theme_color(value: &str) -> bool {

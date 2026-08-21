@@ -8,11 +8,12 @@
         </slot>
       </div>
       <input ref="inputRef" class="combobox-input" :id="inputId" :value="isOpen ? searchQuery : selectedLabel"
-        :placeholder="placeholder" :disabled="disabled" role="combobox" aria-autocomplete="list" :aria-expanded="isOpen"
+        :placeholder="placeholder || t('generic.selectPlaceholder')" :disabled="disabled" role="combobox"
+        aria-autocomplete="list" :aria-expanded="isOpen"
         :aria-controls="listId" :aria-activedescendant="activeDescendantId" :aria-valuetext="selectedLabel || undefined"
         autocomplete="off" @focus="openDropdown" @input="handleInput" @keydown="handleKeydown" />
       <button class="combobox-trigger" type="button" tabindex="-1" :disabled="disabled"
-        :aria-label="isOpen ? '关闭选项' : '打开选项'" @mousedown.prevent @click="toggleDropdown">
+        :aria-label="isOpen ? t('combobox.close') : t('combobox.open')" @mousedown.prevent @click="toggleDropdown">
         <span class="combobox-chevron" aria-hidden="true"></span>
       </button>
     </div>
@@ -37,7 +38,7 @@
           </div>
         </div>
         <div v-else class="combobox-empty">
-          <slot name="empty">无匹配项</slot>
+          <slot name="empty">{{ t('combobox.empty') }}</slot>
         </div>
       </MotionDiv>
     </AnimatePresence>
@@ -48,7 +49,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import { APPLE_SPRING, INSTANT_MOTION } from '../utils/motion.js'
+import { useI18n } from '../i18n/index.js'
 
+const { t } = useI18n()
 let nextComboboxId = 0
 
 const props = defineProps({
@@ -73,7 +76,7 @@ const props = defineProps({
   },
   placeholder: {
     type: String,
-    default: '请选择'
+    default: ''
   },
   disabled: {
     type: Boolean,

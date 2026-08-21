@@ -10,9 +10,9 @@
                 </MotionTransition>
             </div>
             <div class="banner-content">
-                <div class="title">DROPIN MUSIC PLAYER</div>
-                <h2 class="library-title">专辑</h2>
-                <div class="description">这东西一次能吃一袋我丢
+                <div class="title">{{ t('app.name') }}</div>
+                <h2 class="library-title">{{ t('albums.title') }}</h2>
+                <div class="description">{{ t('albums.bannerDescription') }}
                 </div>
             </div>
         </div>
@@ -71,7 +71,7 @@
                             <div class="album-info">
                                 <h3 class="album-title">{{ album.title }}</h3>
                                 <p class="album-artist">{{ album.artist }}</p>
-                                <p class="album-meta">{{ album.year }} • {{ album.trackCount }} 首歌</p>
+                                <p class="album-meta">{{ album.year }} • {{ t('albums.tracksCount', { count: album.trackCount }) }}</p>
                             </div>
                         </MotionDiv>
                     </div>
@@ -81,11 +81,11 @@
             <div v-else key="list" class="albums-list">
                 <div class="list-header">
                     <div class="header-cover"></div>
-                    <div class="header-title">标题</div>
-                    <div class="header-artist">艺术家</div>
-                    <div class="header-year">年份</div>
-                    <div class="header-tracks">歌曲数</div>
-                    <div class="header-duration">时长</div>
+                    <div class="header-title">{{ t('albums.headerTitle') }}</div>
+                    <div class="header-artist">{{ t('albums.headerArtist') }}</div>
+                    <div class="header-year">{{ t('albums.headerYear') }}</div>
+                    <div class="header-tracks">{{ t('albums.headerTracks') }}</div>
+                    <div class="header-duration">{{ t('albums.headerDuration') }}</div>
                 </div>
                 <template v-for="group in visibleGroups" :key="group.key">
                     <GroupLabel v-if="group.initial" :label="group.initial"
@@ -134,6 +134,9 @@ import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 import { getAvailableInitials, groupByInitial, sortByInitial } from '../utils/alphabet.js'
 import { useAlphabetNavigation } from '../utils/useAlphabetNavigation.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     albums: {
@@ -165,19 +168,19 @@ const viewMode = ref('grid')
 const sortBy = ref('name')
 const filterGenre = ref('')
 const pageRef = ref(null)
-const sortOptions = [
-    { value: 'name', label: '按名称排序' },
-    { value: 'artist', label: '按艺术家排序' },
-    { value: 'year', label: '按年份排序' },
-    { value: 'recent', label: '最近添加' }
-]
-const genreOptions = [
-    { value: '', label: '所有流派' },
-    { value: '电子', label: '电子' },
-    { value: '流行', label: '流行' },
-    { value: '摇滚', label: '摇滚' },
-    { value: '古典', label: '古典' }
-]
+const sortOptions = computed(() => [
+    { value: 'name', label: t('albums.sortName') },
+    { value: 'artist', label: t('albums.sortArtist') },
+    { value: 'year', label: t('albums.sortYear') },
+    { value: 'recent', label: t('albums.sortRecent') }
+])
+const genreOptions = computed(() => [
+    { value: '', label: t('albums.genreAll') },
+    { value: '电子', label: t('albums.genreElectronic') },
+    { value: '流行', label: t('albums.genrePop') },
+    { value: '摇滚', label: t('albums.genreRock') },
+    { value: '古典', label: t('albums.genreClassical') }
+])
 
 const setViewMode = (mode) => {
     viewMode.value = mode
@@ -240,7 +243,7 @@ const showAlbumDetail = (album) => {
     currentAlbumDetail.value = {
         ...album,
         coverUrl: album.cover,
-        type: '音乐专辑',
+        type: t('albumCard.typeMusicAlbum'),
         tracks: tracks.map((song, index) => ({
             id: song.id,
             number: index + 1,

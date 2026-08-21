@@ -10,8 +10,8 @@
                     </MotionTransition>
                 </div>
                 <div class="banner-content">
-                    <div class="title">DROPIN MUSIC PLAYER</div>
-                    <h2 class="library-title">设置</h2>
+                    <div class="title">{{ t('app.name') }}</div>
+                    <h2 class="library-title">{{ t('settings.title') }}</h2>
                 </div>
             </div>
         </template>
@@ -19,46 +19,45 @@
             <section class="settings-row">
                 <div class="setting-copy">
                     <div>
-                        <h2>外观主题</h2>
+                        <h2>{{ t('settings.themeMode') }}</h2>
                     </div>
-                    <strong class="status-pill">{{ themeModeLabel }}</strong>
+                    <div class="segmented-control" role="radiogroup" :aria-label="t('settings.themeMode')">
+                        <button v-for="option in themeModeOptions" :key="option.value" type="button"
+                            class="segment-button" :class="{ active: settingsStore.state.themeMode === option.value }"
+                            :aria-pressed="settingsStore.state.themeMode === option.value"
+                            @click="settingsStore.updateThemeMode(option.value)">
+                            {{ option.label }}
+                        </button>
+                    </div>
                 </div>
 
-                <div class="segmented-control" role="radiogroup" aria-label="外观主题">
-                    <button v-for="option in themeModeOptions" :key="option.value" type="button" class="segment-button"
-                        :class="{ active: settingsStore.state.themeMode === option.value }"
-                        :aria-pressed="settingsStore.state.themeMode === option.value"
-                        @click="settingsStore.updateThemeMode(option.value)">
-                        {{ option.label }}
-                    </button>
-                </div>
+
             </section>
 
             <section class="settings-row">
                 <div class="setting-copy">
                     <div>
-                        <h2>主题颜色</h2>
+                        <h2>{{ t('settings.themeColor') }}</h2>
                     </div>
-                    <span class="color-status" :style="themeColorStyle"></span>
                 </div>
 
                 <label class="toggle-row">
                     <input type="checkbox" :checked="settingsStore.state.autoAlbumTheme"
                         @change="handleAutoAlbumThemeChange" />
-                    <span>从专辑封面自动拾取主题颜色</span>
+                    <span>{{ t('settings.autoAlbumTheme') }}</span>
                 </label>
 
                 <div v-if="!settingsStore.state.autoAlbumTheme" class="manual-color-control">
                     <label class="color-picker-wrap">
                         <span class="color-preview" :style="themeColorStyle"></span>
-                        <input type="color" :value="settingsStore.state.manualThemeColor" aria-label="选择主题颜色"
-                            @input="handleColorPickerInput" />
+                        <input type="color" :value="settingsStore.state.manualThemeColor"
+                            :aria-label="t('settings.chooseColor')" @input="handleColorPickerInput" />
                     </label>
                     <label class="hex-input-wrap">
                         <span>#</span>
-                        <input :value="manualColorText.slice(1)" maxlength="6" inputmode="text" aria-label="主题颜色十六进制值"
-                            @input="handleManualColorInput" @blur="commitManualColorInput"
-                            @keydown.enter="commitManualColorInput" />
+                        <input :value="manualColorText.slice(1)" maxlength="6" inputmode="text"
+                            :aria-label="t('settings.colorHex')" @input="handleManualColorInput"
+                            @blur="commitManualColorInput" @keydown.enter="commitManualColorInput" />
                     </label>
                     <span class="hex-value">{{ settingsStore.state.manualThemeColor }}</span>
                 </div>
@@ -67,13 +66,32 @@
             <section class="settings-row">
                 <div class="setting-copy">
                     <div>
-                        <h2>动画帧率上限</h2>
+                        <h2>{{ t('settings.language') }}</h2>
+                        <p>{{ t('settings.languageHint') }}</p>
+                    </div>
+                    <strong class="status-pill">{{ languageLabel }}</strong>
+                </div>
+
+                <div class="segmented-control" role="radiogroup" :aria-label="t('settings.language')">
+                    <button v-for="option in languageOptions" :key="option.value" type="button" class="segment-button"
+                        :class="{ active: settingsStore.state.language === option.value }"
+                        :aria-pressed="settingsStore.state.language === option.value"
+                        @click="handleLanguageChange(option.value)">
+                        {{ option.label }}
+                    </button>
+                </div>
+            </section>
+
+            <section class="settings-row">
+                <div class="setting-copy">
+                    <div>
+                        <h2>{{ t('settings.frameRate') }}</h2>
                     </div>
                     <strong class="status-pill">{{ frameRateLabel }}</strong>
                 </div>
                 <div class="settings-note">
                     <Icon src="/assets/info.svg" size="sm" />
-                    <span>更高的帧率带来更平滑的画面，但会造成更高的性能开销。</span>
+                    <span>{{ t('settings.frameRateHint') }}</span>
                 </div>
 
                 <div style="display: grid; grid-template-columns: 1fr auto; gap: 20px">
@@ -81,20 +99,21 @@
                         <div class="frame-rate-labels">
                             <div class="frame-rate-mark">
                                 <LeafIcon :size="14" />
-                                <span>{{ frameRateLimits.min }} 帧</span>
+                                <span>{{ frameRateLimits.min }} {{ t('settings.framesUnit') }}</span>
                             </div>
                             <div class="frame-rate-mark">
                                 <ZapIcon :size="14" />
-                                <span>{{ frameRateLimits.max }} 帧</span>
+                                <span>{{ frameRateLimits.max }} {{ t('settings.framesUnit') }}</span>
                             </div>
                         </div>
                         <RangeSlider v-model="draftFrameRate" :min="frameRateLimits.min" :max="frameRateLimits.max"
-                            :step="1" aria-label="动画帧率上限" :aria-value-text="draftFrameRate + ' 帧'"
+                            :step="1" :aria-label="t('settings.frameRate')"
+                            :aria-value-text="draftFrameRate + ' ' + t('settings.framesUnit')"
                             @input="handleFrameRateInput" @change="handleFrameRateInput" />
                     </div>
                     <label class="toggle-row">
                         <input type="checkbox" :checked="isUnlimited" @change="handleUnlimitedChange" />
-                        <span>不限制帧率</span>
+                        <span>{{ t('settings.unlimited') }}</span>
                     </label>
                 </div>
             </section>
@@ -111,6 +130,11 @@ import PageLayout from './PageLayout.vue'
 import RangeSlider from './RangeSlider.vue'
 import { frameRateLimits, useAppSettingsStore, THEME_MODES } from '../stores/appSettingsStore.js'
 import { LeafIcon } from '@lucide/vue'
+import { useI18n } from '../i18n/index.js'
+import { useLocaleList } from '../stores/i18nStore.js'
+
+const { t } = useI18n()
+const { available } = useLocaleList()
 
 const currentSong = inject('currentSong')
 const settingsStore = useAppSettingsStore()
@@ -118,14 +142,22 @@ const draftFrameRate = ref(settingsStore.state.animationFrameRate ?? frameRateLi
 const manualColorText = ref(settingsStore.state.manualThemeColor)
 
 const themeModeOptions = [
-    { value: 'system', label: '跟随系统' },
-    { value: 'light', label: '亮色' },
-    { value: 'dark', label: '暗色' }
+    { value: 'system', label: t('settings.followSystem') },
+    { value: 'light', label: t('settings.light') },
+    { value: 'dark', label: t('settings.dark') }
 ].filter((option) => THEME_MODES.includes(option.value))
 
+const languageOptions = computed(() => [
+    { value: 'system', label: t('settings.followSystem') },
+    ...available.value.map((entry) => ({ value: entry.code, label: entry.name }))
+])
+
 const isUnlimited = computed(() => settingsStore.state.animationFrameRate === null)
-const frameRateLabel = computed(() => isUnlimited.value ? '无限制' : settingsStore.state.animationFrameRate + ' 帧')
-const themeModeLabel = computed(() => themeModeOptions.find((option) => option.value === settingsStore.state.themeMode)?.label || '跟随系统')
+const frameRateLabel = computed(() => isUnlimited.value
+    ? t('settings.unlimitedShort')
+    : `${settingsStore.state.animationFrameRate} ${t('settings.framesUnit')}`)
+const themeModeLabel = computed(() => themeModeOptions.find((option) => option.value === settingsStore.state.themeMode)?.label || t('settings.followSystem'))
+const languageLabel = computed(() => languageOptions.value.find((option) => option.value === settingsStore.state.language)?.label || settingsStore.state.language)
 const themeColorStyle = computed(() => ({ backgroundColor: settingsStore.state.manualThemeColor }))
 
 watch(() => settingsStore.state.animationFrameRate, (value) => {
@@ -147,6 +179,10 @@ const handleUnlimitedChange = (event) => {
 
 const handleAutoAlbumThemeChange = (event) => {
     settingsStore.updateAutoAlbumTheme(event.target.checked)
+}
+
+const handleLanguageChange = (value) => {
+    settingsStore.updateLanguage(value)
 }
 
 const handleColorPickerInput = (event) => {
@@ -280,7 +316,8 @@ const commitManualColorInput = () => {
 
 .setting-copy {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
+    /* align-items: flex-start; */
     justify-content: space-between;
     gap: 18px;
 }
@@ -292,7 +329,6 @@ const commitManualColorInput = () => {
 }
 
 .setting-copy p {
-    max-width: 560px;
     margin: 0;
     color: rgba(var(--text-color), 0.58);
     font-size: 12px;

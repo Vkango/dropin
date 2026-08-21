@@ -2,19 +2,19 @@
     <PopoverCard :open="open" :anchor-id="anchorId" :anchor="anchor" :placement="placement" :gap="gap" :width="238"
         @close="$emit('close')">
         <div v-if="includeVolume" class="mini-volume-row">
-            <button class="mute-button" type="button" aria-label="切换静音" :aria-pressed="muted"
+            <button class="mute-button" type="button" :aria-label="t('player.mute')" :aria-pressed="muted"
                 @click="$emit('mute-change', !muted)">
                 <VolumeX v-if="muted" :size="17" :stroke-width="1.8" />
                 <Volume1 v-else-if="volume < 50" :size="17" :stroke-width="1.8" />
                 <Volume2 v-else :size="17" :stroke-width="1.8" />
             </button>
-            <RangeSlider :model-value="muted ? 0 : volume" :min="0" :max="100" aria-label="音量"
+            <RangeSlider :model-value="muted ? 0 : volume" :min="0" :max="100" :aria-label="t('player.volume')"
                 :aria-value-text="`${Math.round(volume)}%`" @update:model-value="$emit('update:volume', $event)" />
             <output>{{ Math.round(volume) }}%</output>
         </div>
         <div v-if="includeVolume" class="popover-divider"></div>
-        <div class="popover-heading">播放顺序</div>
-        <div class="mode-options" role="radiogroup" aria-label="播放模式">
+        <div class="popover-heading">{{ t('player.playbackOrder') }}</div>
+        <div class="mode-options" role="radiogroup" :aria-label="t('player.playbackMode')">
             <MotionButton v-for="option in modeOptions" :key="option.value" class="mode-option" role="radio"
                 :aria-checked="mode === option.value" :while-hover="buttonHover" :while-press="buttonPress"
                 :transition="microTransition" @click="selectMode(option.value)">
@@ -31,8 +31,8 @@
                 <span class="checkbox-mark" aria-hidden="true"></span>
             </span>
             <span>
-                <strong>列表循环</strong>
-                <small>播放完后继续循环播放</small>
+                <strong>{{ t('player.listLoop') }}</strong>
+                <small>{{ t('player.listLoopHint') }}</small>
             </span>
         </label>
     </PopoverCard>
@@ -45,6 +45,9 @@ import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 import RangeSlider from './RangeSlider.vue'
 import PopoverCard from './PopoverCard.vue'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     open: Boolean,
@@ -84,11 +87,11 @@ const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MI
 const buttonHover = { backgroundColor: 'rgba(var(--primary-color), 0.12)' }
 const buttonPress = { scale: 0.97 }
 
-const modeOptions = [
-    { value: 'sequential', label: '顺序播放', icon: ListOrdered },
-    { value: 'shuffle', label: '随机播放', icon: Shuffle },
-    { value: 'repeat-one', label: '单曲循环', icon: Repeat1 }
-]
+const modeOptions = computed(() => [
+    { value: 'sequential', label: t('player.sequential'), icon: ListOrdered },
+    { value: 'shuffle', label: t('player.shuffle'), icon: Shuffle },
+    { value: 'repeat-one', label: t('player.repeatOne'), icon: Repeat1 }
+])
 
 const selectMode = (value) => {
     emit('update:mode', value)

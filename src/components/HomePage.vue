@@ -10,9 +10,9 @@
                 </MotionTransition>
             </div>
             <div class="banner-content">
-                <div class="title">DROPIN MUSIC PLAYER</div>
+                <div class="title">{{ t('app.name') }}</div>
                 <h2 class="library-title">{{ greeting }}</h2>
-                <div class="description">这东西一次能吃一袋我丢
+                <div class="description">{{ t('home.bannerDescription') }}
                 </div>
             </div>
             </div>
@@ -20,9 +20,9 @@
         <div class="home-page">
             <div class="recently-played">
             <div class="section-header">
-                <h2 class="section-title">最近播放</h2>
+                <h2 class="section-title">{{ t('home.recentlyPlayed') }}</h2>
                 <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }" :transition="microTransition"
-                    @click="$emit('navigate', 'library')">查看全部</MotionButton>
+                    @click="$emit('navigate', 'library')">{{ t('home.seeAll') }}</MotionButton>
             </div>
             <div class="recent-grid">
                 <MotionDiv v-for="item in recentlyPlayed" :key="item.id" class="recent-item" initial="rest"
@@ -47,9 +47,9 @@
             <!-- 推荐播放列表 -->
             <div class="recommended-playlists">
             <div class="section-header">
-                <h2 class="section-title">为您推荐</h2>
+                <h2 class="section-title">{{ t('home.recommended') }}</h2>
                 <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }" :transition="microTransition"
-                    @click="$emit('navigate', 'playlists')">查看全部</MotionButton>
+                    @click="$emit('navigate', 'playlists')">{{ t('home.seeAll') }}</MotionButton>
             </div>
             <div class="playlist-grid">
                 <MotionDiv v-for="playlist in recommendedPlaylists" :key="playlist.id" class="playlist-item"
@@ -79,6 +79,9 @@ import PageLayout from './PageLayout.vue'
 import MotionTransition from './MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     recentlyPlayed: {
@@ -115,9 +118,9 @@ const currentTime = ref('')
 const currentSong = inject('currentSong')
 const greeting = computed(() => {
     const hour = new Date().getHours()
-    if (hour < 12) return '早上好'
-    if (hour < 18) return '下午好'
-    return '晚上好'
+    if (hour < 12) return t('home.goodMorning')
+    if (hour < 18) return t('home.goodAfternoon')
+    return t('home.goodEvening')
 })
 
 const updateTime = () => {

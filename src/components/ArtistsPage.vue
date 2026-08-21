@@ -10,9 +10,9 @@
                 </MotionTransition>
             </div>
             <div class="banner-content">
-                <div class="title">DROPIN MUSIC PLAYER</div>
-                <h2 class="library-title">艺术家</h2>
-                <div class="description">这东西一次能吃一袋我丢
+                <div class="title">{{ t('app.name') }}</div>
+                <h2 class="library-title">{{ t('artists.title') }}</h2>
+                <div class="description">{{ t('artists.bannerDescription') }}
                 </div>
             </div>
         </div>
@@ -41,7 +41,7 @@
         <div class="filter-section">
             <div class="filter-options">
                 <Combobox v-model="sortBy" class="sort-select" :options="sortOptions" />
-                <input v-model="searchQuery" type="text" placeholder="搜索艺术家..." class="search-input" />
+                <input v-model="searchQuery" type="text" :placeholder="t('artists.searchPlaceholder')" class="search-input" />
             </div>
         </div>
 
@@ -69,7 +69,7 @@
                             </div>
                             <div class="artist-info">
                                 <h3 class="artist-name">{{ artist.name }}</h3>
-                                <p class="artist-meta">{{ artist.albumCount }} 张专辑 • {{ artist.songCount }} 首歌</p>
+                                <p class="artist-meta">{{ t('artists.albumsCount', { count: artist.albumCount }) }} • {{ t('artists.songsCount', { count: artist.songCount }) }}</p>
                                 <div class="artist-genres">
                                     <span v-for="genre in artist.genres?.slice(0, 2)" :key="genre" class="genre-tag">
                                         {{ genre }}
@@ -84,10 +84,10 @@
             <div v-else key="list" class="artists-list">
                 <div class="list-header">
                     <div class="header-avatar"></div>
-                    <div class="header-name">艺术家</div>
-                    <div class="header-albums">专辑</div>
-                    <div class="header-songs">歌曲</div>
-                    <div class="header-genres">流派</div>
+                    <div class="header-name">{{ t('artists.headerName') }}</div>
+                    <div class="header-albums">{{ t('artists.headerAlbums') }}</div>
+                    <div class="header-songs">{{ t('artists.headerSongs') }}</div>
+                    <div class="header-genres">{{ t('artists.headerGenres') }}</div>
                     <div class="header-actions"></div>
                 </div>
                 <template v-for="group in visibleGroups" :key="group.key">
@@ -100,7 +100,7 @@
                         </div>
                         <div class="row-name">
                             <div class="name">{{ artist.name }}</div>
-                            <div class="followers">{{ formatNumber(artist.followers) }} 关注者</div>
+                            <div class="followers">{{ t('artists.followers', { count: formatNumber(artist.followers) }) }}</div>
                         </div>
                         <div class="row-albums">{{ artist.albumCount }}</div>
                         <div class="row-songs">{{ artist.songCount }}</div>
@@ -143,6 +143,9 @@ import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 import { getAvailableInitials, groupByInitial, sortByInitial } from '../utils/alphabet.js'
 import { useAlphabetNavigation } from '../utils/useAlphabetNavigation.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 const currentSong = inject('currentSong')
 const props = defineProps({
     artists: {
@@ -170,11 +173,11 @@ const viewMode = ref('grid')
 const sortBy = ref('name')
 const searchQuery = ref('')
 const pageRef = ref(null)
-const sortOptions = [
-    { value: 'name', label: '按名称排序' },
-    { value: 'albums', label: '按专辑数排序' },
-    { value: 'recent', label: '最近播放' }
-]
+const sortOptions = computed(() => [
+    { value: 'name', label: t('artists.sortName') },
+    { value: 'albums', label: t('artists.sortAlbums') },
+    { value: 'recent', label: t('artists.sortRecent') }
+])
 
 const setViewMode = (mode) => {
     viewMode.value = mode

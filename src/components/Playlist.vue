@@ -1,8 +1,8 @@
 <template>
     <section class="playlist" :aria-label="title">
         <header v-if="showHeader" class="playlist-header">
-            <h3 class="playlist-title">{{ title }}</h3>
-            <span class="playlist-count">{{ songs.length }} 首</span>
+            <h3 class="playlist-title">{{ title || t('player.queueTitle') }}</h3>
+            <span class="playlist-count">{{ t('player.songCount', { count: songs.length }) }}</span>
         </header>
 
         <div v-if="songs.length" class="playlist-items" role="list">
@@ -22,14 +22,14 @@
 
                 <span class="playlist-item-info">
                     <span class="playlist-item-name">{{ song.title }}</span>
-                    <span class="playlist-item-artist">{{ song.artist || '未知艺术家' }}</span>
+                    <span class="playlist-item-artist">{{ song.artist || t('player.unknownArtist') }}</span>
                 </span>
 
                 <span class="playlist-item-duration">{{ song.duration || '--:--' }}</span>
             </MotionButton>
         </div>
 
-        <div v-else class="playlist-empty">播放列表为空</div>
+        <div v-else class="playlist-empty">{{ t('player.playlistEmpty') }}</div>
     </section>
 </template>
 
@@ -38,6 +38,9 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { Pause, Play } from '@lucide/vue'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
     songs: {
@@ -54,7 +57,7 @@ const props = defineProps({
     },
     title: {
         type: String,
-        default: '正在播放'
+        default: ''
     },
     showHeader: {
         type: Boolean,
@@ -77,7 +80,7 @@ const isCurrentSong = (song) => {
         || (song.title === props.currentSong.title && song.artist === props.currentSong.artist)
 }
 
-const songLabel = (song) => `${song.title} - ${song.artist || '未知艺术家'}${isCurrentSong(song) ? '，正在播放' : ''}`
+const songLabel = (song) => `${song.title} - ${song.artist || t('player.unknownArtist')}${isCurrentSong(song) ? `，${t('player.nowPlaying')}` : ''}`
 
 const songItemKey = (song, index) => song.id ?? `${song.title}-${song.artist || ''}-${index}`
 

@@ -19,10 +19,13 @@ import { bassCall, listenToBassEvents } from './services/bassApi.js'
 import { smtcApi, listenToSmtcEvents } from './services/smtcApi.js'
 import { useLibraryStore } from './stores/libraryStore.js'
 import { useAppSettingsStore } from './stores/appSettingsStore.js'
+import { useI18n } from './i18n/index.js'
+import { activateLocale } from './stores/i18nStore.js'
 import { animateElement, APPLE_SPRING } from './utils/motion.js'
 
 const libraryStore = useLibraryStore()
 const settingsStore = useAppSettingsStore()
+const { t } = useI18n()
 
 // 当前页面状态
 const currentPage = ref('home')
@@ -48,8 +51,16 @@ const pageComponents = {
 
 // 当前播放的歌曲
 const currentSong = ref({
-  title: '未选择歌曲',
-  artist: '请先导入音乐目录',
+  title: t('player.noSongSelected'),
+  artist: t('player.importHint'),
+  album: '',
+  duration: '00:00',
+  cover: '/assets/cover.jpg'
+})
+
+const idleSong = () => ({
+  title: t('player.noSongSelected'),
+  artist: t('player.importHint'),
   album: '',
   duration: '00:00',
   cover: '/assets/cover.jpg'
@@ -122,6 +133,13 @@ watch(
   }
 )
 
+watch(
+  () => settingsStore.state.language,
+  (language) => {
+    void activateLocale(language)
+  }
+)
+
 // 音乐库数据
 const musicLibrary = reactive({
   totalSongs: 5,
@@ -170,15 +188,32 @@ const musicLibrary = reactive({
   ]
 })
 
-// 侧边栏导航项
+// 侧边栏导航项（标签随语言切换响应更新）
 const sidebarItems = reactive([
-  { id: 'home', icon: 'home.svg', label: '首页', active: true },
-  { id: 'library', icon: 'library.svg', label: '库', active: false },
-  { id: 'albums', icon: 'album.svg', label: '专辑', active: false },
-  { id: 'artists', icon: 'artists.svg', label: '艺术家', active: false },
-  { id: 'effects', icon: 'effect.svg', label: '声音效果', active: false },
-  { id: 'plugins', icon: 'plugin.svg', label: '扩展插件', active: false }
+  { id: 'home', icon: 'home.svg', label: t('sidebar.home'), active: true },
+  { id: 'library', icon: 'library.svg', label: t('sidebar.library'), active: false },
+  { id: 'albums', icon: 'album.svg', label: t('sidebar.albums'), active: false },
+  { id: 'artists', icon: 'artists.svg', label: t('sidebar.artists'), active: false },
+  { id: 'effects', icon: 'effect.svg', label: t('sidebar.effects'), active: false },
+  { id: 'plugins', icon: 'plugin.svg', label: t('sidebar.plugins'), active: false }
 ])
+
+watch(
+  () => useI18n().locale.value,
+  () => {
+    const labels = {
+      home: t('sidebar.home'),
+      library: t('sidebar.library'),
+      albums: t('sidebar.albums'),
+      artists: t('sidebar.artists'),
+      effects: t('sidebar.effects'),
+      plugins: t('sidebar.plugins')
+    }
+    sidebarItems.forEach((item) => {
+      if (labels[item.id]) item.label = labels[item.id]
+    })
+  }
+)
 
 // 数据集合
 const albumsData = reactive([
@@ -362,7 +397,7 @@ const syncLibraryState = () => {
       trackCount: album.trackCount
     }))
   )
-  if (songs.length && (!activeChannelId.value || currentSong.value.title === '未选择歌曲')) {
+  if (songs.length && (!activeChannelId.value || currentSong.value.title === t('player.noSongSelected'))) {
     currentSong.value = { ...songs[0] }
     totalTime.value = songs[0].duration || '00:00'
   }
@@ -502,7 +537,7 @@ const loadLyricsForSong = async (song) => {
         source: 'none',
         lines: [],
         plainLines: [],
-        warnings: [error?.message || '歌词读取失败']
+        warnings: [error?.message || t('player.noLyrics')]
       }
     }
   } finally {
@@ -547,7 +582,7 @@ const syncSmtcMedia = async (song) => {
   }
   if (requestId !== smtcMediaRequestId || currentSong.value.id !== song?.id) return
   safeSmtcCall(smtcApi.setMediaInfo({
-    title: song?.title || '未知歌曲',
+    title: song?.title || t('player.unknownSong'),
     artist: song?.artist || '',
     album: song?.album || '',
     thumbnailPath
@@ -615,13 +650,7 @@ const releaseBassResources = () => {
   playbackQueue.value = null
   shufflePlayedIds.clear()
   completionInFlight = false
-  currentSong.value = {
-    title: '未选择歌曲',
-    artist: '请先导入音乐目录',
-    album: '',
-    duration: '00:00',
-    cover: '/assets/cover.jpg'
-  }
+    currentSong.value = idleSong()
   isPlaying.value = false
   currentTimeMs.value = 0
   currentTime.value = '00:00'
@@ -1158,7 +1187,8 @@ onBeforeUnmount(() => {
       @add-to-playlist="() => console.log('添加到播放列表')"
       @playlist-song-select="handleQueueSongSelect" @background-mode-change="handleBackgroundModeChange" />
 
-    <Drawer :open="isQueueDrawerOpen" title="正在播放" placement="right" close-label="关闭播放列表"
+    <Drawer :open="isQueueDrawerOpen" :title="t('player.queueTitle')" placement="right"
+      :close-label="t('player.closePlaylist')"
       @close="handleQueueDrawerClose">
       <Playlist :songs="effectiveQueue" :current-song="currentSong" :is-playing="isPlaying"
         @song-select="handleQueueSongSelect" />

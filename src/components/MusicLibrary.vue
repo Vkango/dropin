@@ -10,8 +10,8 @@
                     </MotionTransition>
                 </div>
                 <div class="banner-content">
-                    <div class="title">DROPIN MUSIC PLAYER</div>
-                    <h2 class="library-title">库</h2>
+                    <div class="title">{{ t('app.name') }}</div>
+                    <h2 class="library-title">{{ t('library.title') }}</h2>
                     <div class="description">{{ musicLibrary.totalSongs }} songs • {{ musicLibrary.totalDuration }}
                     </div>
                 </div>
@@ -56,7 +56,9 @@ import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 import { getAvailableInitials } from '../utils/alphabet.js'
 import { useAlphabetNavigation } from '../utils/useAlphabetNavigation.js'
+import { useI18n } from '../i18n/index.js'
 
+const { t } = useI18n()
 const currentSong = inject('currentSong')
 
 const props = defineProps({
@@ -66,13 +68,7 @@ const props = defineProps({
     },
     headerControls: {
         type: Array,
-        default: () => [
-            { id: 'all', icon: 'library.svg', label: '全部', selected: true },
-            { id: 'system', icon: 'folder.svg', label: '系统音乐目录', selected: false },
-            { id: 'local', icon: 'sys_music.svg', label: '本地存储', selected: false },
-            { id: 'import', icon: 'ext.svg', label: '外部导入', selected: false },
-            { id: 'network', icon: 'cloud.svg', label: '网络', selected: false }
-        ]
+        default: () => []
     }
 })
 
@@ -81,6 +77,15 @@ const emit = defineEmits(['header-control-click', 'song-select', 'song-play', 'a
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+
+const headerControls = computed(() => props.headerControls?.length ? props.headerControls : [
+    { id: 'all', icon: 'library.svg', label: t('library.all'), selected: true },
+    { id: 'system', icon: 'folder.svg', label: t('library.system'), selected: false },
+    { id: 'local', icon: 'sys_music.svg', label: t('library.local'), selected: false },
+    { id: 'import', icon: 'ext.svg', label: t('library.import'), selected: false },
+    { id: 'network', icon: 'cloud.svg', label: t('library.network'), selected: false }
+])
+
 const pageRef = ref(null)
 const availableInitials = computed(() => getAvailableInitials(props.musicLibrary.songs, (song) => song.title))
 const { activeInitial, alphabetTopOffset, handleAlphabetSelect, handleGroupLabelClick } = useAlphabetNavigation(
