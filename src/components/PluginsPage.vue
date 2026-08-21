@@ -1,23 +1,21 @@
 <template>
     <PageLayout>
-        <div class="plugins-page">
+        <template #header>
         <!-- 页面标题 -->
-        <div class="page-header">
-            <h1 class="page-title">扩展插件</h1>
-            <div class="page-actions">
-                <MotionButton class="install-btn" :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.2)' }"
-                    :while-press="{ scale: 0.96 }" :transition="microTransition" @click="showInstallDialog">
-                    <Icon src="/assets/ext.svg" size="sm" />
-                    安装插件
-                </MotionButton>
-                <MotionButton class="refresh-btn" :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.2)' }"
-                    :while-press="{ scale: 0.96 }" :transition="microTransition" @click="refreshPlugins">
-                    <Icon src="/assets/restore.svg" size="sm" />
-                    刷新
-                </MotionButton>
+        <div class="music-banner">
+            <div class="image-container">
+                <MotionTransition variant="banner">
+                    <img :key="bannerImage" class="background-image" :src="bannerImage"
+                        referrerpolicy="no-referrer">
+                </MotionTransition>
+            </div>
+            <div class="banner-content">
+                <div class="title">DROPIN MUSIC PLAYER</div>
+                <h2 class="library-title">扩展插件</h2>
             </div>
         </div>
-
+        </template>
+        <div class="plugins-page">
         <!-- 筛选标签 -->
         <div class="filter-tabs">
             <MotionButton v-for="category in categories" :key="category.id" class="filter-tab"
@@ -30,7 +28,7 @@
         </div>
 
         <!-- 插件列表 -->
-        <div class="plugins-grid">
+        <div class="plugins-list">
             <MotionDiv v-for="plugin in filteredPlugins" :key="plugin.id" class="plugin-card" initial="rest"
                 while-hover="hover" :variants="cardVariants" :class="{
                 installed: plugin.installed,
@@ -47,28 +45,11 @@
                 </div>
 
                 <div class="plugin-info">
-                    <h3 class="plugin-name">{{ plugin.name }}</h3>
-                    <p class="plugin-author">{{ plugin.author }}</p>
+                    <div class="plugin-heading">
+                        <h3 class="plugin-name">{{ plugin.name }}</h3>
+                        <span class="plugin-meta">v{{ plugin.version }} · {{ statusLabel(plugin) }}</span>
+                    </div>
                     <p class="plugin-description">{{ plugin.description }}</p>
-
-                    <div class="plugin-meta">
-                        <span class="version">v{{ plugin.version }}</span>
-                        <span class="downloads">{{ formatNumber(plugin.downloads) }} 下载</span>
-                        <div class="rating">
-                            <div class="stars">
-                                <span v-for="i in 5" :key="i" class="star" :class="{ filled: i <= plugin.rating }">
-                                    ★
-                                </span>
-                            </div>
-                            <span class="rating-text">({{ plugin.reviews }})</span>
-                        </div>
-                    </div>
-
-                    <div class="plugin-tags">
-                        <span v-for="tag in plugin.tags" :key="tag" class="tag">
-                            {{ tag }}
-                        </span>
-                    </div>
                 </div>
 
                 <div class="plugin-actions">
@@ -102,38 +83,40 @@
         <div v-if="filteredPlugins.length === 0" class="empty-state">
             <Icon src="/assets/plugin.svg" size="xl" />
             <h3>没有找到插件</h3>
-            <p>尝试切换到其他分类或刷新插件列表</p>
         </div>
         </div>
     </PageLayout>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, inject } from 'vue'
 import Icon from './Icon.vue'
+import MotionTransition from './MotionTransition.vue'
 import PageLayout from './PageLayout.vue'
 import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 const emit = defineEmits(['plugin-install', 'plugin-uninstall', 'plugin-enable', 'plugin-disable'])
 
+const currentSong = inject('currentSong')
 const MotionDiv = motion.div
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const bannerImage = computed(() => currentSong.value?.cover || '/assets/cover.jpg')
 const cardVariants = {
-    rest: { y: 0, boxShadow: '0 0 0 rgba(0, 0, 0, 0)', borderColor: 'rgba(var(--outline-color), 0.1)' },
-    hover: { y: -2, boxShadow: '0 8px 24px rgba(0, 0, 0, 0.1)', borderColor: 'rgba(var(--primary-color), 0.2)' }
+    rest: { backgroundColor: 'rgba(var(--surface-color), 0)' },
+    hover: { backgroundColor: 'rgba(var(--primary-color), 0.04)' }
 }
 
 const activeCategory = ref('all')
 
-const categories = ref([
-    { id: 'all', label: '全部', count: 12 },
-    { id: 'effects', label: '音效', count: 4 },
-    { id: 'visualizer', label: '可视化', count: 3 },
-    { id: 'utility', label: '工具', count: 3 },
-    { id: 'theme', label: '主题', count: 2 }
-])
+const categoryOptions = [
+    { id: 'all', label: '全部' },
+    { id: 'effects', label: '音效' },
+    { id: 'visualizer', label: '可视化' },
+    { id: 'utility', label: '工具' },
+    { id: 'theme', label: '主题' }
+]
 
 const plugins = ref([
     {
@@ -235,22 +218,16 @@ const filteredPlugins = computed(() => {
     return plugins.value.filter(plugin => plugin.category === activeCategory.value)
 })
 
-const formatNumber = (num) => {
-    if (num >= 1000000) {
-        return (num / 1000000).toFixed(1) + 'M'
-    }
-    if (num >= 1000) {
-        return (num / 1000).toFixed(1) + 'K'
-    }
-    return num.toString()
-}
+const categories = computed(() => categoryOptions.map((category) => ({
+    ...category,
+    count: category.id === 'all'
+        ? plugins.value.length
+        : plugins.value.filter((plugin) => plugin.category === category.id).length
+})))
 
-const showInstallDialog = () => {
-    console.log('显示安装对话框')
-}
-
-const refreshPlugins = () => {
-    console.log('刷新插件列表')
+const statusLabel = (plugin) => {
+    if (!plugin.installed) return '未安装'
+    return plugin.disabled ? '已停用' : '已启用'
 }
 
 const installPlugin = (plugin) => {
@@ -284,56 +261,21 @@ const disablePlugin = (plugin) => {
     width: 100%;
 }
 
-/* 页面标题 */
-.page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 30px;
-}
-
-.page-title {
-    font-size: 48px;
-    font-weight: 700;
-    color: rgb(var(--text-color));
-}
-
-.page-actions {
-    display: flex;
-    gap: 12px;
-}
-
-.install-btn,
-.refresh-btn {
-    background: rgba(var(--primary-color), 0.1);
-    border: 1px solid rgba(var(--primary-color), 0.3);
-    border-radius: 8px;
-    padding: 10px 16px;
-    color: rgba(var(--primary-color), 0.3);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* 筛选标签 */
 .filter-tabs {
     display: flex;
-    gap: 4px;
-    margin-bottom: 30px;
-    background: rgba(var(--surface-color), 0.05);
-    border-radius: 12px;
-    padding: 4px;
+    gap: 6px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(var(--outline-color), 0.12);
+    overflow-x: auto;
 }
 
 .filter-tab {
     background: transparent;
     border: none;
-    border-radius: 8px;
-    padding: 10px 16px;
-    font-size: 14px;
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
     display: flex;
@@ -343,53 +285,42 @@ const disablePlugin = (plugin) => {
 }
 
 .filter-tab.active {
-    background: rgba(var(--primary-color), 0.3);
-    color: white;
+    background: rgba(var(--primary-color), 0.14);
+    color: rgb(var(--text-color));
 }
 
 .count {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 10px;
-    padding: 2px 6px;
-    font-size: 12px;
+    color: rgba(var(--text-color), 0.46);
+    font-size: 11px;
     font-weight: 600;
 }
 
-.filter-tab.active .count {
-    background: rgba(255, 255, 255, 0.3);
-}
-
-/* 插件网格 */
-.plugins-grid {
+.plugins-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-    gap: 24px;
+    width: 100%;
 }
 
 .plugin-card {
-    background: rgba(var(--surface-color), 0.05);
-    border: 1px solid rgba(var(--outline-color), 0.1);
-    border-radius: 16px;
-    padding: 24px;
     display: flex;
-    flex-direction: column;
-    gap: 16px;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 11px 0;
+    border-bottom: 1px solid rgba(var(--outline-color), 0.1);
 }
 
 .plugin-card.installed {
-    border-color: rgba(var(--primary-color), 0.3);
-    background: rgba(var(--primary-color), 0.02);
+    border-color: rgba(var(--primary-color), 0.16);
 }
 
 .plugin-card.disabled {
-    opacity: 0.6;
-    border-color: rgba(var(--outline-color), 0.2);
+    opacity: 0.56;
 }
 
 .plugin-icon {
     position: relative;
-    width: 48px;
-    height: 48px;
+    width: 34px;
+    height: 34px;
     flex-shrink: 0;
 }
 
@@ -397,20 +328,20 @@ const disablePlugin = (plugin) => {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: 8px;
+    border-radius: 6px;
 }
 
 .status-badge {
     position: absolute;
-    top: -4px;
-    right: -4px;
-    width: 20px;
-    height: 20px;
+    top: -3px;
+    right: -3px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 2px solid var(--md-sys-color-background);
+    border: 1px solid var(--md-sys-color-background);
 }
 
 .status-badge.installed {
@@ -425,104 +356,67 @@ const disablePlugin = (plugin) => {
 
 .plugin-info {
     flex: 1;
+    min-width: 0;
+}
+
+.plugin-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    min-width: 0;
 }
 
 .plugin-name {
-    font-size: 18px;
-    font-weight: 600;
+    margin: 0;
+    min-width: 0;
     color: rgb(var(--text-color));
-    margin-bottom: 4px;
-}
-
-.plugin-author {
     font-size: 14px;
-    color: rgba(var(--primary-color), 0.3);
-    margin-bottom: 8px;
-}
-
-.plugin-description {
-    font-size: 14px;
-    color: rgba(var(--text-color), 0.7);
-    line-height: 1.4;
-    margin-bottom: 12px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .plugin-meta {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
-    font-size: 12px;
-    color: rgba(var(--text-color), 0.6);
-}
-
-.version {
-    background: rgba(var(--outline-color), 0.1);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-weight: 500;
-}
-
-.rating {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.stars {
-    color: #FFC107;
-}
-
-.star {
-    font-size: 12px;
-}
-
-.star.filled {
-    color: #FFC107;
-}
-
-.star:not(.filled) {
-    color: rgba(var(--outline-color), 0.3);
-}
-
-.plugin-tags {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-bottom: 16px;
-}
-
-.tag {
-    background: rgba(var(--primary-color), 0.1);
-    color: rgba(var(--primary-color), 0.3);
-    padding: 4px 8px;
-    border-radius: 12px;
+    flex: 0 0 auto;
+    color: rgba(var(--text-color), 0.5);
     font-size: 11px;
     font-weight: 500;
 }
 
+.plugin-description {
+    margin: 3px 0 0;
+    color: rgba(var(--text-color), 0.58);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
 .plugin-actions {
-    margin-top: auto;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 116px;
 }
 
 .action-btn {
     border: none;
-    border-radius: 8px;
-    padding: 8px 16px;
-    font-size: 14px;
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    margin-right: 8px;
 }
 
 .action-btn.install {
-    background: rgba(var(--primary-color), 0.3);
-    color: white;
+    background: rgba(var(--primary-color), 0.18);
+    color: rgb(var(--text-color));
 }
 
 .action-btn.enable {
-    background: #4CAF50;
-    color: white;
+    background: rgba(76, 175, 80, 0.16);
+    color: rgb(var(--text-color));
 }
 
 .action-btn.disable {
@@ -537,28 +431,21 @@ const disablePlugin = (plugin) => {
 
 .installed-actions {
     display: flex;
-    gap: 8px;
+    gap: 6px;
 }
 
-/* 空状态 */
 .empty-state {
     text-align: center;
-    padding: 60px 20px;
+    padding: 28px 0;
     color: rgba(var(--text-color), 0.6);
 }
 
 .empty-state h3 {
-    font-size: 20px;
-    margin: 16px 0 8px;
+    margin: 10px 0 0;
     color: rgba(var(--text-color), 0.8);
-}
-
-.empty-state p {
     font-size: 14px;
-    line-height: 1.5;
 }
 
-/* 滚动条样式 */
 .plugins-page::-webkit-scrollbar {
     width: 4px;
 }
@@ -577,30 +464,26 @@ const disablePlugin = (plugin) => {
     background: rgba(var(--outline-color), 0.5);
 }
 
-/* 响应式设计 */
 @media (max-width: 768px) {
-    .plugins-page {
-        padding: 20px 24px;
-    }
-
-    .page-title {
-        font-size: 36px;
-    }
-
-    .page-header {
-        flex-direction: column;
-        gap: 20px;
+    .plugin-card {
         align-items: flex-start;
+        flex-wrap: wrap;
     }
 
-    .plugins-grid {
-        grid-template-columns: 1fr;
-        gap: 16px;
+    .plugin-info {
+        flex-basis: calc(100% - 46px);
     }
 
-    .filter-tabs {
-        overflow-x: auto;
-        padding-bottom: 4px;
+    .plugin-heading {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .plugin-actions {
+        width: 100%;
+        min-width: 0;
+        justify-content: flex-start;
     }
 }
 </style>

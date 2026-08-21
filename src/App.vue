@@ -7,6 +7,7 @@ import AlbumsPage from './components/AlbumsPage.vue'
 import ArtistsPage from './components/ArtistsPage.vue'
 import SoundEffectsPage from './components/SoundEffectsPage.vue'
 import PluginsPage from './components/PluginsPage.vue'
+import SettingsPage from './components/SettingsPage.vue'
 import DetailPanel from './components/DetailPanel.vue'
 import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
@@ -38,7 +39,8 @@ const pageComponents = {
   albums: AlbumsPage,
   artists: ArtistsPage,
   effects: SoundEffectsPage,
-  plugins: PluginsPage
+  plugins: PluginsPage,
+  settings: SettingsPage
 }
 
 // 当前播放的歌曲

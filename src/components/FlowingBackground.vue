@@ -32,8 +32,6 @@ const DEFAULT_PALETTE = [
 ]
 const BLOB_N = 5
 const QUALITY_SCALE = 0.5
-const MAX_FPS = 30
-const FRAME_INTERVAL = 1000 / MAX_FPS
 const BASE_FLOW_SPEED = 2.4
 const AUDIO_RESPONSE_SECONDS = 0.9
 const AUDIO_RELEASE_SECONDS = 1.6
@@ -46,7 +44,6 @@ let uniforms = null
 let resizeObserver = null
 let animationFrame = 0
 let lastTime = 0
-let lastFrameAt = 0
 let simTime = Math.random() * 200
 let blobs = []
 let coverRequestId = 0
@@ -505,15 +502,12 @@ function draw(now) {
 
 function renderFrame(now) {
     animationFrame = requestAnimationFrame(renderFrame)
-    if (now - lastFrameAt < FRAME_INTERVAL) return
-    lastFrameAt = now
     draw(now)
 }
 
 function startAnimation() {
     if (!animationFrame && !reducedMotion) {
         lastTime = performance.now()
-        lastFrameAt = 0
         animationFrame = requestAnimationFrame(renderFrame)
     }
 }

@@ -657,9 +657,8 @@ const albumVisualRef = ref(null)
 const lyricsWindowRef = ref(null)
 const lyricRowRefs = new Map()
 const albumSize = ref(0)
-const ALBUM_ROTATION_INTERVAL = 1000 / 48
 const ALBUM_ROTATION_SPEED = 360 / 48000
-let albumRotationTimer
+let albumRotationFrame
 let albumRotationLastTime = 0
 let albumResizeObserver
 let lyricsResizeObserver
@@ -831,19 +830,18 @@ const albumVisualStyle = computed(() => {
 })
 
 const stopAlbumRotation = (reset = false) => {
-    if (albumRotationTimer) window.clearTimeout(albumRotationTimer)
-    albumRotationTimer = undefined
+    if (albumRotationFrame) window.cancelAnimationFrame(albumRotationFrame)
+    albumRotationFrame = undefined
     albumRotationLastTime = 0
     if (reset && albumVisualRef.value) {
         albumVisualRef.value.style.transform = 'rotate(0deg)'
     }
 }
 
-const updateAlbumRotation = () => {
-    albumRotationTimer = undefined
+const updateAlbumRotation = (now) => {
+    albumRotationFrame = undefined
     if (!props.isVisible || !props.isPlaying || reducedMotion.value || !albumVisualRef.value) return
 
-    const now = performance.now()
     if (!albumRotationLastTime) albumRotationLastTime = now
     const elapsed = Math.min(100, now - albumRotationLastTime)
     albumRotationLastTime = now
@@ -853,7 +851,7 @@ const updateAlbumRotation = () => {
     const nextRotation = (currentRotation + elapsed * ALBUM_ROTATION_SPEED) % 360
     element.dataset.rotation = String(nextRotation)
     element.style.transform = `rotate(${nextRotation}deg)`
-    albumRotationTimer = window.setTimeout(updateAlbumRotation, ALBUM_ROTATION_INTERVAL)
+    albumRotationFrame = window.requestAnimationFrame(updateAlbumRotation)
 }
 
 const syncAlbumRotation = () => {
@@ -862,9 +860,9 @@ const syncAlbumRotation = () => {
         return
     }
 
-    if (!albumRotationTimer) {
+    if (!albumRotationFrame) {
         albumRotationLastTime = 0
-        albumRotationTimer = window.setTimeout(updateAlbumRotation, ALBUM_ROTATION_INTERVAL)
+        albumRotationFrame = window.requestAnimationFrame(updateAlbumRotation)
     }
 }
 

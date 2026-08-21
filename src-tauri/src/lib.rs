@@ -1,10 +1,11 @@
 mod bass_bridge;
 mod lyrics;
 mod media_library;
+mod settings;
 
+use serde_json::json;
 use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
-use serde_json::json;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -54,7 +55,9 @@ pub fn run() {
             media_library::media_playback_history,
             media_library::media_playback_record,
             media_library::media_pick_folder,
-            media_library::media_playback_open
+            media_library::media_playback_open,
+            settings::app_settings_read,
+            settings::app_settings_write
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
