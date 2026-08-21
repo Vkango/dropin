@@ -90,7 +90,7 @@
                         :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.92 }"
                         :transition="activeIndicatorTransition" aria-hidden="true" />
                     <span class="nav-icon">
-                        <Icon src="/assets/settings.svg" />
+                        <Icon src="/assets/setting.svg" />
                     </span>
                     <span class="nav-label">设置</span>
                 </MotionDiv>
@@ -138,7 +138,7 @@ const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const activeIndicatorTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : APPLE_SPRING)
 const iconColor = computed(() => props.isDark ? 'rgba(255, 255, 255)' : 'rgba(0, 0, 0)')
-const settingsItem = { id: 'settings', icon: 'settings.svg', label: '设置' }
+const settingsItem = { id: 'settings', icon: 'setting.svg', label: '设置' }
 const sections = reactive({
     tags: true,
     playlists: true,
