@@ -8,6 +8,10 @@
                     :class="['nav-item', { active: item.id === currentPage }]"
                     :aria-current="item.id === currentPage ? 'page' : undefined" :while-hover="{ y: -1 }"
                     :transition="microTransition" @click="$emit('nav-item-click', item)">
+                    <MotionDiv v-if="item.id === currentPage" class="active-nav-indicator" layout-id="sidebar-active-indicator"
+                        :initial="{ opacity: 0, scale: 0.92 }" :animate="{ opacity: 1, scale: 1 }"
+                        :exit="{ opacity: 0, scale: 0.92 }" :transition="activeIndicatorTransition"
+                        aria-hidden="true" />
                     <span class="nav-icon">
                         <Icon :src="'/assets/' + item.icon" />
                     </span>
@@ -83,7 +87,7 @@
 import { defineProps, defineEmits, computed, reactive } from 'vue'
 import Icon from './Icon.vue';
 import { motion, useReducedMotion } from 'motion-v'
-import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
+import { APPLE_SPRING, INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
 const props = defineProps({
     sidebarItems: {
@@ -116,6 +120,7 @@ const MotionDiv = motion.div
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const activeIndicatorTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : APPLE_SPRING)
 const iconColor = computed(() => props.isDark ? 'rgba(255, 255, 255)' : 'rgba(0, 0, 0)')
 const sections = reactive({
     tags: true,
@@ -194,6 +199,7 @@ const toggleSection = (sectionName) => {
 }
 
 .nav-item {
+    position: relative;
     display: flex;
     align-items: center;
     padding: 8px 18px;
@@ -207,7 +213,23 @@ const toggleSection = (sectionName) => {
 
 .nav-item.active,
 .nav-item.active:hover {
-    background-color: rgba(var(--global-inverse-color), 0.14);
+    background-color: transparent;
+}
+
+.active-nav-indicator {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(105deg, rgba(var(--global-inverse-color), 0.18), rgba(var(--global-inverse-color), 0.08));
+    box-shadow: inset 0 0 0 1px rgba(var(--global-inverse-color), 0.04), 0 5px 16px rgba(var(--global-inverse-color), 0.04);
+    pointer-events: none;
+}
+
+.nav-icon,
+.nav-label {
+    position: relative;
+    z-index: 1;
 }
 
 .nav-icon {

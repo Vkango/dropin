@@ -54,11 +54,21 @@
                         :transition="microTransition" aria-label="下一首" @click.stop="$emit('next')">
                         <SkipForward :size="14" :stroke-width="1.8" />
                     </MotionButton>
-                    <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
-                        :while-press="buttonPress" :transition="microTransition" aria-label="循环播放"
-                        @click.stop="$emit('repeat')">
-                        <Repeat2 :size="14" :stroke-width="1.8" />
-                    </MotionButton>
+                    <div id="mini-playback-anchor" ref="miniPopoverAnchorRef" class="mini-popover-anchor">
+                        <MotionButton class="control-button secondary-control"
+                            :while-hover="buttonHover" :while-press="buttonPress" :transition="microTransition"
+                            aria-label="音量和播放顺序" :aria-expanded="isPlaybackModePopoverOpen"
+                            @click.stop="isPlaybackModePopoverOpen = !isPlaybackModePopoverOpen">
+                            <Menu :size="14" :stroke-width="1.8" />
+                        </MotionButton>
+                        <PlaybackModePopover :open="isPlaybackModePopoverOpen" :mode="props.playbackMode"
+                            anchor-id="mini-playback-anchor" placement="below" :list-loop="props.listLoop"
+                            :include-volume="true" :volume="props.volume" :muted="props.muted"
+                            @update:mode="$emit('playback-mode-change', $event)"
+                            @update:list-loop="$emit('list-loop-change', $event)"
+                            @update:volume="$emit('volume-change', $event)" @mute-change="$emit('mute-change', $event)"
+                            @close="isPlaybackModePopoverOpen = false" />
+                    </div>
 
                 </div>
 
@@ -84,9 +94,10 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { ListMusic, Pause, Play, Repeat2, SkipBack, SkipForward } from '@lucide/vue'
+import { ListMusic, Menu, Pause, Play, SkipBack, SkipForward } from '@lucide/vue'
 import { motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
+import PlaybackModePopover from './PlaybackModePopover.vue'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 
 const props = defineProps({
@@ -121,6 +132,22 @@ const props = defineProps({
     lyricsLoading: {
         type: Boolean,
         default: false
+    },
+    playbackMode: {
+        type: String,
+        default: 'sequential'
+    },
+    listLoop: {
+        type: Boolean,
+        default: false
+    },
+    volume: {
+        type: Number,
+        default: 75
+    },
+    muted: {
+        type: Boolean,
+        default: false
     }
 })
 
@@ -128,7 +155,10 @@ const emit = defineEmits([
     'previous',
     'toggle-play',
     'next',
-    'repeat',
+    'playback-mode-change',
+    'list-loop-change',
+    'volume-change',
+    'mute-change',
     'queue',
     'progress-change',
     'progress-commit',
@@ -141,6 +171,8 @@ const MotionButton = motion.button
 const MotionImg = motion.img
 const progressRef = ref(null)
 const isProgressDragging = ref(false)
+const isPlaybackModePopoverOpen = ref(false)
+const miniPopoverAnchorRef = ref(null)
 
 const syncedLyrics = computed(() => props.lyrics?.lines || [])
 const plainLyrics = computed(() => props.lyrics?.plainLines || [])
@@ -212,7 +244,7 @@ const handleProgressPointerUp = (event) => {
     width: 100%;
     height: 60px;
     min-width: 0;
-    overflow: hidden;
+    overflow: visible;
     color: rgb(var(--text-color));
     font-family: MiSans, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
@@ -391,6 +423,11 @@ const handleProgressPointerUp = (event) => {
     justify-content: center;
     height: 60px;
     justify-self: center;
+}
+
+.mini-popover-anchor {
+    position: relative;
+    display: inline-flex;
 }
 
 .transport-buttons {

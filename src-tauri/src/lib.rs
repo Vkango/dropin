@@ -4,6 +4,7 @@ mod media_library;
 
 use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
+use serde_json::json;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -22,7 +23,14 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             main_window.set_traffic_lights_inset(16.0, 20.0).unwrap();
 
-            app.manage(bass_bridge::BassService::new(app.handle().clone()));
+            let bass_service = bass_bridge::BassService::new(app.handle().clone());
+            let bass_cleanup_service = bass_service.clone();
+            app.manage(bass_service);
+            main_window.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                    let _ = bass_cleanup_service.call_operation("bass_unload", json!({}));
+                }
+            });
             app.manage(media_library::MediaService::new(app.handle().clone()));
             Ok(())
         })

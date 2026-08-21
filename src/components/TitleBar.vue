@@ -6,7 +6,12 @@
         :lyrics-loading="lyricsLoading" @toggle-play="$emit('toggle-play')" @previous="$emit('previous')"
         @next="$emit('next')" @progress-change="$emit('progress-change', $event)"
         @progress-commit="$emit('progress-commit', $event)"
-        @repeat="$emit('repeat')" @queue="$emit('queue')" @expand-player="$emit('expand-player')" />
+        :playback-mode="playbackMode" :list-loop="listLoop"
+        :volume="volume" :muted="muted"
+        @playback-mode-change="$emit('playback-mode-change', $event)"
+        @list-loop-change="$emit('list-loop-change', $event)"
+        @volume-change="$emit('volume-change', $event)" @mute-change="$emit('mute-change', $event)"
+        @queue="$emit('queue')" @expand-player="$emit('expand-player')" />
     </div>
   </Teleport>
 </template>
@@ -55,6 +60,22 @@ const props = defineProps({
   isFullscreen: {
     type: Boolean,
     default: false
+  },
+  playbackMode: {
+    type: String,
+    default: 'sequential'
+  },
+  listLoop: {
+    type: Boolean,
+    default: false
+  },
+  volume: {
+    type: Number,
+    default: 75
+  },
+  muted: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -63,7 +84,10 @@ defineEmits([
   'previous',
   'next',
   'progress-change',
-  'repeat',
+  'playback-mode-change',
+  'list-loop-change',
+  'volume-change',
+  'mute-change',
   'queue',
   'expand-player',
   'progress-commit'

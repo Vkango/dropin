@@ -5,12 +5,92 @@
             <header v-if="$slots.header" class="page-layout-header">
                 <slot name="header" />
             </header>
-            <section class="page-layout-content">
+            <section ref="contentRef" class="page-layout-content">
                 <slot />
             </section>
         </main>
     </div>
 </template>
+
+<script setup>
+import { onActivated, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useReducedMotion } from 'motion-v'
+import { animateElement, APPLE_SPRING, INSTANT_MOTION } from '../utils/motion.js'
+
+const reducedMotion = useReducedMotion()
+const contentRef = ref(null)
+const blockAnimations = new WeakMap()
+let animationFrame = null
+
+const getContentBlocks = () => {
+    const content = contentRef.value
+    if (!content || content.getClientRects().length === 0) return []
+
+    const contentRoot = content.firstElementChild
+    const contentBlocks = contentRoot?.children?.length
+        ? [...contentRoot.children]
+        : [...content.children]
+    const header = content.parentElement?.querySelector('.page-layout-header')
+
+    return [header, ...contentBlocks]
+        .filter((element, index, elements) => element && elements.indexOf(element) === index)
+        .filter((element) => element.getClientRects().length > 0)
+}
+
+const prepareContentBlocks = () => {
+    if (reducedMotion.value) return
+
+    getContentBlocks().forEach((element) => {
+        element.style.opacity = '0'
+        element.style.transform = 'translateY(10px)'
+        element.style.filter = 'blur(2px)'
+    })
+}
+
+const animateContentBlocks = () => {
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame)
+    prepareContentBlocks()
+
+    animationFrame = requestAnimationFrame(() => {
+        animationFrame = null
+
+        getContentBlocks().forEach((element, index) => {
+            const animation = animateElement(
+                element,
+                {
+                    opacity: [0, 1],
+                    y: [10, 0],
+                    filter: ['blur(2px)', 'blur(0px)']
+                },
+                reducedMotion.value
+                    ? INSTANT_MOTION
+                    : { ...APPLE_SPRING, delay: index * 0.035 },
+                reducedMotion.value
+            )
+            blockAnimations.set(element, animation)
+            animation.finished.then(() => {
+                if (blockAnimations.get(element) !== animation) return
+                blockAnimations.delete(element)
+                element.style.opacity = ''
+                element.style.transform = ''
+                element.style.filter = ''
+            }, () => {})
+        })
+    })
+}
+
+onMounted(() => {
+    prepareContentBlocks()
+    animateContentBlocks()
+})
+onActivated(() => {
+    prepareContentBlocks()
+    animateContentBlocks()
+})
+onBeforeUnmount(() => {
+    if (animationFrame !== null) cancelAnimationFrame(animationFrame)
+})
+</script>
 
 <style scoped>
 .page-layout-scroll {

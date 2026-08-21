@@ -10,17 +10,19 @@ import PluginsPage from './components/PluginsPage.vue'
 import DetailPanel from './components/DetailPanel.vue'
 import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
-import MotionTransition from './components/MotionTransition.vue'
 import Drawer from './components/Drawer.vue'
 import Playlist from './components/Playlist.vue'
+import { useReducedMotion } from 'motion-v'
 import { themeManager } from './utils/themeManager.js'
-import { bassCall } from './services/bassApi.js'
+import { bassCall, listenToBassEvents } from './services/bassApi.js'
 import { useLibraryStore } from './stores/libraryStore.js'
+import { animateElement, APPLE_SPRING } from './utils/motion.js'
 
 const libraryStore = useLibraryStore()
 
 // 当前页面状态
 const currentPage = ref('home')
+const reducedMotion = useReducedMotion()
 const pageHistory = ref(['home'])
 const pageCache = reactive(new Map())
 
@@ -58,6 +60,12 @@ const totalTime = ref('00:00')
 const progress = ref(0)
 const activeChannelId = ref(null)
 const playbackQueue = ref(null)
+const volume = ref(75)
+const muted = ref(false)
+const playbackMode = ref('sequential')
+const listLoop = ref(false)
+const shufflePlayedIds = new Set()
+let completionInFlight = false
 const isQueueDrawerOpen = ref(false)
 const fullscreenBackgroundMode = ref('flowing')
 let snapshotTimer = null
@@ -65,6 +73,12 @@ let seekTimer = null
 let pendingSeekSeconds = null
 let seekInFlight = false
 let seekCommitRequested = false
+let bassReleaseInFlight = null
+let isAppDisposing = false
+let unlistenBassEvents = () => { }
+let snapshotInFlight = false
+let lastRecordedTrackId = null
+let lastRecordedPositionMs = -1
 const lyricsPayload = ref(null)
 const lyricsLoading = ref(false)
 let lyricsRequestId = 0
@@ -350,6 +364,12 @@ const navigateToPage = (pageId) => {
 
   currentPage.value = pageId
 
+  // 页面节点现在即时切换，下一帧恢复各页自己的滚动位置。
+  nextTick(() => {
+    restorePageScroll()
+    bindScrollSources()
+  })
+
 }
 
 const restorePageScroll = () => {
@@ -383,11 +403,6 @@ const bindScrollSources = async () => {
     document.removeEventListener('scroll', updateTitlebarScroll, true)
     unbindScrollSources = () => { }
   }
-}
-
-const handlePageEntered = () => {
-  restorePageScroll()
-  bindScrollSources()
 }
 
 // 当前页面组件
@@ -468,20 +483,91 @@ watch(
   () => loadLyricsForSong(currentSong.value)
 )
 
-const refreshPlaybackSnapshot = async () => {
-  if (!activeChannelId.value || seekInFlight || pendingSeekSeconds !== null) return
+const savePlaybackProgress = (trackId, positionMs, force = false) => {
+  if (!trackId || (!force && trackId === lastRecordedTrackId && Math.abs(positionMs - lastRecordedPositionMs) < 2000)) return
+  lastRecordedTrackId = trackId
+  lastRecordedPositionMs = positionMs
+  void libraryStore.mediaApi.record(trackId, positionMs).catch((error) => {
+    console.debug('保存播放进度失败:', error)
+  })
+}
+
+const refreshPlaybackSnapshot = async (forceRecord = false) => {
+  const channelId = activeChannelId.value
+  if (!channelId || seekInFlight || pendingSeekSeconds !== null || snapshotInFlight) return
+  snapshotInFlight = true
   try {
-    const snapshot = await bassCall('bass_channel_snapshot', { channelId: activeChannelId.value })
+    const snapshot = await bassCall('bass_channel_snapshot', { channelId })
+    if (channelId !== activeChannelId.value) return
     const position = Number(snapshot.positionSeconds || 0)
     activeLengthSeconds.value = Number(snapshot.lengthSeconds || activeLengthSeconds.value || 0)
     currentTimeMs.value = Math.max(0, Math.round(position * 1000))
     currentTime.value = formatSeconds(position)
     totalTime.value = formatSeconds(activeLengthSeconds.value)
     progress.value = activeLengthSeconds.value > 0 ? (position / activeLengthSeconds.value) * 100 : 0
+    const wasPlaying = isPlaying.value
     isPlaying.value = snapshot.state === 'playing'
+    savePlaybackProgress(currentSong.value.id, currentTimeMs.value, forceRecord)
+
+    if (wasPlaying && snapshot.state === 'stopped' && activeLengthSeconds.value > 0
+      && position >= activeLengthSeconds.value - 0.35) {
+      void handlePlaybackCompleted()
+    }
   } catch (error) {
-    if (activeChannelId.value) console.debug('播放状态更新失败:', error)
+    if (channelId === activeChannelId.value) console.debug('播放状态更新失败:', error)
+  } finally {
+    snapshotInFlight = false
   }
+}
+
+const handleBassEvent = (eventName, payload) => {
+  if (eventName !== 'bass/channel-state' || payload?.channelId !== activeChannelId.value) return
+  void refreshPlaybackSnapshot(true)
+}
+
+const releaseBassResources = () => {
+  if (snapshotTimer) {
+    clearInterval(snapshotTimer)
+    snapshotTimer = null
+  }
+  if (seekTimer !== null) {
+    window.clearTimeout(seekTimer)
+    seekTimer = null
+  }
+  pendingSeekSeconds = null
+  seekCommitRequested = false
+  activeChannelId.value = null
+  playbackQueue.value = null
+  shufflePlayedIds.clear()
+  completionInFlight = false
+  currentSong.value = {
+    title: '未选择歌曲',
+    artist: '请先导入音乐目录',
+    album: '',
+    duration: '00:00',
+    cover: '/assets/cover.jpg'
+  }
+  isPlaying.value = false
+  currentTimeMs.value = 0
+  currentTime.value = '00:00'
+  totalTime.value = '00:00'
+  progress.value = 0
+  lastRecordedTrackId = null
+  lastRecordedPositionMs = -1
+
+  if (!bassReleaseInFlight) {
+    bassReleaseInFlight = bassCall('bass_unload')
+      .catch((error) => console.debug('释放 BASS 资源失败:', error))
+      .finally(() => {
+        bassReleaseInFlight = null
+      })
+  }
+  return bassReleaseInFlight
+}
+
+const handleWindowExit = () => {
+  isAppDisposing = true
+  void releaseBassResources()
 }
 
 const startPlaybackSnapshot = () => {
@@ -491,8 +577,10 @@ const startPlaybackSnapshot = () => {
 }
 
 const playSong = async (song, queue = null) => {
+  if (isAppDisposing) return
   try {
     playbackQueue.value = queue?.length ? queue : null
+    shufflePlayedIds.add(song.id)
     if (seekTimer !== null) {
       window.clearTimeout(seekTimer)
       seekTimer = null
@@ -505,15 +593,26 @@ const playSong = async (song, queue = null) => {
       activeChannelId.value = null
     }
     const result = await libraryStore.openPlayback(song)
+    if (isAppDisposing) {
+      const channelId = result?.channel?.channelId
+      if (channelId) await bassCall('bass_channel_close', { channelId }).catch(() => { })
+      return
+    }
     currentSong.value = { ...song }
     activeChannelId.value = result?.channel?.channelId || null
     if (activeChannelId.value) {
       await bassCall('bass_channel_play', { channelId: activeChannelId.value, restart: true })
+      await bassCall('bass_channel_set_volume', {
+        channelId: activeChannelId.value,
+        value: muted.value ? 0 : volume.value / 100
+      }).catch((error) => console.debug('设置音量失败:', error))
     }
     isPlaying.value = true
     currentTimeMs.value = 0
     currentTime.value = '00:00'
     totalTime.value = song.duration || '00:00'
+    lastRecordedTrackId = song.id
+    lastRecordedPositionMs = 0
     updateThemeFromSong(song)
     startPlaybackSnapshot()
   } catch (error) {
@@ -522,6 +621,7 @@ const playSong = async (song, queue = null) => {
 }
 
 const handleSongPlay = (song) => {
+  shufflePlayedIds.clear()
   playSong(song)
 }
 
@@ -536,7 +636,10 @@ const handleAlbumPlay = (album) => {
         .map((track) => libraryStore.tracks.value.find((song) => song.id === track.id || song.title === track.title))
         .filter(Boolean)
     : libraryStore.tracks.value.filter((track) => track.album === album?.title)
-  if (tracks.length) playSong(tracks[0], tracks)
+  if (tracks.length) {
+    shufflePlayedIds.clear()
+    playSong(tracks[0], tracks)
+  }
 }
 
 const handleArtistSelect = (artist) => {
@@ -546,7 +649,10 @@ const handleArtistSelect = (artist) => {
 
 const handleArtistPlay = (artist) => {
   const song = libraryStore.tracks.value.find((track) => track.artist === artist.name)
-  if (song) playSong(song)
+  if (song) {
+    shufflePlayedIds.clear()
+    playSong(song)
+  }
 }
 
 const handleArtistFollow = (artist) => {
@@ -556,7 +662,10 @@ const handleArtistFollow = (artist) => {
 
 const handlePlaylistPlay = (playlist) => {
   const tracks = libraryStore.tracks.value.filter((track) => track.album === playlist.name)
-  if (tracks.length) playSong(tracks[0], tracks)
+  if (tracks.length) {
+    shufflePlayedIds.clear()
+    playSong(tracks[0], tracks)
+  }
 }
 
 const handleNavigate = (pageId) => {
@@ -606,9 +715,51 @@ const handlePrevious = () => {
 }
 
 const handleNext = () => {
+  void advancePlayback(true)
+}
+
+const stopAfterPlayback = async () => {
+  if (!activeChannelId.value) return
+  await bassCall('bass_channel_pause', { channelId: activeChannelId.value }).catch(() => { })
+  isPlaying.value = false
+  await refreshPlaybackSnapshot(true)
+}
+
+const advancePlayback = async (manual = false) => {
   const songs = playbackQueue.value || libraryStore.tracks.value
+  if (!songs.length || !currentSong.value?.id) return
+
+  if (playbackMode.value === 'repeat-one') {
+    if (!manual && listLoop.value) return playSong(currentSong.value, playbackQueue.value)
+    if (!manual) return stopAfterPlayback()
+  }
+
+  if (playbackMode.value === 'shuffle') {
+    let candidates = songs.filter((song) => !shufflePlayedIds.has(song.id))
+    if (!candidates.length) {
+      if (!listLoop.value) return stopAfterPlayback()
+      shufflePlayedIds.clear()
+      shufflePlayedIds.add(currentSong.value.id)
+      candidates = songs.filter((song) => song.id !== currentSong.value.id)
+    }
+    const nextSong = candidates[Math.floor(Math.random() * candidates.length)]
+    return playSong(nextSong, playbackQueue.value)
+  }
+
   const index = songs.findIndex((song) => song.id === currentSong.value.id)
-  if (index >= 0 && songs.length) playSong(songs[(index + 1) % songs.length], playbackQueue.value)
+  if (index < 0) return
+  if (index === songs.length - 1 && !listLoop.value) return stopAfterPlayback()
+  return playSong(songs[(index + 1) % songs.length], playbackQueue.value)
+}
+
+const handlePlaybackCompleted = async () => {
+  if (completionInFlight) return
+  completionInFlight = true
+  try {
+    await advancePlayback()
+  } finally {
+    completionInFlight = false
+  }
 }
 
 const handleProgressChange = (percent) => {
@@ -636,6 +787,9 @@ const flushSeek = async () => {
       channelId,
       seconds: targetSeconds
     })
+    if (channelId === activeChannelId.value) {
+      savePlaybackProgress(currentSong.value.id, Math.round(targetSeconds * 1000), true)
+    }
   } catch (error) {
     console.error('调整播放进度失败:', error)
   } finally {
@@ -670,7 +824,35 @@ const handleAddPlugin = () => {
 }
 
 const handleRepeat = () => {
-  console.log('循环模式')
+  playbackMode.value = playbackMode.value === 'repeat-one' ? 'sequential' : 'repeat-one'
+}
+
+const handlePlaybackModeChange = (mode) => {
+  playbackMode.value = ['sequential', 'shuffle', 'repeat-one'].includes(mode) ? mode : 'sequential'
+  if (playbackMode.value === 'shuffle') shufflePlayedIds.add(currentSong.value?.id)
+}
+
+const handleListLoopChange = (enabled) => {
+  listLoop.value = Boolean(enabled)
+}
+
+const handleVolumeChange = async (nextVolume) => {
+  volume.value = Math.max(0, Math.min(100, Number(nextVolume) || 0))
+  muted.value = false
+  if (!activeChannelId.value) return
+  await bassCall('bass_channel_set_volume', {
+    channelId: activeChannelId.value,
+    value: volume.value / 100
+  }).catch((error) => console.error('音量变化失败:', error))
+}
+
+const handleMuteChange = async (nextMuted) => {
+  muted.value = Boolean(nextMuted)
+  if (!activeChannelId.value) return
+  await bassCall('bass_channel_set_volume', {
+    channelId: activeChannelId.value,
+    value: muted.value ? 0 : volume.value / 100
+  }).catch((error) => console.error('静音切换失败:', error))
 }
 
 const handleMenu = () => {
@@ -686,6 +868,7 @@ const handleQueueDrawerClose = () => {
 }
 
 const handleQueueSongSelect = (song) => {
+  shufflePlayedIds.clear()
   playSong(song, effectiveQueue.value)
 }
 
@@ -723,8 +906,64 @@ const getPageProps = () => {
   }
 }
 
+const getPageTransitionBlocks = (pageElement) => {
+  const header = pageElement.querySelector('.page-layout-header')
+  const content = pageElement.querySelector('.page-layout-content')
+  const contentRoot = content?.firstElementChild
+  const contentBlocks = contentRoot?.children?.length
+    ? [...contentRoot.children]
+    : [...(content?.children || [])]
+
+  return [header, ...contentBlocks]
+    .filter((element, index, elements) => element && elements.indexOf(element) === index)
+    .filter((element) => element.getClientRects().length > 0)
+}
+
+const beforePageLeave = (pageElement) => {
+  pageElement.style.position = 'absolute'
+  pageElement.style.inset = '0'
+  pageElement.style.width = '100%'
+  pageElement.style.height = '100%'
+  pageElement.style.pointerEvents = 'none'
+  pageElement.style.zIndex = '0'
+}
+
+const leavePage = (pageElement, done) => {
+  if (reducedMotion.value) {
+    done()
+    return
+  }
+
+  const animations = getPageTransitionBlocks(pageElement).map((element, index) => {
+    const animation = animateElement(
+      element,
+      { opacity: 0, y: -10, filter: 'blur(2px)' },
+      { ...APPLE_SPRING, delay: index * 0.025 }
+    )
+    return animation.finished.catch(() => undefined)
+  })
+
+  Promise.all(animations).then(done)
+}
+
+const afterPageLeave = (pageElement) => {
+  pageElement.style.position = ''
+  pageElement.style.inset = ''
+  pageElement.style.width = ''
+  pageElement.style.height = ''
+  pageElement.style.pointerEvents = ''
+  pageElement.style.zIndex = ''
+}
+
 // 组件挂载时初始化主题
 onMounted(async () => {
+  isAppDisposing = false
+  // A webview refresh can leave the Rust BASS worker alive, so start from a clean native state.
+  await releaseBassResources()
+  window.addEventListener('beforeunload', handleWindowExit)
+  window.addEventListener('pagehide', handleWindowExit)
+  unlistenBassEvents = await listenToBassEvents(handleBassEvent)
+
   // 监听主题变化
   themeManager.addObserver((themeColors) => {
     currentTheme.value = themeColors
@@ -745,8 +984,11 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  if (snapshotTimer) clearInterval(snapshotTimer)
-  if (seekTimer !== null) window.clearTimeout(seekTimer)
+  window.removeEventListener('beforeunload', handleWindowExit)
+  window.removeEventListener('pagehide', handleWindowExit)
+  isAppDisposing = true
+  void releaseBassResources()
+  unlistenBassEvents()
   unbindScrollSources()
   libraryStore.dispose()
 })
@@ -757,8 +999,12 @@ onBeforeUnmount(() => {
     <TitleBar :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
       :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress" :lyrics="lyricsPayload"
       :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer" :is-scrolled="isTitlebarScrolled"
+      :playback-mode="playbackMode" :list-loop="listLoop"
+      :volume="volume" :muted="muted"
       @toggle-play="handleTogglePlay" @previous="handlePrevious" @next="handleNext"
-      @progress-change="handleProgressChange" @repeat="handleRepeat" @queue="handleQueue"
+      @progress-change="handleProgressChange" @playback-mode-change="handlePlaybackModeChange"
+      @list-loop-change="handleListLoopChange" @volume-change="handleVolumeChange" @mute-change="handleMuteChange"
+      @queue="handleQueue"
       @progress-commit="handleProgressCommit" @expand-player="handleExpandPlayer" />
 
     <!-- 侧边栏 -->
@@ -768,7 +1014,8 @@ onBeforeUnmount(() => {
 
     <!-- 主内容区 -->
     <div class="main-content-wrapper">
-      <MotionTransition variant="page" mode="out-in" @after-enter="handlePageEntered">
+      <Transition mode="sync" :css="false" @before-leave="beforePageLeave" @leave="leavePage"
+        @after-leave="afterPageLeave">
         <KeepAlive :max="5">
           <component :is="currentPageComponent" :key="currentPage" v-bind="getPageProps()"
             @song-select="handleSongSelect" @song-play="handleSongPlay" @album-select="handleAlbumSelect"
@@ -776,7 +1023,7 @@ onBeforeUnmount(() => {
             @artist-follow="handleArtistFollow" @playlist-play="handlePlaylistPlay" @navigate="handleNavigate"
             @header-control-click="handleHeaderControlClick" @effects-change="handleEffectsChange" />
         </KeepAlive>
-      </MotionTransition>
+      </Transition>
     </div>
 
     <!-- 右侧详情面板 -->
@@ -787,10 +1034,12 @@ onBeforeUnmount(() => {
       :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress" :lyrics="lyricsPayload"
       :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer" :channel-id="activeChannelId"
       :background-mode="fullscreenBackgroundMode" :queue-songs="effectiveQueue"
+      :volume="volume" :muted="muted" :playback-mode="playbackMode" :list-loop="listLoop"
       @close="handleCloseFullscreenPlayer" @toggle-play="handleTogglePlay"
       @previous="handlePrevious" @next="handleNext" @progress-change="handleProgressChange"
-      @progress-commit="handleProgressCommit" @volume-change="(volume) => console.log('音量变化:', volume)"
-      @shuffle="() => console.log('随机播放')" @repeat="handleRepeat" @add-to-playlist="() => console.log('添加到播放列表')"
+      @progress-commit="handleProgressCommit" @volume-change="handleVolumeChange" @mute-change="handleMuteChange"
+      @playback-mode-change="handlePlaybackModeChange" @list-loop-change="handleListLoopChange"
+      @add-to-playlist="() => console.log('添加到播放列表')"
       @playlist-song-select="handleQueueSongSelect" @background-mode-change="handleBackgroundModeChange" />
 
     <Drawer :open="isQueueDrawerOpen" title="正在播放" placement="right" close-label="关闭播放列表"

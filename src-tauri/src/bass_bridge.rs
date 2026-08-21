@@ -77,6 +77,7 @@ struct Request {
     reply: Reply,
 }
 
+#[derive(Clone)]
 pub struct BassService {
     sender: mpsc::Sender<Request>,
 }
@@ -93,7 +94,7 @@ impl BassService {
                     let result = runtime.dispatch(&request.operation, request.args);
                     let _ = request.reply.send(result);
                 }
-                runtime.clear_handles();
+                runtime.release_engine();
             })
             .expect("failed to start BASS worker thread");
         Self { sender }
@@ -205,6 +206,15 @@ impl BassRuntime {
         self.channels.clear();
     }
 
+    fn release_engine(&mut self) {
+        self.clear_handles();
+        if let Some(engine) = self.engine.take() {
+            if engine.is_initialized() {
+                let _ = engine.free();
+            }
+        }
+    }
+
     fn engine(&self, operation: &str) -> Result<&BassEngine, BridgeError> {
         self.engine
             .as_ref()
@@ -287,6 +297,10 @@ impl BassRuntime {
     }
 
     fn load(&mut self, args: Value) -> Result<Value, BridgeError> {
+        // Loading a second engine without freeing the first one leaks the native BASS instance.
+        if self.engine.is_some() {
+            self.release_engine();
+        }
         let bass_path = optional_string(&args, "bassPath")?;
         let fx_path = optional_string(&args, "fxPath")?;
         let dll_dir = optional_string(&args, "dllDir")?.map(PathBuf::from);
@@ -321,20 +335,12 @@ impl BassRuntime {
         }
         .map_err(|error| bass_error("bass_load", error))?;
 
-        self.clear_handles();
         self.engine = Some(engine);
         self.status()
     }
 
     fn unload(&mut self) -> Result<Value, BridgeError> {
-        if let Some(engine) = self.engine.take() {
-            self.clear_handles();
-            if engine.is_initialized() {
-                let _ = engine.free();
-            }
-        } else {
-            self.clear_handles();
-        }
+        self.release_engine();
         Ok(json!({ "loaded": false }))
     }
 
@@ -402,9 +408,14 @@ impl BassRuntime {
 
     fn free(&mut self) -> Result<Value, BridgeError> {
         self.clear_handles();
-        self.engine("bass_free")?
-            .free()
-            .map_err(|error| bass_error("bass_free", error))?;
+        let Some(engine) = self.engine.as_ref() else {
+            return Ok(json!({ "initialized": false }));
+        };
+        if engine.is_initialized() {
+            engine
+                .free()
+                .map_err(|error| bass_error("bass_free", error))?;
+        }
         Ok(json!({ "initialized": false }))
     }
 

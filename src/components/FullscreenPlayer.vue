@@ -148,10 +148,21 @@
 
                             <div class="transport-column">
                                 <div class="transport-controls">
-                                    <MotionButton class="footer-button volume-button" :while-hover="buttonHover"
-                                        :while-press="buttonPress" :transition="microTransition" aria-label="音量">
-                                        <Volume2 :size="18" :stroke-width="1.5" />
-                                    </MotionButton>
+                                    <div id="fullscreen-volume-anchor" ref="volumePopoverAnchorRef" class="footer-popover-anchor volume-anchor">
+                                        <MotionButton class="footer-button volume-button"
+                                            :while-hover="buttonHover"
+                                            :while-press="buttonPress" :transition="microTransition" aria-label="音量"
+                                            :aria-expanded="isVolumePopoverOpen"
+                                            @click="isVolumePopoverOpen = !isVolumePopoverOpen; isPlaybackModePopoverOpen = false">
+                                            <Volume2 :size="18" :stroke-width="1.5" />
+                                        </MotionButton>
+                                        <VolumePopover :open="isVolumePopoverOpen" :volume="props.volume" :muted="props.muted"
+                                            :anchor="volumePopoverAnchorRef" placement="above"
+                                            anchor-id="fullscreen-volume-anchor"
+                                            @update:volume="$emit('volume-change', $event)"
+                                            @mute-change="$emit('mute-change', $event)"
+                                            @close="isVolumePopoverOpen = false" />
+                                    </div>
                                     <MotionButton class="footer-button" :while-hover="buttonHover"
                                         :while-press="buttonPress" :transition="microTransition" aria-label="上一首"
                                         @click="$emit('previous')">
@@ -168,11 +179,25 @@
                                         @click="$emit('next')">
                                         <SkipForward :size="18" :stroke-width="1.5" />
                                     </MotionButton>
-                                    <MotionButton class="footer-button" :while-hover="buttonHover"
-                                        :while-press="buttonPress" :transition="microTransition" aria-label="随机播放"
-                                        @click="$emit('shuffle')">
-                                        <Shuffle :size="18" :stroke-width="1.5" />
-                                    </MotionButton>
+                                    <div id="fullscreen-mode-anchor" ref="modePopoverAnchorRef" class="footer-popover-anchor mode-anchor">
+                                        <MotionButton class="footer-button"
+                                            :while-hover="buttonHover" :while-press="buttonPress"
+                                            :transition="microTransition" aria-label="播放顺序"
+                                            :aria-expanded="isPlaybackModePopoverOpen"
+                                            @click="isPlaybackModePopoverOpen = !isPlaybackModePopoverOpen; isVolumePopoverOpen = false">
+                                            <Shuffle v-if="props.playbackMode === 'shuffle'" :size="18"
+                                                :stroke-width="1.5" />
+                                            <Repeat1 v-else-if="props.playbackMode === 'repeat-one'" :size="18"
+                                                :stroke-width="1.5" />
+                                            <ListOrdered v-else :size="18" :stroke-width="1.5" />
+                                        </MotionButton>
+                                        <PlaybackModePopover :open="isPlaybackModePopoverOpen"
+                                            :mode="props.playbackMode" anchor-id="fullscreen-mode-anchor" placement="above"
+                                            :list-loop="props.listLoop"
+                                            @update:mode="$emit('playback-mode-change', $event)"
+                                            @update:list-loop="$emit('list-loop-change', $event)"
+                                            @close="isPlaybackModePopoverOpen = false" />
+                                    </div>
                                 </div>
 
                                 <div class="progress-section">
@@ -241,11 +266,9 @@
                             </div>
                             <div class="lyrics-size-slider">
                                 <span class="size-mark size-mark-small" aria-hidden="true">A</span>
-                                <input ref="lyricsRangeRef" class="lyrics-size-range" type="range" min="20" max="56"
-                                    step="1" :value="lyricsFontSizeValue" :style="lyricsRangeStyle" aria-label="歌词大小"
-                                    :aria-valuenow="lyricsFontSizeValue" aria-valuemin="20" aria-valuemax="56"
-                                    :aria-valuetext="`${lyricsFontSizeValue} 像素`" @input="handleLyricsFontSizeInput"
-                                    @keydown="handleLyricsRangeKeydown" />
+                                <RangeSlider ref="lyricsRangeRef" :model-value="lyricsFontSizeValue" :min="20" :max="56"
+                                    aria-label="歌词大小" :aria-value-text="`${lyricsFontSizeValue} 像素`"
+                                    @update:model-value="handleLyricsFontSizeInput" @keydown="handleLyricsRangeKeydown" />
                                 <span class="size-mark size-mark-large" aria-hidden="true">A</span>
                             </div>
                         </MotionDiv>
@@ -280,12 +303,15 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowLeft, ChevronDown, ListMusic, Maximize2, Minimize2, MoreHorizontal, PanelTop, Pause, Play, Shuffle, SkipBack, SkipForward, SlidersHorizontal, SquarePen, Volume2 } from '@lucide/vue'
+import { ArrowLeft, ChevronDown, ListMusic, ListOrdered, Maximize2, Minimize2, MoreHorizontal, PanelTop, Pause, Play, Repeat1, Shuffle, SkipBack, SkipForward, SlidersHorizontal, SquarePen, Volume2 } from '@lucide/vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
 import FlowingBackground from './FlowingBackground.vue'
 import Playlist from './Playlist.vue'
+import PlaybackModePopover from './PlaybackModePopover.vue'
+import VolumePopover from './VolumePopover.vue'
+import RangeSlider from './RangeSlider.vue'
 import { bassCall } from '../services/bassApi.js'
 import { APPLE_SPRING, INSTANT_MOTION, LINEAR_LOOP, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
 import { User2Icon } from '@lucide/vue'
@@ -339,6 +365,22 @@ const props = defineProps({
     queueSongs: {
         type: Array,
         default: () => []
+    },
+    volume: {
+        type: Number,
+        default: 75
+    },
+    muted: {
+        type: Boolean,
+        default: false
+    },
+    playbackMode: {
+        type: String,
+        default: 'sequential'
+    },
+    listLoop: {
+        type: Boolean,
+        default: false
     }
 })
 
@@ -350,8 +392,9 @@ const emit = defineEmits([
     'progress-change',
     'progress-commit',
     'volume-change',
-    'shuffle',
-    'repeat',
+    'mute-change',
+    'playback-mode-change',
+    'list-loop-change',
     'add-to-playlist',
     'playlist-song-select',
     'background-mode-change'
@@ -362,6 +405,10 @@ const MotionButton = motion.button
 const MotionSpan = motion.span
 const reducedMotion = useReducedMotion()
 const isProgressDragging = ref(false)
+const isVolumePopoverOpen = ref(false)
+const isPlaybackModePopoverOpen = ref(false)
+const volumePopoverAnchorRef = ref(null)
+const modePopoverAnchorRef = ref(null)
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const contentTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : SOFT_SPRING)
 const playlistTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
@@ -443,12 +490,6 @@ const lyricsRangeRef = ref(null)
 const lyricsFontSize = ref(null)
 const lyricsFontSizeValue = computed(() => lyricsFontSize.value ?? (compactViewport.value ? 22 : 32))
 const lyricsStyle = computed(() => ({ '--lyrics-font-size': `${lyricsFontSizeValue.value}px` }))
-const lyricsRangeStyle = computed(() => {
-    const progress = ((lyricsFontSizeValue.value - 20) / (56 - 20)) * 100
-    return {
-        background: `linear-gradient(to right, rgba(var(--primary-color), 0.9) 0%, rgba(var(--primary-color), 0.9) ${progress}%, rgba(255, 255, 255, 0.22) ${progress}%, rgba(255, 255, 255, 0.22) 100%)`
-    }
-})
 
 const ZERO_BANDS = { bass: 0, mid: 0, treble: 0, level: 0 }
 const audioBands = ref({ ...ZERO_BANDS })
@@ -582,6 +623,8 @@ const startBassTrackInfo = () => {
 }
 
 const openPlaybackOptions = () => {
+    isVolumePopoverOpen.value = false
+    isPlaybackModePopoverOpen.value = false
     isPlaybackOptionsOpen.value = true
 }
 
@@ -594,8 +637,7 @@ const setBackgroundMode = (mode) => {
     emit('background-mode-change', mode)
 }
 
-const handleLyricsFontSizeInput = (event) => {
-    const nextSize = Number(event.target.value)
+const handleLyricsFontSizeInput = (nextSize) => {
     lyricsFontSize.value = Math.max(20, Math.min(56, nextSize))
 }
 
@@ -611,7 +653,6 @@ const handlePlaybackOptionsAnimationComplete = () => {
     if (isPlaybackOptionsOpen.value) lyricsRangeRef.value?.focus()
 }
 
-const volume = ref(75)
 const albumStageRef = ref(null)
 const lyricsWindowRef = ref(null)
 const lyricRowRefs = new Map()
@@ -1391,7 +1432,7 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     bottom: 0;
     left: 0;
     height: 95px;
-    overflow: hidden;
+    overflow: visible;
     padding: 0 20px;
 }
 
@@ -1494,42 +1535,6 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     font-size: 18px;
 }
 
-.lyrics-size-range {
-    flex: 1;
-    min-width: 100px;
-    height: 4px;
-    padding: 0;
-    border: 0;
-    border-radius: 99px;
-    appearance: none;
-    cursor: pointer;
-    outline: none;
-}
-
-.lyrics-size-range::-webkit-slider-thumb {
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(255, 255, 255, 0.92);
-    border-radius: 50%;
-    background: rgb(var(--primary-color));
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-    appearance: none;
-}
-
-.lyrics-size-range::-moz-range-thumb {
-    width: 10px;
-    height: 10px;
-    border: 2px solid rgba(255, 255, 255, 0.92);
-    border-radius: 50%;
-    background: rgb(var(--primary-color));
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-
-.lyrics-size-range:focus-visible {
-    outline: 2px solid rgba(var(--primary-color), 0.72);
-    outline-offset: 5px;
-}
-
 .background-option-group {
     justify-content: space-between;
 }
@@ -1569,12 +1574,18 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
 }
 
 .transport-controls {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     align-self: center;
     height: 48px;
     gap: 28px;
+}
+
+.footer-popover-anchor {
+    position: relative;
+    display: inline-flex;
 }
 
 .transport-column {
@@ -1823,10 +1834,6 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     }
 
     .footer-side-left .footer-button:nth-child(2) {
-        display: none;
-    }
-
-    .volume-button {
         display: none;
     }
 

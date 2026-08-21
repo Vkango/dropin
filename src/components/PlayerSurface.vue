@@ -14,12 +14,16 @@
             <FullscreenPlayer :is-visible="isFullscreen" :current-song="currentSong" :is-playing="isPlaying"
                 :current-time="currentTime" :current-time-ms="currentTimeMs" :total-time="totalTime"
                 :progress="progress" :lyrics="lyrics" :lyrics-loading="lyricsLoading" :channel-id="channelId"
-                :background-mode="backgroundMode" :queue-songs="queueSongs" @close="$emit('close')"
+                :background-mode="backgroundMode" :queue-songs="queueSongs" :volume="volume" :muted="muted"
+                :playback-mode="playbackMode" :list-loop="listLoop" @close="$emit('close')"
                 @toggle-play="$emit('toggle-play')" @previous="$emit('previous')" @next="$emit('next')"
                 @progress-change="$emit('progress-change', $event)"
                 @progress-commit="$emit('progress-commit', $event)"
-                @volume-change="$emit('volume-change', $event)" @shuffle="$emit('shuffle')"
-                @repeat="$emit('repeat')" @add-to-playlist="$emit('add-to-playlist')"
+                @volume-change="$emit('volume-change', $event)"
+                @mute-change="$emit('mute-change', $event)"
+                @playback-mode-change="$emit('playback-mode-change', $event)"
+                @list-loop-change="$emit('list-loop-change', $event)"
+                @add-to-playlist="$emit('add-to-playlist')"
                 @playlist-song-select="$emit('playlist-song-select', $event)"
                 @background-mode-change="$emit('background-mode-change', $event)" />
         </MotionDiv>
@@ -77,6 +81,22 @@ defineProps({
         type: Array,
         default: () => []
     },
+    volume: {
+        type: Number,
+        default: 75
+    },
+    muted: {
+        type: Boolean,
+        default: false
+    },
+    playbackMode: {
+        type: String,
+        default: 'sequential'
+    },
+    listLoop: {
+        type: Boolean,
+        default: false
+    },
     isFullscreen: {
         type: Boolean,
         default: false
@@ -91,8 +111,9 @@ defineEmits([
     'progress-change',
     'progress-commit',
     'volume-change',
-    'shuffle',
-    'repeat',
+    'mute-change',
+    'playback-mode-change',
+    'list-loop-change',
     'add-to-playlist',
     'playlist-song-select',
     'background-mode-change'
