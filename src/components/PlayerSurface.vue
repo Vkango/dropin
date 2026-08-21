@@ -1,7 +1,7 @@
 <template>
     <AnimatePresence>
-        <MotionDiv v-if="isFullscreen" class="player-backdrop" :initial="{ opacity: 0 }"
-            :animate="{ opacity: 1 }" :exit="{ opacity: 0 }" :transition="backdropTransition">
+        <MotionDiv v-if="isFullscreen" class="player-backdrop" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
+            :exit="{ opacity: 0 }" :transition="backdropTransition">
             <MotionDiv class="player-backdrop-shade" :initial="{ opacity: 0, backdropFilter: 'blur(0px)' }"
                 :animate="{ opacity: 0.7, backdropFilter: 'blur(14px)' }"
                 :exit="{ opacity: 0, backdropFilter: 'blur(0px)' }" :transition="backdropTransition" />
@@ -9,21 +9,18 @@
     </AnimatePresence>
 
     <AnimatePresence>
-        <MotionDiv v-if="isFullscreen" class="player-surface" :initial="fullLayerInitial"
-            :animate="fullLayerOpen" :exit="fullLayerClosed" :transition="contentTransition">
+        <MotionDiv v-if="isFullscreen" class="player-surface" :initial="fullLayerInitial" :animate="fullLayerOpen"
+            :exit="fullLayerClosed" :transition="contentTransition">
             <FullscreenPlayer :is-visible="isFullscreen" :current-song="currentSong" :is-playing="isPlaying"
                 :current-time="currentTime" :current-time-ms="currentTimeMs" :total-time="totalTime"
                 :progress="progress" :lyrics="lyrics" :lyrics-loading="lyricsLoading" :channel-id="channelId"
                 :background-mode="backgroundMode" :queue-songs="queueSongs" :volume="volume" :muted="muted"
                 :playback-mode="playbackMode" :list-loop="listLoop" @close="$emit('close')"
                 @toggle-play="$emit('toggle-play')" @previous="$emit('previous')" @next="$emit('next')"
-                @progress-change="$emit('progress-change', $event)"
-                @progress-commit="$emit('progress-commit', $event)"
-                @volume-change="$emit('volume-change', $event)"
-                @mute-change="$emit('mute-change', $event)"
+                @progress-change="$emit('progress-change', $event)" @progress-commit="$emit('progress-commit', $event)"
+                @volume-change="$emit('volume-change', $event)" @mute-change="$emit('mute-change', $event)"
                 @playback-mode-change="$emit('playback-mode-change', $event)"
-                @list-loop-change="$emit('list-loop-change', $event)"
-                @add-to-playlist="$emit('add-to-playlist')"
+                @list-loop-change="$emit('list-loop-change', $event)" @add-to-playlist="$emit('add-to-playlist')"
                 @playlist-song-select="$emit('playlist-song-select', $event)"
                 @background-mode-change="$emit('background-mode-change', $event)" />
         </MotionDiv>

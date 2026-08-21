@@ -11,9 +11,7 @@
             <main class="player-main">
                 <section class="visual-column" aria-label="歌曲信息">
                     <div ref="albumStageRef" class="album-stage">
-                        <MotionDiv class="album-visual" :style="albumVisualStyle"
-                            :animate="{ rotate: isPlaying ? 360 : 0 }"
-                            :transition="isPlaying ? loopTransition : instantTransition">
+                        <div ref="albumVisualRef" class="album-visual" :style="albumVisualStyle">
                             <!--<div class="tick-ring" aria-hidden="true">
                                 <span v-for="tick in ticks" :key="tick" class="tick"
                                     :style="{ transform: `translate(-50%, -50%) rotate(${tick}deg) translateY(calc(-1 * var(--tick-radius)))` }"></span>
@@ -25,7 +23,7 @@
                                     </div>
                                 </MotionTransition>
                             </div>
-                        </MotionDiv>
+                        </div>
                     </div>
 
                     <MotionTransition variant="songInfo" mode="out-in">
@@ -148,16 +146,16 @@
 
                             <div class="transport-column">
                                 <div class="transport-controls">
-                                    <div id="fullscreen-volume-anchor" ref="volumePopoverAnchorRef" class="footer-popover-anchor volume-anchor">
-                                        <MotionButton class="footer-button volume-button"
-                                            :while-hover="buttonHover"
+                                    <div id="fullscreen-volume-anchor" ref="volumePopoverAnchorRef"
+                                        class="footer-popover-anchor volume-anchor">
+                                        <MotionButton class="footer-button volume-button" :while-hover="buttonHover"
                                             :while-press="buttonPress" :transition="microTransition" aria-label="音量"
                                             :aria-expanded="isVolumePopoverOpen"
                                             @click="isVolumePopoverOpen = !isVolumePopoverOpen; isPlaybackModePopoverOpen = false">
                                             <Volume2 :size="18" :stroke-width="1.5" />
                                         </MotionButton>
-                                        <VolumePopover :open="isVolumePopoverOpen" :volume="props.volume" :muted="props.muted"
-                                            :anchor="volumePopoverAnchorRef" placement="above"
+                                        <VolumePopover :open="isVolumePopoverOpen" :volume="props.volume"
+                                            :muted="props.muted" :anchor="volumePopoverAnchorRef" placement="above"
                                             anchor-id="fullscreen-volume-anchor"
                                             @update:volume="$emit('volume-change', $event)"
                                             @mute-change="$emit('mute-change', $event)"
@@ -179,10 +177,10 @@
                                         @click="$emit('next')">
                                         <SkipForward :size="18" :stroke-width="1.5" />
                                     </MotionButton>
-                                    <div id="fullscreen-mode-anchor" ref="modePopoverAnchorRef" class="footer-popover-anchor mode-anchor">
-                                        <MotionButton class="footer-button"
-                                            :while-hover="buttonHover" :while-press="buttonPress"
-                                            :transition="microTransition" aria-label="播放顺序"
+                                    <div id="fullscreen-mode-anchor" ref="modePopoverAnchorRef"
+                                        class="footer-popover-anchor mode-anchor">
+                                        <MotionButton class="footer-button" :while-hover="buttonHover"
+                                            :while-press="buttonPress" :transition="microTransition" aria-label="播放顺序"
                                             :aria-expanded="isPlaybackModePopoverOpen"
                                             @click="isPlaybackModePopoverOpen = !isPlaybackModePopoverOpen; isVolumePopoverOpen = false">
                                             <Shuffle v-if="props.playbackMode === 'shuffle'" :size="18"
@@ -192,8 +190,8 @@
                                             <ListOrdered v-else :size="18" :stroke-width="1.5" />
                                         </MotionButton>
                                         <PlaybackModePopover :open="isPlaybackModePopoverOpen"
-                                            :mode="props.playbackMode" anchor-id="fullscreen-mode-anchor" placement="above"
-                                            :list-loop="props.listLoop"
+                                            :mode="props.playbackMode" anchor-id="fullscreen-mode-anchor"
+                                            placement="above" :list-loop="props.listLoop"
                                             @update:mode="$emit('playback-mode-change', $event)"
                                             @update:list-loop="$emit('list-loop-change', $event)"
                                             @close="isPlaybackModePopoverOpen = false" />
@@ -202,9 +200,10 @@
 
                                 <div class="progress-section">
                                     <span class="time-display">{{ currentTime }}</span>
-                                    <div ref="progressRef" class="progress-container" :class="{ 'is-dragging': isProgressDragging }"
-                                        role="slider" :aria-valuenow="Math.round(progress)" aria-valuemin="0"
-                                        aria-valuemax="100" tabindex="0" @keydown="handleProgressKeydown"
+                                    <div ref="progressRef" class="progress-container"
+                                        :class="{ 'is-dragging': isProgressDragging }" role="slider"
+                                        :aria-valuenow="Math.round(progress)" aria-valuemin="0" aria-valuemax="100"
+                                        tabindex="0" @keydown="handleProgressKeydown"
                                         @pointerdown="handleProgressPointerDown">
                                         <div class="progress-track">
                                             <MotionDiv class="progress-fill" :animate="{ width: `${progress}%` }"
@@ -266,7 +265,8 @@
                                 <span class="size-mark size-mark-small" aria-hidden="true">A</span>
                                 <RangeSlider ref="lyricsRangeRef" :model-value="lyricsFontSizeValue" :min="20" :max="56"
                                     aria-label="歌词大小" :aria-value-text="`${lyricsFontSizeValue} 像素`"
-                                    @update:model-value="handleLyricsFontSizeInput" @keydown="handleLyricsRangeKeydown" />
+                                    @update:model-value="handleLyricsFontSizeInput"
+                                    @keydown="handleLyricsRangeKeydown" />
                                 <span class="size-mark size-mark-large" aria-hidden="true">A</span>
                             </div>
                         </MotionDiv>
@@ -311,7 +311,7 @@ import PlaybackModePopover from './PlaybackModePopover.vue'
 import VolumePopover from './VolumePopover.vue'
 import RangeSlider from './RangeSlider.vue'
 import { bassCall } from '../services/bassApi.js'
-import { APPLE_SPRING, INSTANT_MOTION, LINEAR_LOOP, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
+import { APPLE_SPRING, INSTANT_MOTION, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
 import { User2Icon } from '@lucide/vue'
 import { DiscAlbum } from '@lucide/vue'
 
@@ -414,7 +414,6 @@ const contentTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : 
 const playlistTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const instantTransition = computed(() => INSTANT_MOTION)
 const progressTransition = computed(() => isProgressDragging.value ? INSTANT_MOTION : microTransition.value)
-const loopTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : LINEAR_LOOP)
 const footerTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : APPLE_SPRING)
 const footerViewInitial = { opacity: 0, y: 96, filter: 'blur(8px)' }
 const footerViewAnimate = { opacity: 1, y: 0, filter: 'blur(0px)' }
@@ -654,9 +653,14 @@ const handlePlaybackOptionsAnimationComplete = () => {
 }
 
 const albumStageRef = ref(null)
+const albumVisualRef = ref(null)
 const lyricsWindowRef = ref(null)
 const lyricRowRefs = new Map()
 const albumSize = ref(0)
+const ALBUM_ROTATION_INTERVAL = 1000 / 48
+const ALBUM_ROTATION_SPEED = 360 / 48000
+let albumRotationTimer
+let albumRotationLastTime = 0
 let albumResizeObserver
 let lyricsResizeObserver
 let lyricsMeasureFrame
@@ -826,6 +830,44 @@ const albumVisualStyle = computed(() => {
     }
 })
 
+const stopAlbumRotation = (reset = false) => {
+    if (albumRotationTimer) window.clearTimeout(albumRotationTimer)
+    albumRotationTimer = undefined
+    albumRotationLastTime = 0
+    if (reset && albumVisualRef.value) {
+        albumVisualRef.value.style.transform = 'rotate(0deg)'
+    }
+}
+
+const updateAlbumRotation = () => {
+    albumRotationTimer = undefined
+    if (!props.isVisible || !props.isPlaying || reducedMotion.value || !albumVisualRef.value) return
+
+    const now = performance.now()
+    if (!albumRotationLastTime) albumRotationLastTime = now
+    const elapsed = Math.min(100, now - albumRotationLastTime)
+    albumRotationLastTime = now
+
+    const element = albumVisualRef.value
+    const currentRotation = Number(element.dataset.rotation || 0)
+    const nextRotation = (currentRotation + elapsed * ALBUM_ROTATION_SPEED) % 360
+    element.dataset.rotation = String(nextRotation)
+    element.style.transform = `rotate(${nextRotation}deg)`
+    albumRotationTimer = window.setTimeout(updateAlbumRotation, ALBUM_ROTATION_INTERVAL)
+}
+
+const syncAlbumRotation = () => {
+    if (!props.isVisible || !props.isPlaying || reducedMotion.value) {
+        stopAlbumRotation(!props.isPlaying)
+        return
+    }
+
+    if (!albumRotationTimer) {
+        albumRotationLastTime = 0
+        albumRotationTimer = window.setTimeout(updateAlbumRotation, ALBUM_ROTATION_INTERVAL)
+    }
+}
+
 const getLyricState = (index) => {
     const distance = activeLyricRowIndex.value < 0
         ? index + 1
@@ -936,6 +978,7 @@ onMounted(() => {
     requestAnimationFrame(updateAlbumSize)
     scheduleLyricsMeasure()
     startAudioBands()
+    syncAlbumRotation()
 })
 
 onUnmounted(() => {
@@ -951,6 +994,7 @@ onUnmounted(() => {
     clearLyricsIdleTimer()
     clearProgrammaticLyricsScroll()
     lyricRowRefs.clear()
+    stopAlbumRotation()
     stopAudioBands()
     stopBassTrackInfo()
     if (document.fullscreenElement === document.documentElement) document.exitFullscreen().catch(() => { })
@@ -980,6 +1024,7 @@ watch([() => props.isVisible, () => props.currentSong?.id, () => props.lyrics], 
 }, { flush: 'post' })
 watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], startAudioBands)
 watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.currentSong?.title], startBassTrackInfo, { immediate: true })
+watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRotation, { immediate: true })
 </script>
 
 <style scoped>
@@ -1072,6 +1117,7 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     display: grid;
     place-items: center;
     transform-origin: center;
+    will-change: transform;
     --tick-radius: 138px;
 }
 
