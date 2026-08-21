@@ -35,11 +35,21 @@
 
             <div class="controls" aria-label="播放控制" @mousedown.stop>
                 <div class="transport-buttons">
-                    <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
-                        :while-press="buttonPress" :transition="microTransition" aria-label="播放列表"
-                        @click.stop="$emit('queue')">
-                        <ListMusic :size="14" :stroke-width="1.8" />
-                    </MotionButton>
+                    <div id="mini-playback-anchor" ref="miniPopoverAnchorRef" class="mini-popover-anchor">
+                        <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
+                            :while-press="buttonPress" :transition="microTransition" aria-label="音量和播放顺序"
+                            :aria-expanded="isPlaybackModePopoverOpen"
+                            @click.stop="isPlaybackModePopoverOpen = !isPlaybackModePopoverOpen">
+                            <Menu :size="14" :stroke-width="1.8" />
+                        </MotionButton>
+                        <PlaybackModePopover :open="isPlaybackModePopoverOpen" :mode="props.playbackMode"
+                            anchor-id="mini-playback-anchor" placement="below" :list-loop="props.listLoop"
+                            :include-volume="true" :volume="props.volume" :muted="props.muted"
+                            @update:mode="$emit('playback-mode-change', $event)"
+                            @update:list-loop="$emit('list-loop-change', $event)"
+                            @update:volume="$emit('volume-change', $event)" @mute-change="$emit('mute-change', $event)"
+                            @close="isPlaybackModePopoverOpen = false" />
+                    </div>
                     <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
                         :transition="microTransition" aria-label="上一首" @click.stop="$emit('previous')">
                         <SkipBack :size="14" :stroke-width="1.8" />
@@ -54,22 +64,12 @@
                         :transition="microTransition" aria-label="下一首" @click.stop="$emit('next')">
                         <SkipForward :size="14" :stroke-width="1.8" />
                     </MotionButton>
-                    <div id="mini-playback-anchor" ref="miniPopoverAnchorRef" class="mini-popover-anchor">
-                        <MotionButton class="control-button secondary-control"
-                            :while-hover="buttonHover" :while-press="buttonPress" :transition="microTransition"
-                            aria-label="音量和播放顺序" :aria-expanded="isPlaybackModePopoverOpen"
-                            @click.stop="isPlaybackModePopoverOpen = !isPlaybackModePopoverOpen">
-                            <Menu :size="14" :stroke-width="1.8" />
-                        </MotionButton>
-                        <PlaybackModePopover :open="isPlaybackModePopoverOpen" :mode="props.playbackMode"
-                            anchor-id="mini-playback-anchor" placement="below" :list-loop="props.listLoop"
-                            :include-volume="true" :volume="props.volume" :muted="props.muted"
-                            @update:mode="$emit('playback-mode-change', $event)"
-                            @update:list-loop="$emit('list-loop-change', $event)"
-                            @update:volume="$emit('volume-change', $event)" @mute-change="$emit('mute-change', $event)"
-                            @close="isPlaybackModePopoverOpen = false" />
-                    </div>
 
+                    <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
+                        :while-press="buttonPress" :transition="microTransition" aria-label="播放列表"
+                        @click.stop="$emit('queue')">
+                        <ListMusic :size="14" :stroke-width="1.8" />
+                    </MotionButton>
                 </div>
 
                 <div ref="progressRef" class="top-progress" role="slider" tabindex="0" :aria-valuenow="clampedProgress"
