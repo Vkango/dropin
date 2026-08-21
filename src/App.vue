@@ -73,6 +73,7 @@ let seekTimer = null
 let pendingSeekSeconds = null
 let seekInFlight = false
 let seekCommitRequested = false
+const SEEK_END_EPSILON_SECONDS = 0.05
 let bassReleaseInFlight = null
 let isAppDisposing = false
 let unlistenBassEvents = () => { }
@@ -777,7 +778,10 @@ const flushSeek = async () => {
   seekTimer = null
   if (seekInFlight || pendingSeekSeconds === null || !activeChannelId.value || activeLengthSeconds.value <= 0) return
 
-  const targetSeconds = pendingSeekSeconds
+  // BASS rejects a position exactly at the stream length; keep the visual
+  // slider at 100% while seeking to the last valid sample instead.
+  const maxSeekSeconds = Math.max(0, activeLengthSeconds.value - SEEK_END_EPSILON_SECONDS)
+  const targetSeconds = Math.max(0, Math.min(maxSeekSeconds, pendingSeekSeconds))
   const channelId = activeChannelId.value
   pendingSeekSeconds = null
   seekCommitRequested = false

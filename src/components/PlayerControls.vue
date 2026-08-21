@@ -75,9 +75,7 @@
                 <div ref="progressRef" class="top-progress" role="slider" tabindex="0" :aria-valuenow="clampedProgress"
                     aria-valuemin="0" aria-valuemax="100" aria-label="播放进度"
                     :class="{ 'is-dragging': isProgressDragging }" @mousedown.stop
-                    @pointerdown.stop.prevent="handleProgressPointerDown" @pointermove.stop="handleProgressPointerMove"
-                    @pointerup.stop="handleProgressPointerUp" @pointercancel.stop="handleProgressPointerUp"
-                    @lostpointercapture="handleProgressPointerUp"
+                    @pointerdown.stop.prevent="handleProgressPointerDown"
                     @keydown.left.prevent="emitProgressCommit(clampedProgress - 5)"
                     @keydown.right.prevent="emitProgressCommit(clampedProgress + 5)">
                     <div class="top-progress-track">
@@ -93,7 +91,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { ListMusic, Menu, Pause, Play, SkipBack, SkipForward } from '@lucide/vue'
 import { motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
@@ -171,6 +169,7 @@ const MotionButton = motion.button
 const MotionImg = motion.img
 const progressRef = ref(null)
 const isProgressDragging = ref(false)
+const activeProgressPointerId = ref(null)
 const isPlaybackModePopoverOpen = ref(false)
 const miniPopoverAnchorRef = ref(null)
 
@@ -205,8 +204,7 @@ const emitProgressCommit = (percent) => {
     emit('progress-commit', boundedPercent)
 }
 
-const emitProgressFromPointer = (event) => {
-    const element = progressRef.value
+const emitProgressFromPointer = (event, element = progressRef.value) => {
     if (!element) return null
 
     const rect = element.getBoundingClientRect()
@@ -219,23 +217,39 @@ const emitProgressFromPointer = (event) => {
 const handleProgressPointerDown = (event) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return
     isProgressDragging.value = true
+    activeProgressPointerId.value = event.pointerId
     progressRef.value?.setPointerCapture?.(event.pointerId)
     emitProgressFromPointer(event)
+    window.addEventListener('pointermove', handleProgressPointerMove)
+    window.addEventListener('pointerup', handleProgressPointerUp)
+    window.addEventListener('pointercancel', handleProgressPointerUp)
 }
 
 const handleProgressPointerMove = (event) => {
-    if (isProgressDragging.value) emitProgressFromPointer(event)
+    if (isProgressDragging.value && event.pointerId === activeProgressPointerId.value) {
+        emitProgressFromPointer(event)
+    }
 }
 
 const handleProgressPointerUp = (event) => {
-    if (!isProgressDragging.value) return
+    if (!isProgressDragging.value || event.pointerId !== activeProgressPointerId.value) return
     const percent = emitProgressFromPointer(event)
-    emit('progress-commit', percent)
+    emit('progress-commit', percent ?? 0)
     isProgressDragging.value = false
+    activeProgressPointerId.value = null
+    window.removeEventListener('pointermove', handleProgressPointerMove)
+    window.removeEventListener('pointerup', handleProgressPointerUp)
+    window.removeEventListener('pointercancel', handleProgressPointerUp)
     if (progressRef.value?.hasPointerCapture?.(event.pointerId)) {
         progressRef.value.releasePointerCapture(event.pointerId)
     }
 }
+
+onBeforeUnmount(() => {
+    window.removeEventListener('pointermove', handleProgressPointerMove)
+    window.removeEventListener('pointerup', handleProgressPointerUp)
+    window.removeEventListener('pointercancel', handleProgressPointerUp)
+})
 </script>
 
 <style scoped>

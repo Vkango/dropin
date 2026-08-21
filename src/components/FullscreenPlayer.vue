@@ -202,12 +202,10 @@
 
                                 <div class="progress-section">
                                     <span class="time-display">{{ currentTime }}</span>
-                                    <div class="progress-container" :class="{ 'is-dragging': isProgressDragging }"
+                                    <div ref="progressRef" class="progress-container" :class="{ 'is-dragging': isProgressDragging }"
                                         role="slider" :aria-valuenow="Math.round(progress)" aria-valuemin="0"
                                         aria-valuemax="100" tabindex="0" @keydown="handleProgressKeydown"
-                                        @pointerdown="handleProgressPointerDown"
-                                        @pointermove="handleProgressPointerMove" @pointerup="handleProgressPointerUp"
-                                        @pointercancel="handleProgressPointerUp">
+                                        @pointerdown="handleProgressPointerDown">
                                         <div class="progress-track">
                                             <MotionDiv class="progress-fill" :animate="{ width: `${progress}%` }"
                                                 :transition="progressTransition"></MotionDiv>
@@ -405,6 +403,8 @@ const MotionButton = motion.button
 const MotionSpan = motion.span
 const reducedMotion = useReducedMotion()
 const isProgressDragging = ref(false)
+const progressRef = ref(null)
+const activeProgressPointerId = ref(null)
 const isVolumePopoverOpen = ref(false)
 const isPlaybackModePopoverOpen = ref(false)
 const volumePopoverAnchorRef = ref(null)
@@ -842,7 +842,8 @@ const getLyricState = (index) => {
 }
 
 const progressFromPointer = (event) => {
-    const rect = event.currentTarget.getBoundingClientRect()
+    const rect = progressRef.value?.getBoundingClientRect()
+    if (!rect?.width) return 0
     const percent = ((event.clientX - rect.left) / rect.width) * 100
     return Math.max(0, Math.min(100, percent))
 }
@@ -850,22 +851,32 @@ const progressFromPointer = (event) => {
 const handleProgressPointerDown = (event) => {
     if (event.button !== 0) return
     isProgressDragging.value = true
-    event.currentTarget.setPointerCapture?.(event.pointerId)
+    activeProgressPointerId.value = event.pointerId
+    progressRef.value?.setPointerCapture?.(event.pointerId)
     emit('progress-change', progressFromPointer(event))
+    window.addEventListener('pointermove', handleProgressPointerMove)
+    window.addEventListener('pointerup', handleProgressPointerUp)
+    window.addEventListener('pointercancel', handleProgressPointerUp)
 }
 
 const handleProgressPointerMove = (event) => {
-    if (!isProgressDragging.value) return
+    if (!isProgressDragging.value || event.pointerId !== activeProgressPointerId.value) return
     emit('progress-change', progressFromPointer(event))
 }
 
 const handleProgressPointerUp = (event) => {
-    if (!isProgressDragging.value) return
+    if (!isProgressDragging.value || event.pointerId !== activeProgressPointerId.value) return
     const nextProgress = progressFromPointer(event)
     emit('progress-change', nextProgress)
     emit('progress-commit', nextProgress)
-    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    if (progressRef.value?.hasPointerCapture?.(event.pointerId)) {
+        progressRef.value.releasePointerCapture(event.pointerId)
+    }
     isProgressDragging.value = false
+    activeProgressPointerId.value = null
+    window.removeEventListener('pointermove', handleProgressPointerMove)
+    window.removeEventListener('pointerup', handleProgressPointerUp)
+    window.removeEventListener('pointercancel', handleProgressPointerUp)
 }
 
 const handleProgressKeydown = (event) => {
@@ -928,6 +939,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+    window.removeEventListener('pointermove', handleProgressPointerMove)
+    window.removeEventListener('pointerup', handleProgressPointerUp)
+    window.removeEventListener('pointercancel', handleProgressPointerUp)
     document.removeEventListener('keydown', handleKeydown)
     document.removeEventListener('fullscreenchange', syncBrowserFullscreen)
     window.removeEventListener('resize', updateCompactViewport)
