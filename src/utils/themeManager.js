@@ -4,10 +4,17 @@
 
 import { themeExtractor, applyTheme, extractAndApplyThemeFromAlbum } from './themeExtractor.js'
 
+const DEFAULT_THEME_MODE = 'system';
+const DEFAULT_MANUAL_THEME_COLOR = '#88d0ec';
+const THEME_MODES = ['system', 'light', 'dark'];
+
 class ThemeManager {
     constructor() {
         this.currentTheme = null;
         this.isDarkMode = false;
+        this.themeMode = DEFAULT_THEME_MODE;
+        this.autoAlbumTheme = true;
+        this.manualThemeColor = DEFAULT_MANUAL_THEME_COLOR;
         this.observers = [];
 
         // 检测系统主题偏好
@@ -31,13 +38,40 @@ class ThemeManager {
         if (window.matchMedia) {
             const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
             mediaQuery.addEventListener('change', (e) => {
-                this.isDarkMode = e.matches;
-                if (this.currentTheme) {
-                    this.applyCurrentTheme();
+                if (this.themeMode === 'system') {
+                    this.isDarkMode = e.matches;
+                    if (this.currentTheme) {
+                        this.applyCurrentTheme();
+                    }
+                    this.notifyObservers();
                 }
-                this.notifyObservers();
             });
         }
+    }
+
+    configure({ themeMode, autoAlbumTheme, manualThemeColor } = {}) {
+        this.themeMode = THEME_MODES.includes(themeMode) ? themeMode : DEFAULT_THEME_MODE;
+        this.autoAlbumTheme = autoAlbumTheme !== false;
+        this.manualThemeColor = /^#[0-9a-f]{6}$/i.test(manualThemeColor)
+            ? manualThemeColor.toLowerCase()
+            : DEFAULT_MANUAL_THEME_COLOR;
+        this.isDarkMode = this.resolveIsDarkMode();
+
+        if (!this.autoAlbumTheme) {
+            this.currentTheme = themeExtractor.generateThemeFromColor(this.manualThemeColor);
+        } else if (!this.currentTheme) {
+            this.currentTheme = themeExtractor.getDefaultTheme();
+        }
+
+        this.applyCurrentTheme();
+        this.notifyObservers();
+        return this.getCurrentColors();
+    }
+
+    resolveIsDarkMode() {
+        if (this.themeMode === 'dark') return true;
+        if (this.themeMode === 'light') return false;
+        return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? this.isDarkMode;
     }
 
     /**
@@ -45,6 +79,8 @@ class ThemeManager {
      * @param {string} albumCoverUrl - 专辑封面URL
      */
     async updateThemeFromAlbum(albumCoverUrl) {
+        if (!this.autoAlbumTheme) return this.currentTheme;
+
         try {
             console.log('正在从专辑封面提取主题...', albumCoverUrl);
 
@@ -70,6 +106,7 @@ class ThemeManager {
      */
     toggleDarkMode() {
         this.isDarkMode = !this.isDarkMode;
+        this.themeMode = this.isDarkMode ? 'dark' : 'light';
         this.applyCurrentTheme();
         this.notifyObservers();
     }

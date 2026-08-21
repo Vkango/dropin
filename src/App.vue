@@ -16,10 +16,13 @@ import Playlist from './components/Playlist.vue'
 import { useReducedMotion } from 'motion-v'
 import { themeManager } from './utils/themeManager.js'
 import { bassCall, listenToBassEvents } from './services/bassApi.js'
+import { smtcApi, listenToSmtcEvents } from './services/smtcApi.js'
 import { useLibraryStore } from './stores/libraryStore.js'
+import { useAppSettingsStore } from './stores/appSettingsStore.js'
 import { animateElement, APPLE_SPRING } from './utils/motion.js'
 
 const libraryStore = useLibraryStore()
+const settingsStore = useAppSettingsStore()
 
 // 当前页面状态
 const currentPage = ref('home')
@@ -79,9 +82,11 @@ const SEEK_END_EPSILON_SECONDS = 0.05
 let bassReleaseInFlight = null
 let isAppDisposing = false
 let unlistenBassEvents = () => { }
+let unlistenSmtcEvents = () => { }
 let snapshotInFlight = false
 let lastRecordedTrackId = null
 let lastRecordedPositionMs = -1
+let smtcMediaRequestId = 0
 const lyricsPayload = ref(null)
 const lyricsLoading = ref(false)
 let lyricsRequestId = 0
@@ -92,6 +97,30 @@ const searchQuery = ref('')
 // 主题状态
 const currentTheme = ref(null)
 const isDarkTheme = computed(() => currentTheme.value?.isDark ?? themeManager.isDarkMode)
+const applyThemeSettings = () => {
+  themeManager.configure({
+    themeMode: settingsStore.state.themeMode,
+    autoAlbumTheme: settingsStore.state.autoAlbumTheme,
+    manualThemeColor: settingsStore.state.manualThemeColor
+  })
+}
+const handleThemeChange = (themeColors) => {
+  currentTheme.value = themeColors
+}
+
+watch(
+  () => [
+    settingsStore.state.themeMode,
+    settingsStore.state.autoAlbumTheme,
+    settingsStore.state.manualThemeColor
+  ],
+  async ([themeMode, autoAlbumTheme, manualThemeColor], previous) => {
+    themeManager.configure({ themeMode, autoAlbumTheme, manualThemeColor })
+    if (autoAlbumTheme && previous?.[1] === false && currentSong.value.cover) {
+      await updateThemeFromSong(currentSong.value)
+    }
+  }
+)
 
 // 音乐库数据
 const musicLibrary = reactive({
@@ -486,6 +515,47 @@ watch(
   () => loadLyricsForSong(currentSong.value)
 )
 
+const smtcDurationMs = (song = currentSong.value) => {
+  const trackDuration = Number(song?.durationMs)
+  if (Number.isFinite(trackDuration) && trackDuration > 0) return Math.round(trackDuration)
+  return Math.max(0, Math.round(Number(activeLengthSeconds.value || 0) * 1000))
+}
+
+const safeSmtcCall = (promise, label) => {
+  void promise.catch((error) => console.debug(`SMTC ${label} failed:`, error))
+}
+
+const syncSmtcTimeline = (positionMs = currentTimeMs.value, durationMs = smtcDurationMs()) => {
+  if (!activeChannelId.value) return
+  safeSmtcCall(smtcApi.setTimeline(positionMs, durationMs), 'timeline update')
+}
+
+const syncSmtcPlaybackStatus = () => {
+  safeSmtcCall(smtcApi.setPlaybackStatus(isPlaying.value), 'playback status update')
+}
+
+const syncSmtcMedia = async (song) => {
+  const requestId = ++smtcMediaRequestId
+  let thumbnailPath = null
+  if (song?.coverId) {
+    try {
+      const payload = await libraryStore.mediaApi.coverPath(song.coverId)
+      thumbnailPath = payload?.path || null
+    } catch (error) {
+      console.debug('SMTC cover path lookup failed:', error)
+    }
+  }
+  if (requestId !== smtcMediaRequestId || currentSong.value.id !== song?.id) return
+  safeSmtcCall(smtcApi.setMediaInfo({
+    title: song?.title || '未知歌曲',
+    artist: song?.artist || '',
+    album: song?.album || '',
+    thumbnailPath
+  }), 'media info update')
+  syncSmtcTimeline(0, smtcDurationMs(song))
+  syncSmtcPlaybackStatus()
+}
+
 const savePlaybackProgress = (trackId, positionMs, force = false) => {
   if (!trackId || (!force && trackId === lastRecordedTrackId && Math.abs(positionMs - lastRecordedPositionMs) < 2000)) return
   lastRecordedTrackId = trackId
@@ -510,6 +580,8 @@ const refreshPlaybackSnapshot = async (forceRecord = false) => {
     progress.value = activeLengthSeconds.value > 0 ? (position / activeLengthSeconds.value) * 100 : 0
     const wasPlaying = isPlaying.value
     isPlaying.value = snapshot.state === 'playing'
+    syncSmtcPlaybackStatus()
+    syncSmtcTimeline(currentTimeMs.value, activeLengthSeconds.value * 1000)
     savePlaybackProgress(currentSong.value.id, currentTimeMs.value, forceRecord)
 
     if (wasPlaying && snapshot.state === 'stopped' && activeLengthSeconds.value > 0
@@ -555,6 +627,14 @@ const releaseBassResources = () => {
   currentTime.value = '00:00'
   totalTime.value = '00:00'
   progress.value = 0
+  safeSmtcCall(smtcApi.setMediaInfo({
+    title: 'Dropin',
+    artist: 'Player',
+    album: '',
+    thumbnailPath: null
+  }), 'idle media info reset')
+  safeSmtcCall(smtcApi.setPlaybackStatus(false), 'playback status reset')
+  safeSmtcCall(smtcApi.setTimeline(0, 0), 'timeline reset')
   lastRecordedTrackId = null
   lastRecordedPositionMs = -1
 
@@ -616,6 +696,7 @@ const playSong = async (song, queue = null) => {
     totalTime.value = song.duration || '00:00'
     lastRecordedTrackId = song.id
     lastRecordedPositionMs = 0
+    void syncSmtcMedia(song)
     updateThemeFromSong(song)
     startPlaybackSnapshot()
   } catch (error) {
@@ -717,6 +798,32 @@ const handlePrevious = () => {
   if (index >= 0 && songs.length) playSong(songs[(index - 1 + songs.length) % songs.length], playbackQueue.value)
 }
 
+const handleSmtcEvent = (event) => {
+  switch (event) {
+    case 'play':
+      if (!activeChannelId.value) {
+        if (libraryStore.tracks.value[0]) void playSong(libraryStore.tracks.value[0])
+      } else if (!isPlaying.value) {
+        void handleTogglePlay()
+      }
+      break
+    case 'pause':
+      if (isPlaying.value) void handleTogglePlay()
+      break
+    case 'stop':
+      void stopAfterPlayback()
+      break
+    case 'previous':
+      handlePrevious()
+      break
+    case 'next':
+      handleNext()
+      break
+    default:
+      break
+  }
+}
+
 const handleNext = () => {
   void advancePlayback(true)
 }
@@ -773,6 +880,7 @@ const handleProgressChange = (percent) => {
     currentTimeMs.value = Math.round(targetSeconds * 1000)
     currentTime.value = formatSeconds(targetSeconds)
     pendingSeekSeconds = targetSeconds
+    syncSmtcTimeline(currentTimeMs.value, activeLengthSeconds.value * 1000)
   }
 }
 
@@ -969,12 +1077,12 @@ onMounted(async () => {
   window.addEventListener('beforeunload', handleWindowExit)
   window.addEventListener('pagehide', handleWindowExit)
   unlistenBassEvents = await listenToBassEvents(handleBassEvent)
+  unlistenSmtcEvents = await listenToSmtcEvents(handleSmtcEvent)
 
   // 监听主题变化
-  themeManager.addObserver((themeColors) => {
-    currentTheme.value = themeColors
-    console.log('主题已更新:', themeColors)
-  })
+  themeManager.addObserver(handleThemeChange)
+  applyThemeSettings()
+  currentTheme.value = themeManager.getCurrentColors()
 
   // 从当前歌曲初始化主题
   if (currentSong.value.cover) {
@@ -995,6 +1103,8 @@ onBeforeUnmount(() => {
   isAppDisposing = true
   void releaseBassResources()
   unlistenBassEvents()
+  unlistenSmtcEvents()
+  themeManager.removeObserver(handleThemeChange)
   unbindScrollSources()
   libraryStore.dispose()
 })

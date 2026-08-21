@@ -309,11 +309,30 @@ class MonetThemeExtractor {
      */
     getDefaultTheme() {
         const defaultPrimary = { r: 136, g: 208, b: 236 };
+        return this.generateThemeFromColor(defaultPrimary);
+    }
+
+    /**
+     * 从主题种子色生成亮色和暗色配色。
+     */
+    generateThemeFromColor(color) {
+        const primaryColor = typeof color === 'string' ? this.hexToRgb(color) : color;
+        if (!primaryColor) return this.generateThemeFromColor({ r: 136, g: 208, b: 236 });
+
         return {
-            sourceColor: defaultPrimary,
-            lightTheme: this.generateLightTheme(defaultPrimary),
-            darkTheme: this.generateDarkTheme(defaultPrimary),
-            colors: [defaultPrimary]
+            sourceColor: primaryColor,
+            lightTheme: this.generateLightTheme(primaryColor),
+            darkTheme: this.generateDarkTheme(primaryColor),
+            colors: [primaryColor]
+        };
+    }
+
+    hexToRgb(value) {
+        if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) return null;
+        return {
+            r: Number.parseInt(value.slice(1, 3), 16),
+            g: Number.parseInt(value.slice(3, 5), 16),
+            b: Number.parseInt(value.slice(5, 7), 16)
         };
     }
 
@@ -452,4 +471,12 @@ export async function extractAndApplyThemeFromAlbum(albumCoverUrl, isDark = fals
         applyTheme(defaultTheme, isDark);
         return defaultTheme;
     }
+}
+
+export function generateThemeFromColor(color) {
+    return themeExtractor.generateThemeFromColor(color);
+}
+
+export function hexToRgb(color) {
+    return themeExtractor.hexToRgb(color);
 }

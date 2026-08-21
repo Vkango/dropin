@@ -3,16 +3,37 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
 
-const SETTINGS_VERSION: u32 = 1;
+const SETTINGS_VERSION: u32 = 2;
 const DEFAULT_FRAME_RATE: u32 = 60;
 const MIN_FRAME_RATE: u32 = 15;
 const MAX_FRAME_RATE: u32 = 120;
+const DEFAULT_THEME_MODE: &str = "system";
+const DEFAULT_AUTO_ALBUM_THEME: bool = true;
+const DEFAULT_MANUAL_THEME_COLOR: &str = "#88d0ec";
+
+fn default_theme_mode() -> String {
+    DEFAULT_THEME_MODE.to_string()
+}
+
+fn default_auto_album_theme() -> bool {
+    DEFAULT_AUTO_ALBUM_THEME
+}
+
+fn default_manual_theme_color() -> String {
+    DEFAULT_MANUAL_THEME_COLOR.to_string()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     pub version: u32,
     pub animation_frame_rate: Option<u32>,
+    #[serde(default = "default_theme_mode")]
+    pub theme_mode: String,
+    #[serde(default = "default_auto_album_theme")]
+    pub auto_album_theme: bool,
+    #[serde(default = "default_manual_theme_color")]
+    pub manual_theme_color: String,
 }
 
 impl Default for AppSettings {
@@ -20,6 +41,9 @@ impl Default for AppSettings {
         Self {
             version: SETTINGS_VERSION,
             animation_frame_rate: Some(DEFAULT_FRAME_RATE),
+            theme_mode: default_theme_mode(),
+            auto_album_theme: default_auto_album_theme(),
+            manual_theme_color: default_manual_theme_color(),
         }
     }
 }
@@ -38,10 +62,31 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
         .animation_frame_rate
         .map(|value| value.clamp(MIN_FRAME_RATE, MAX_FRAME_RATE));
 
+    let theme_mode = match settings.theme_mode.as_str() {
+        "system" | "light" | "dark" => settings.theme_mode,
+        _ => default_theme_mode(),
+    };
+    let manual_theme_color = if is_valid_theme_color(&settings.manual_theme_color) {
+        settings.manual_theme_color.to_lowercase()
+    } else {
+        default_manual_theme_color()
+    };
+
     Ok(AppSettings {
         version: SETTINGS_VERSION,
         animation_frame_rate: frame_rate,
+        theme_mode,
+        auto_album_theme: settings.auto_album_theme,
+        manual_theme_color,
     })
+}
+
+fn is_valid_theme_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value.as_bytes()[1..]
+            .iter()
+            .all(|character| character.is_ascii_hexdigit())
 }
 
 #[tauri::command]

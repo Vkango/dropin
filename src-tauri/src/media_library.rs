@@ -268,6 +268,7 @@ impl MediaRuntime {
             "media_library_refresh_track" => self.refresh_track(args),
             "media_library_remove_track" => self.remove_track(args),
             "media_cover_get" => self.cover_get(args),
+            "media_cover_path" => self.cover_path(args),
             "media_playback_history" => self.playback_history(args),
             "media_playback_record" => self.playback_record(args),
             "media_pick_folder" => self.pick_folder(),
@@ -766,6 +767,23 @@ impl MediaRuntime {
             data_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
         })
         .map_err(|error| media_error("media_cover_get", error.to_string()))?)
+    }
+
+    fn cover_path(&mut self, args: Value) -> Result<Value, MediaError> {
+        let id = required_string(&args, "coverId", "media_cover_path")?;
+        let path: Option<String> = self
+            .connection("media_cover_path")?
+            .query_row(
+                "SELECT path FROM covers WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| sqlite_error("media_cover_path", error))?;
+        Ok(json!({
+            "coverId": id,
+            "path": path.filter(|path| Path::new(path).is_file())
+        }))
     }
 
     fn playback_record(&mut self, args: Value) -> Result<Value, MediaError> {
@@ -1802,6 +1820,14 @@ pub fn media_cover_get(
         service.call("media_cover_get", json!({ "coverId": cover_id }))?,
         "media_cover_get",
     )
+}
+
+#[tauri::command]
+pub fn media_cover_path(
+    service: State<'_, MediaService>,
+    cover_id: String,
+) -> Result<Value, MediaError> {
+    service.call("media_cover_path", json!({ "coverId": cover_id }))
 }
 
 #[tauri::command]

@@ -2,6 +2,7 @@ mod bass_bridge;
 mod lyrics;
 mod media_library;
 mod settings;
+mod smtc_bridge;
 
 use serde_json::json;
 use tauri::Manager;
@@ -27,9 +28,13 @@ pub fn run() {
             let bass_service = bass_bridge::BassService::new(app.handle().clone());
             let bass_cleanup_service = bass_service.clone();
             app.manage(bass_service);
+            let smtc_service = smtc_bridge::SmtcService::new(app.handle().clone());
+            let smtc_cleanup_service = smtc_service.clone();
+            app.manage(smtc_service);
             main_window.on_window_event(move |event| {
                 if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
                     let _ = bass_cleanup_service.call_operation("bass_unload", json!({}));
+                    let _ = smtc_cleanup_service.call_operation("smtc_close", json!({}));
                 }
             });
             app.manage(media_library::MediaService::new(app.handle().clone()));
@@ -52,12 +57,14 @@ pub fn run() {
             media_library::media_library_refresh_track,
             media_library::media_library_remove_track,
             media_library::media_cover_get,
+            media_library::media_cover_path,
             media_library::media_playback_history,
             media_library::media_playback_record,
             media_library::media_pick_folder,
             media_library::media_playback_open,
             settings::app_settings_read,
-            settings::app_settings_write
+            settings::app_settings_write,
+            smtc_bridge::smtc_call
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

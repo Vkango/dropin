@@ -2,12 +2,19 @@ import { invoke } from '@tauri-apps/api/core'
 import { computed, reactive } from 'vue'
 import { frameRateLimits, setGlobalAnimationFrameRate } from '../utils/frameRateScheduler.js'
 
-const SETTINGS_VERSION = 1
+const SETTINGS_VERSION = 2
 const SAVE_DELAY_MS = 220
+const DEFAULT_THEME_MODE = 'system'
+const DEFAULT_AUTO_ALBUM_THEME = true
+const DEFAULT_MANUAL_THEME_COLOR = '#88d0ec'
+const THEME_MODES = ['system', 'light', 'dark']
 
 const state = reactive({
   version: SETTINGS_VERSION,
   animationFrameRate: frameRateLimits.default,
+  themeMode: DEFAULT_THEME_MODE,
+  autoAlbumTheme: DEFAULT_AUTO_ALBUM_THEME,
+  manualThemeColor: DEFAULT_MANUAL_THEME_COLOR,
   loading: false,
   saving: false,
   error: null
@@ -24,15 +31,28 @@ const normalizeFrameRate = (value) => {
   return Math.round(Math.max(frameRateLimits.min, Math.min(frameRateLimits.max, numericValue)))
 }
 
+const normalizeThemeMode = (value) => THEME_MODES.includes(value) ? value : DEFAULT_THEME_MODE
+
+const normalizeManualThemeColor = (value) => {
+  if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) return DEFAULT_MANUAL_THEME_COLOR
+  return value.toLowerCase()
+}
+
 const normalizeSettings = (settings = {}) => ({
   version: SETTINGS_VERSION,
-  animationFrameRate: normalizeFrameRate(settings.animationFrameRate)
+  animationFrameRate: normalizeFrameRate(settings.animationFrameRate),
+  themeMode: normalizeThemeMode(settings.themeMode),
+  autoAlbumTheme: settings.autoAlbumTheme !== false,
+  manualThemeColor: normalizeManualThemeColor(settings.manualThemeColor)
 })
 
 const applySettings = (settings) => {
   const normalized = normalizeSettings(settings)
   state.version = normalized.version
   state.animationFrameRate = normalized.animationFrameRate
+  state.themeMode = normalized.themeMode
+  state.autoAlbumTheme = normalized.autoAlbumTheme
+  state.manualThemeColor = normalized.manualThemeColor
   setGlobalAnimationFrameRate(normalized.animationFrameRate)
   return normalized
 }
@@ -83,14 +103,38 @@ export function updateAnimationFrameRate(value) {
   scheduleSave()
 }
 
+export function updateThemeMode(value) {
+  state.themeMode = normalizeThemeMode(value)
+  scheduleSave()
+}
+
+export function updateAutoAlbumTheme(value) {
+  state.autoAlbumTheme = Boolean(value)
+  scheduleSave()
+}
+
+export function updateManualThemeColor(value) {
+  state.manualThemeColor = normalizeManualThemeColor(value)
+  scheduleSave()
+}
+
 export function useAppSettingsStore() {
   return {
     state,
     isFrameRateUnlimited: computed(() => state.animationFrameRate === null),
     effectiveFrameRate: computed(() => state.animationFrameRate ?? '无限制'),
     load: loadAppSettings,
-    updateAnimationFrameRate
+    updateAnimationFrameRate,
+    updateThemeMode,
+    updateAutoAlbumTheme,
+    updateManualThemeColor
   }
 }
 
-export { frameRateLimits }
+export {
+  frameRateLimits,
+  DEFAULT_THEME_MODE,
+  DEFAULT_AUTO_ALBUM_THEME,
+  DEFAULT_MANUAL_THEME_COLOR,
+  THEME_MODES
+}

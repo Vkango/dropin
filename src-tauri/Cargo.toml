@@ -32,3 +32,6 @@ sha2 = "0.10"
 base64 = "0.22"
 lrc = "0.2"
 encoding_rs = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+smtc-player = { package = "smtc-player", path = "../../../Rust/smtc-player" }
