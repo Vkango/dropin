@@ -50,9 +50,10 @@
                         <MotionDiv v-if="!isPlaylistOpen" key="lyrics-view" class="lyrics-view"
                             :initial="playlistViewInitial" :animate="playlistViewAnimate" :exit="playlistViewExit"
                             :transition="playlistTransition" @animation-complete="handleLyricsViewAnimationComplete">
-                            <div ref="lyricsWindowRef" class="lyrics-window">
-                                <MotionDiv v-if="lyricRows.length" class="lyrics-track" :animate="{ y: lyricOffset }"
-                                    :transition="contentTransition">
+                            <div ref="lyricsWindowRef" class="lyrics-window" tabindex="0" aria-label="歌词"
+                                @wheel="handleLyricsWheel" @pointerdown="handleLyricsPointerDown"
+                                @scroll="handleLyricsScroll">
+                                <MotionDiv v-if="lyricRows.length" class="lyrics-track">
                                     <MotionDiv v-for="(row, index) in lyricRows" :ref="setLyricRowRef(row.key)"
                                         :key="row.key" class="lyric-line"
                                         :class="{ 'lyric-interlude-row': row.type === 'interlude' }"
@@ -605,6 +606,10 @@ const albumSize = ref(0)
 let albumResizeObserver
 let lyricsResizeObserver
 let lyricsMeasureFrame
+let lyricsIdleTimer
+let lyricsProgrammaticScrollTimer
+let lyricsProgrammaticScroll = false
+const LYRICS_IDLE_TIMEOUT = 5000
 const tickCount = 52
 const ticks = Array.from({ length: tickCount }, (_, index) => (index * 360) / tickCount)
 const syncedLyrics = computed(() => props.lyrics?.lines || [])
@@ -644,7 +649,7 @@ const lyricRows = computed(() => {
 const activeLyricRowIndex = computed(() => lyricRows.value.findIndex((row) =>
     props.currentTimeMs >= row.startTimeMs && props.currentTimeMs < row.endTimeMs
 ))
-const lyricOffset = ref(0)
+const isLyricsManualScrolling = ref(false)
 
 const setLyricRowRef = (key) => (value) => {
     const element = value?.$el ?? value
@@ -652,27 +657,79 @@ const setLyricRowRef = (key) => (value) => {
     else lyricRowRefs.delete(key)
 }
 
-const measureLyrics = async () => {
+const clearLyricsIdleTimer = () => {
+    if (lyricsIdleTimer) window.clearTimeout(lyricsIdleTimer)
+    lyricsIdleTimer = undefined
+}
+
+const clearProgrammaticLyricsScroll = () => {
+    if (lyricsProgrammaticScrollTimer) window.clearTimeout(lyricsProgrammaticScrollTimer)
+    lyricsProgrammaticScrollTimer = undefined
+    lyricsProgrammaticScroll = false
+}
+
+const markProgrammaticLyricsScroll = () => {
+    if (lyricsProgrammaticScrollTimer) window.clearTimeout(lyricsProgrammaticScrollTimer)
+    lyricsProgrammaticScroll = true
+    lyricsProgrammaticScrollTimer = window.setTimeout(() => {
+        lyricsProgrammaticScrollTimer = undefined
+        lyricsProgrammaticScroll = false
+    }, reducedMotion.value ? 100 : 1200)
+}
+
+const scrollLyricsToActive = async (behavior = 'auto') => {
     await nextTick()
     const windowElement = lyricsWindowRef.value
     const activeRowKey = activeLyricTimelineRow.value?.key
     const lineElement = activeRowKey ? lyricRowRefs.get(activeRowKey) : null
     if (!windowElement) return
-    if (!lineElement || !activeRowKey) {
-        lyricOffset.value = 0
-        return
-    }
 
-    lyricOffset.value = windowElement.clientHeight / 2
-        - lineElement.offsetTop
-        - lineElement.offsetHeight / 2
+    const targetTop = lineElement && activeRowKey
+        ? lineElement.offsetTop + lineElement.offsetHeight / 2 - windowElement.clientHeight / 2
+        : 0
+    const maxScrollTop = Math.max(0, windowElement.scrollHeight - windowElement.clientHeight)
+    markProgrammaticLyricsScroll()
+    windowElement.scrollTo({
+        top: Math.max(0, Math.min(maxScrollTop, targetTop)),
+        behavior
+    })
+}
+
+const restoreLyricsAutoScroll = () => {
+    lyricsIdleTimer = undefined
+    if (!isLyricsManualScrolling.value) return
+    isLyricsManualScrolling.value = false
+    scheduleLyricsMeasure()
+}
+
+const markLyricsAsManuallyScrolled = () => {
+    if (isPlaylistOpen.value) return
+    clearProgrammaticLyricsScroll()
+    isLyricsManualScrolling.value = true
+    clearLyricsIdleTimer()
+    lyricsIdleTimer = window.setTimeout(restoreLyricsAutoScroll, LYRICS_IDLE_TIMEOUT)
+}
+
+const handleLyricsWheel = (event) => {
+    if (event.deltaX || event.deltaY) markLyricsAsManuallyScrolled()
+}
+
+const handleLyricsPointerDown = (event) => {
+    if (event.button === 0) markLyricsAsManuallyScrolled()
+}
+
+const handleLyricsScroll = () => {
+    if (lyricsProgrammaticScroll) return
+    markLyricsAsManuallyScrolled()
 }
 
 const scheduleLyricsMeasure = () => {
     if (lyricsMeasureFrame) window.cancelAnimationFrame(lyricsMeasureFrame)
     lyricsMeasureFrame = window.requestAnimationFrame(() => {
         lyricsMeasureFrame = undefined
-        measureLyrics()
+        if (!isLyricsManualScrolling.value && !isPlaylistOpen.value) {
+            scrollLyricsToActive(reducedMotion.value ? 'auto' : 'smooth')
+        }
     })
 }
 const albumVisualStyle = computed(() => {
@@ -695,7 +752,9 @@ const getLyricState = (index) => {
     return {
         opacity: distance === 0 ? 1 : Math.max(0.22, 0.7 - distance * 0.13),
         scale: distance === 0 ? 1 : Math.max(0.88, 1 - distance * 0.035),
-        filter: distance === 0 ? 'blur(0px)' : `blur(${Math.min(6, distance * 1.5)}px)`,
+        filter: isLyricsManualScrolling.value || distance === 0
+            ? 'blur(0px)'
+            : `blur(${Math.min(6, distance * 1.5)}px)`,
         color: distance === 0 ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
         fontWeight: distance === 0 ? 750 : 600
     }
@@ -783,7 +842,7 @@ onMounted(() => {
     lyricsResizeObserver = new ResizeObserver(scheduleLyricsMeasure)
     if (lyricsWindowRef.value) lyricsResizeObserver.observe(lyricsWindowRef.value)
     requestAnimationFrame(updateAlbumSize)
-    measureLyrics()
+    scheduleLyricsMeasure()
     startAudioBands()
 })
 
@@ -794,6 +853,8 @@ onUnmounted(() => {
     albumResizeObserver?.disconnect()
     lyricsResizeObserver?.disconnect()
     if (lyricsMeasureFrame) window.cancelAnimationFrame(lyricsMeasureFrame)
+    clearLyricsIdleTimer()
+    clearProgrammaticLyricsScroll()
     lyricRowRefs.clear()
     stopAudioBands()
     stopBassTrackInfo()
@@ -816,6 +877,11 @@ watch(isPlaylistOpen, async () => {
         lyricsResizeObserver?.observe(lyricsWindowRef.value)
         scheduleLyricsMeasure()
     }
+}, { flush: 'post' })
+watch([() => props.isVisible, () => props.currentSong?.id, () => props.lyrics], () => {
+    clearLyricsIdleTimer()
+    clearProgrammaticLyricsScroll()
+    isLyricsManualScrolling.value = false
 }, { flush: 'post' })
 watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], startAudioBands)
 watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.currentSong?.title], startBassTrackInfo, { immediate: true })
@@ -1128,20 +1194,48 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
 .lyrics-window {
     position: absolute;
     inset: 6% 8% 10% 2%;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
     display: flex;
     align-items: stretch;
     justify-content: center;
+    scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.38) transparent;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
     mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
     height: 90%;
 }
 
+.lyrics-window::-webkit-scrollbar {
+    width: 5px;
+}
+
+.lyrics-window::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.lyrics-window::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.38);
+}
+
+.lyrics-window::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.58);
+}
+
 .lyrics-track {
-    position: absolute;
+    position: relative;
     top: 0;
     left: 0;
     width: 100%;
+    height: max-content;
+    min-height: 100%;
+    flex: 0 0 auto;
+    align-self: flex-start;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -1153,6 +1247,7 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
 
 .lyric-line {
     width: 100%;
+    flex: 0 0 auto;
     min-height: 44px;
     padding: 5px 0;
     color: rgba(255, 255, 255, 0.5);
