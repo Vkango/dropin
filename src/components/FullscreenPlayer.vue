@@ -38,8 +38,13 @@
                                 <DiscAlbum style="scale: 0.7;" />{{ currentSong.album }}
                             </p>
 
-                            <div v-if="songTags.length" class="song-tags">
-                                <span v-for="tag in songTags" :key="tag.key" class="tag">{{ tag.label }}</span>
+                            <div class="song-tags" aria-live="polite">
+                                <AnimatePresence :initial="false">
+                                    <MotionSpan v-for="tag in songTags" :key="tag.key" class="tag" :initial="tagInitial"
+                                        :animate="tagAnimate" :exit="tagExit" :transition="tagTransition">
+                                        {{ tag.label }}
+                                    </MotionSpan>
+                                </AnimatePresence>
                             </div>
                         </div>
                     </MotionTransition>
@@ -56,9 +61,8 @@
                                 <MotionDiv v-if="lyricRows.length" class="lyrics-track">
                                     <MotionDiv v-for="(row, index) in lyricRows" :ref="setLyricRowRef(row.key)"
                                         :key="row.key" class="lyric-line"
-                                        :class="{ 'lyric-interlude-row': row.type === 'interlude' }"
-                                        role="button" tabindex="0"
-                                        :aria-current="activeLyricRowIndex === index ? 'true' : undefined"
+                                        :class="{ 'lyric-interlude-row': row.type === 'interlude' }" role="button"
+                                        tabindex="0" :aria-current="activeLyricRowIndex === index ? 'true' : undefined"
                                         :aria-label="row.type === 'interlude' ? '跳转到间奏' : undefined"
                                         :animate="getLyricState(index)"
                                         :transition="row.type === 'interlude' ? instantTransition : contentTransition"
@@ -355,6 +359,7 @@ const emit = defineEmits([
 
 const MotionDiv = motion.div
 const MotionButton = motion.button
+const MotionSpan = motion.span
 const reducedMotion = useReducedMotion()
 const isProgressDragging = ref(false)
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
@@ -375,6 +380,10 @@ const settingsItemAnimate = { opacity: 1, y: 0 }
 const settingsItemTransition = (index) => reducedMotion.value
     ? INSTANT_MOTION
     : { ...APPLE_SPRING, delay: index * 0.06 }
+const tagInitial = { opacity: 0, y: 6, scale: 0.9, filter: 'blur(3px)' }
+const tagAnimate = { opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }
+const tagExit = { opacity: 0, y: -4, scale: 0.9, filter: 'blur(3px)' }
+const tagTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const buttonHover = { scale: 1.08 }
 const buttonPress = { scale: 0.92 }
 const isBrowserFullscreen = ref(false)
@@ -1104,11 +1113,14 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
 .song-tags {
     display: flex;
     flex-wrap: wrap;
+    align-items: flex-start;
     gap: 5px;
     margin-top: 20px;
+    min-height: 17px;
 }
 
 .tag {
+    display: inline-block;
     padding: 3px 5px;
     border-radius: 5px;
     color: rgba(255, 255, 255, 0.3);
@@ -1226,7 +1238,7 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     position: absolute;
     inset: 6% 8% 10% 2%;
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: hidden;
     display: flex;
     align-items: stretch;
     justify-content: center;
@@ -1238,6 +1250,10 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 16%, #000 84%, transparent 100%);
     height: 90%;
+}
+
+.lyrics-window:hover {
+    overflow-y: auto;
 }
 
 .lyrics-window::-webkit-scrollbar {
@@ -1277,11 +1293,12 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
 }
 
 .lyric-line {
-    position: relative;
-    width: 100%;
+    width: fit-content;
+    max-width: 100%;
     flex: 0 0 auto;
     min-height: 44px;
-    padding: 5px 0;
+    padding: 5px 10px;
+    border-radius: 10px;
     color: rgba(255, 255, 255, 0.5);
     font-size: var(--lyrics-font-size, 32px);
     line-height: 1.18;
@@ -1290,27 +1307,13 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     transform-origin: left center;
     will-change: transform, opacity, filter;
     cursor: pointer;
+    transition: background-color 160ms ease, color 160ms ease;
 }
 
-.lyric-line::after {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    height: 2px;
-    border-radius: 999px;
-    background: rgb(var(--primary-color));
-    content: '';
-    opacity: 0;
-    transform: scaleX(0.35);
-    transform-origin: left center;
-    transition: opacity 160ms ease, transform 220ms ease;
-}
-
-.lyric-line:hover::after,
-.lyric-line:focus-visible::after {
-    opacity: 1;
-    transform: scaleX(1);
+.lyric-line:hover,
+.lyric-line:focus-visible {
+    color: rgba(255, 255, 255, 0.9);
+    background: rgba(var(--primary-color), 0.14);
 }
 
 .lyric-primary {
@@ -1373,6 +1376,7 @@ watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.curr
     .song-tags {
         gap: 7px;
         margin-top: 14px;
+        min-height: 21px;
     }
 
     .tag {
