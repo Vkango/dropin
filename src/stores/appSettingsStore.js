@@ -13,6 +13,13 @@ const SIDEBAR_MIN_WIDTH = 200
 const SIDEBAR_MAX_WIDTH = 480
 const THEME_MODES = ['system', 'light', 'dark']
 const LANGUAGE_PATTERN = /^[a-zA-Z0-9_-]{1,32}$/
+const DEFAULT_LYRICS_FONT_SIZE = 32
+const LYRICS_FONT_SIZE_MIN = 20
+const LYRICS_FONT_SIZE_MAX = 56
+const DEFAULT_SHOW_SECONDARY_LYRICS = true
+const DEFAULT_ALBUM_SHAPE = 'circle'
+const DEFAULT_ALBUM_ROTATION = true
+const ALBUM_SHAPES = ['circle', 'rounded-rect']
 
 const state = reactive({
   version: SETTINGS_VERSION,
@@ -22,6 +29,10 @@ const state = reactive({
   manualThemeColor: DEFAULT_MANUAL_THEME_COLOR,
   language: DEFAULT_LANGUAGE,
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+  lyricsFontSize: DEFAULT_LYRICS_FONT_SIZE,
+  showSecondaryLyrics: DEFAULT_SHOW_SECONDARY_LYRICS,
+  albumShape: DEFAULT_ALBUM_SHAPE,
+  albumRotation: DEFAULT_ALBUM_ROTATION,
   loading: false,
   saving: false,
   error: null
@@ -57,6 +68,15 @@ const normalizeSidebarWidth = (value) => {
   return Math.round(Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, numericValue)))
 }
 
+const normalizeLyricsFontSize = (value) => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return DEFAULT_LYRICS_FONT_SIZE
+  return Math.round(Math.max(LYRICS_FONT_SIZE_MIN, Math.min(LYRICS_FONT_SIZE_MAX, numericValue)))
+}
+
+const normalizeAlbumShape = (value) =>
+  ALBUM_SHAPES.includes(value) ? value : DEFAULT_ALBUM_SHAPE
+
 const normalizeSettings = (settings = {}) => ({
   version: SETTINGS_VERSION,
   animationFrameRate: normalizeFrameRate(settings.animationFrameRate),
@@ -64,7 +84,11 @@ const normalizeSettings = (settings = {}) => ({
   autoAlbumTheme: settings.autoAlbumTheme !== false,
   manualThemeColor: normalizeManualThemeColor(settings.manualThemeColor),
   language: normalizeLanguage(settings.language),
-  sidebarWidth: normalizeSidebarWidth(settings.sidebarWidth)
+  sidebarWidth: normalizeSidebarWidth(settings.sidebarWidth),
+  lyricsFontSize: normalizeLyricsFontSize(settings.lyricsFontSize),
+  showSecondaryLyrics: settings.showSecondaryLyrics !== false,
+  albumShape: normalizeAlbumShape(settings.albumShape),
+  albumRotation: settings.albumRotation !== false
 })
 
 const applySettings = (settings) => {
@@ -76,6 +100,10 @@ const applySettings = (settings) => {
   state.manualThemeColor = normalized.manualThemeColor
   state.language = normalized.language
   state.sidebarWidth = normalized.sidebarWidth
+  state.lyricsFontSize = normalized.lyricsFontSize
+  state.showSecondaryLyrics = normalized.showSecondaryLyrics
+  state.albumShape = normalized.albumShape
+  state.albumRotation = normalized.albumRotation
   setGlobalAnimationFrameRate(normalized.animationFrameRate)
   return normalized
 }
@@ -151,6 +179,26 @@ export function updateSidebarWidth(value) {
   scheduleSave()
 }
 
+export function updateLyricsFontSize(value) {
+  state.lyricsFontSize = normalizeLyricsFontSize(value)
+  scheduleSave()
+}
+
+export function updateShowSecondaryLyrics(value) {
+  state.showSecondaryLyrics = Boolean(value)
+  scheduleSave()
+}
+
+export function updateAlbumShape(value) {
+  state.albumShape = normalizeAlbumShape(value)
+  scheduleSave()
+}
+
+export function updateAlbumRotation(value) {
+  state.albumRotation = Boolean(value)
+  scheduleSave()
+}
+
 export function useAppSettingsStore() {
   return {
     state,
@@ -162,7 +210,11 @@ export function useAppSettingsStore() {
     updateAutoAlbumTheme,
     updateManualThemeColor,
     updateLanguage,
-    updateSidebarWidth
+    updateSidebarWidth,
+    updateLyricsFontSize,
+    updateShowSecondaryLyrics,
+    updateAlbumShape,
+    updateAlbumRotation
   }
 }
 
@@ -175,5 +227,9 @@ export {
   DEFAULT_SIDEBAR_WIDTH,
   SIDEBAR_MIN_WIDTH,
   SIDEBAR_MAX_WIDTH,
-  THEME_MODES
+  THEME_MODES,
+  DEFAULT_LYRICS_FONT_SIZE,
+  LYRICS_FONT_SIZE_MIN,
+  LYRICS_FONT_SIZE_MAX,
+  ALBUM_SHAPES
 }

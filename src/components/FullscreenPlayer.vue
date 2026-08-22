@@ -12,11 +12,13 @@
             <main v-if="!isNarrow" class="player-main">
                 <section class="visual-column" :aria-label="t('generic.songInfo')">
                     <div ref="albumStageRef" class="album-stage">
-                        <div ref="albumVisualRef" class="album-visual" :style="albumVisualStyle">
-                            <div class="disc-shell">
+                        <div ref="albumVisualRef" class="album-visual" :class="albumShapeClass"
+                            :style="albumVisualStyle">
+                            <div class="disc-shell" :class="albumShapeClass">
                                 <MotionTransition variant="albumCover" mode="out-in">
                                     <div :key="currentSong.cover" class="album-cover-frame">
-                                        <img :src="currentSong.cover" :alt="currentSong.title" class="album-cover" />
+                                        <img :src="currentSong.cover" :alt="currentSong.title" class="album-cover"
+                                            :class="albumShapeClass" />
                                     </div>
                                 </MotionTransition>
                             </div>
@@ -71,10 +73,12 @@
                                         </template>
                                         <template v-else>
                                             <div class="lyric-primary">{{ row.line.text }}</div>
-                                            <div v-for="secondary in row.line.secondary" :key="secondary"
-                                                class="lyric-secondary">
-                                                {{ secondary }}
-                                            </div>
+                                            <template v-if="showSecondaryLyrics">
+                                                <div v-for="secondary in row.line.secondary" :key="secondary"
+                                                    class="lyric-secondary">
+                                                    {{ secondary }}
+                                                </div>
+                                            </template>
                                         </template>
                                     </MotionDiv>
                                 </MotionDiv>
@@ -122,12 +126,13 @@
                         class="narrow-page narrow-album-page" :style="lyricsStyle" :initial="narrowInitial"
                         :animate="narrowAnimate" :exit="narrowExit" :transition="pageTransition">
                         <div ref="albumStageRef" class="album-stage">
-                            <div ref="albumVisualRef" class="album-visual" :style="albumVisualStyle">
-                                <div class="disc-shell">
+                            <div ref="albumVisualRef" class="album-visual" :class="albumShapeClass"
+                                :style="albumVisualStyle">
+                                <div class="disc-shell" :class="albumShapeClass">
                                     <MotionTransition variant="albumCover" mode="out-in">
                                         <div :key="currentSong.cover" class="album-cover-frame">
-                                            <img :src="currentSong.cover" :alt="currentSong.title"
-                                                class="album-cover" />
+                                            <img :src="currentSong.cover" :alt="currentSong.title" class="album-cover"
+                                                :class="albumShapeClass" />
                                         </div>
                                     </MotionTransition>
                                 </div>
@@ -192,10 +197,12 @@
                                     </template>
                                     <template v-else>
                                         <div class="lyric-primary">{{ row.line.text }}</div>
-                                        <div v-for="secondary in row.line.secondary" :key="secondary"
-                                            class="lyric-secondary">
-                                            {{ secondary }}
-                                        </div>
+                                        <template v-if="showSecondaryLyrics">
+                                            <div v-for="secondary in row.line.secondary" :key="secondary"
+                                                class="lyric-secondary">
+                                                {{ secondary }}
+                                            </div>
+                                        </template>
                                     </template>
                                 </MotionDiv>
                             </MotionDiv>
@@ -272,34 +279,36 @@
                                             @click="isOverflowMenuOpen = !isOverflowMenuOpen; isVolumePopoverOpen = false; isPlaybackModePopoverOpen = false">
                                             <MoreVertical :size="18" :stroke-width="1.5" />
                                         </MotionButton>
-                                        <div v-if="isOverflowMenuOpen" class="overflow-menu" role="menu">
-                                            <MotionButton class="overflow-menu-item"
-                                                :aria-label="t('player.openPlayerOptions')" role="menuitem"
-                                                @click="openPlaybackOptions; isOverflowMenuOpen = false">
-                                                <SquarePen :size="16" :stroke-width="1.5" />
-                                                <span>{{ t('player.playbackOptions') }}</span>
-                                            </MotionButton>
-                                            <MotionButton class="overflow-menu-item"
-                                                :aria-label="isBrowserFullscreen ? t('player.exitFullscreen') : t('player.enterFullscreen')"
-                                                role="menuitem"
-                                                @click="toggleBrowserFullscreen; isOverflowMenuOpen = false">
-                                                <Minimize2 v-if="isBrowserFullscreen" :size="16" :stroke-width="1.5" />
-                                                <Maximize2 v-else :size="16" :stroke-width="1.5" />
-                                                <span>{{ isBrowserFullscreen ? t('player.exitFullscreen') :
-                                                    t('player.enterFullscreen') }}</span>
-                                            </MotionButton>
-                                            <MotionButton class="overflow-menu-item"
-                                                :aria-label="t('player.lyricsPanel')" role="menuitem"
-                                                @click="isOverflowMenuOpen = false">
-                                                <PanelTop :size="16" :stroke-width="1.5" />
-                                                <span>{{ t('player.lyricsPanel') }}</span>
-                                            </MotionButton>
-                                            <MotionButton class="overflow-menu-item" :aria-label="t('player.more')"
-                                                role="menuitem" @click="isOverflowMenuOpen = false">
-                                                <MoreHorizontal :size="16" :stroke-width="1.5" />
-                                                <span>{{ t('player.more') }}</span>
-                                            </MotionButton>
-                                        </div>
+                                        <Transition name="overflow-menu">
+                                            <div v-if="isOverflowMenuOpen" class="overflow-menu" role="menu">
+                                                <MotionButton class="overflow-menu-item"
+                                                    :aria-label="t('player.openPlayerOptions')" role="menuitem"
+                                                    @click="openPlaybackOptions(); isOverflowMenuOpen = false">
+                                                    <SquarePen :size="16" :stroke-width="1.5" />
+                                                    <span>{{ t('player.playbackOptions') }}</span>
+                                                </MotionButton>
+                                                <MotionButton class="overflow-menu-item"
+                                                    :aria-label="isBrowserFullscreen ? t('player.exitFullscreen') : t('player.enterFullscreen')"
+                                                    role="menuitem"
+                                                    @click="toggleBrowserFullscreen(); isOverflowMenuOpen = false">
+                                                    <Minimize2 v-if="isBrowserFullscreen" :size="16" :stroke-width="1.5" />
+                                                    <Maximize2 v-else :size="16" :stroke-width="1.5" />
+                                                    <span>{{ isBrowserFullscreen ? t('player.exitFullscreen') :
+                                                        t('player.enterFullscreen') }}</span>
+                                                </MotionButton>
+                                                <MotionButton class="overflow-menu-item"
+                                                    :aria-label="t('player.lyricsPanel')" role="menuitem"
+                                                    @click="isOverflowMenuOpen = false">
+                                                    <PanelTop :size="16" :stroke-width="1.5" />
+                                                    <span>{{ t('player.lyricsPanel') }}</span>
+                                                </MotionButton>
+                                                <MotionButton class="overflow-menu-item" :aria-label="t('player.more')"
+                                                    role="menuitem" @click="isOverflowMenuOpen = false">
+                                                    <MoreHorizontal :size="16" :stroke-width="1.5" />
+                                                    <span>{{ t('player.more') }}</span>
+                                                </MotionButton>
+                                            </div>
+                                        </Transition>
                                     </div>
                                 </template>
                             </div>
@@ -411,8 +420,7 @@
                         :aria-label="t('player.playbackOptions')" :initial="footerViewInitial"
                         :animate="footerViewAnimate" :exit="footerViewExit" :transition="footerTransition"
                         @animation-complete="handlePlaybackOptionsAnimationComplete">
-                        <MotionDiv class="playback-options-leading" :initial="settingsItemInitial"
-                            :animate="settingsItemAnimate" :transition="settingsItemTransition(0)">
+                        <div class="playback-options-leading">
                             <MotionButton class="footer-button" :while-hover="buttonHover" :while-press="buttonPress"
                                 :transition="microTransition" :aria-label="t('player.collapsePlayer')"
                                 @click="$emit('close')">
@@ -424,44 +432,85 @@
                                 <ArrowLeft :size="18" :stroke-width="1.5" />
                             </MotionButton>
                             <span class="playback-options-title">{{ t('player.playbackOptions') }}</span>
-                        </MotionDiv>
+                            <SettingsComboBox class="settings-panel-combobox" :model-value="settingsPanelIndex"
+                                :options="settingsPanelOptions" :label="t('player.settingsPanelNav')"
+                                :trigger-label="settingsPanelLabel" :open="isSettingsPanelOpen" placement="above"
+                                :width="210" @update:open="isSettingsPanelOpen = $event"
+                                @select="handleSettingsPanelSelect" />
+                        </div>
 
-                        <MotionDiv class="playback-option lyrics-size-option" :initial="settingsItemInitial"
-                            :animate="settingsItemAnimate" :transition="settingsItemTransition(1)">
-                            <div class="option-label-row">
-                                <span class="option-label">{{ t('player.lyricsSize') }}</span>
-                                <output class="option-value" aria-live="polite">{{ lyricsFontSizeValue }}px</output>
-                            </div>
-                            <div class="lyrics-size-slider">
-                                <span class="size-mark size-mark-small" aria-hidden="true">A</span>
-                                <RangeSlider ref="lyricsRangeRef" :model-value="lyricsFontSizeValue" :min="20" :max="56"
-                                    :aria-label="t('player.lyricsSize')" :aria-value-text="`${lyricsFontSizeValue}px`"
-                                    @update:model-value="handleLyricsFontSizeInput"
-                                    @keydown="handleLyricsRangeKeydown" />
-                                <span class="size-mark size-mark-large" aria-hidden="true">A</span>
-                            </div>
-                        </MotionDiv>
-                        <MotionDiv class="playback-option background-option-group" role="group"
-                            :aria-label="t('player.background')" :initial="settingsItemInitial"
-                            :animate="settingsItemAnimate" :transition="settingsItemTransition(2)">
-                            <span class="option-label">{{ t('player.background') }}</span>
-                            <div class="background-options" role="radiogroup" :aria-label="t('player.background')">
-                                <MotionButton class="background-option"
-                                    :class="{ active: normalizedBackgroundMode === 'flowing' }"
-                                    :while-hover="buttonHover" :while-press="buttonPress" :transition="microTransition"
-                                    role="radio" :aria-checked="normalizedBackgroundMode === 'flowing'"
-                                    @click="setBackgroundMode('flowing')">
-                                    {{ t('player.flowing') }}
-                                </MotionButton>
-                                <MotionButton class="background-option"
-                                    :class="{ active: normalizedBackgroundMode === 'blur' }" :while-hover="buttonHover"
-                                    :while-press="buttonPress" :transition="microTransition" role="radio"
-                                    :aria-checked="normalizedBackgroundMode === 'blur'"
-                                    @click="setBackgroundMode('blur')">
-                                    {{ t('player.blur') }}
-                                </MotionButton>
-                            </div>
-                        </MotionDiv>
+                        <AnimatePresence mode="wait" :initial="false">
+                            <MotionDiv v-if="settingsPanelIndex === 0" key="panel-lyrics" class="playback-panel"
+                                :initial="panelInitial" :animate="panelAnimate" :exit="panelExit"
+                                :transition="panelTransition">
+                                <div class="playback-option lyrics-size-option">
+                                    <output class="option-value" aria-live="polite">{{ lyricsFontSizeValue
+                                        }}px</output>
+                                    <div class="lyrics-size-slider">
+                                        <span class="size-mark size-mark-small" aria-hidden="true">A</span>
+                                        <RangeSlider ref="lyricsRangeRef" :model-value="lyricsFontSizeValue" :min="20"
+                                            :max="56" :aria-label="t('player.lyricsSize')"
+                                            :aria-value-text="`${lyricsFontSizeValue}px`"
+                                            @update:model-value="handleLyricsFontSizeInput"
+                                            @keydown="handleLyricsRangeKeydown" />
+                                        <span class="size-mark size-mark-large" aria-hidden="true">A</span>
+                                    </div>
+                                </div>
+                            </MotionDiv>
+
+                            <MotionDiv v-else-if="settingsPanelIndex === 1" key="panel-appearance"
+                                class="playback-panel" :initial="panelInitial" :animate="panelAnimate" :exit="panelExit"
+                                :transition="panelTransition">
+                                <label class="playback-option toggle-option" for="secondary-lyrics-toggle">
+                                    <span class="option-label">{{ t('player.secondaryLyrics') }}</span>
+                                    <span class="switch-wrap">
+                                        <input id="secondary-lyrics-toggle" type="checkbox"
+                                            :checked="showSecondaryLyrics" @change="handleToggleSecondaryLyrics" />
+                                        <span class="switch-track" aria-hidden="true">
+                                            <span class="switch-thumb"></span>
+                                        </span>
+                                    </span>
+                                    <SettingsComboBox :model-value="albumShape" :options="albumShapeOptions"
+                                        :label="t('player.discShape')" :trigger-label="albumShapeLabel"
+                                        :open="isDiscShapeOpen" placement="above" :width="190"
+                                        @update:open="isDiscShapeOpen = $event" @select="handleAlbumShapeSelect" />
+                                    <SettingsComboBox v-if="isCircleShape"
+                                        :model-value="albumRotationEnabled ? 'on' : 'off'"
+                                        :options="albumRotationOptions" :label="t('player.discRotation')"
+                                        :trigger-label="albumRotationLabel" :open="isDiscRotationOpen" placement="above"
+                                        :width="190" @update:open="isDiscRotationOpen = $event"
+                                        @select="handleAlbumRotationSelect" />
+                                </label>
+
+                            </MotionDiv>
+
+                            <MotionDiv v-else key="panel-background" class="playback-panel" :initial="panelInitial"
+                                :animate="panelAnimate" :exit="panelExit" :transition="panelTransition">
+                                <div class="playback-option background-option-group" role="group"
+                                    :aria-label="t('player.background')">
+                                    <span class="option-label">{{ t('player.background') }}</span>
+                                    <div class="background-options" role="radiogroup"
+                                        :aria-label="t('player.background')">
+                                        <MotionButton class="background-option"
+                                            :class="{ active: normalizedBackgroundMode === 'flowing' }"
+                                            :while-hover="buttonHover" :while-press="buttonPress"
+                                            :transition="microTransition" role="radio"
+                                            :aria-checked="normalizedBackgroundMode === 'flowing'"
+                                            @click="setBackgroundMode('flowing')">
+                                            {{ t('player.flowing') }}
+                                        </MotionButton>
+                                        <MotionButton class="background-option"
+                                            :class="{ active: normalizedBackgroundMode === 'blur' }"
+                                            :while-hover="buttonHover" :while-press="buttonPress"
+                                            :transition="microTransition" role="radio"
+                                            :aria-checked="normalizedBackgroundMode === 'blur'"
+                                            @click="setBackgroundMode('blur')">
+                                            {{ t('player.blur') }}
+                                        </MotionButton>
+                                    </div>
+                                </div>
+                            </MotionDiv>
+                        </AnimatePresence>
                     </MotionDiv>
                 </AnimatePresence>
             </footer>
@@ -471,7 +520,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ArrowLeft, ChevronDown, ListMusic, ListOrdered, Maximize2, Minimize2, MoreHorizontal, MoreVertical, PanelTop, Pause, Play, Repeat1, Shuffle, SkipBack, SkipForward, SlidersHorizontal, SquarePen, Volume2 } from '@lucide/vue'
+import { ArrowLeft, Circle, ChevronDown, ListMusic, ListOrdered, Maximize2, Minimize2, MoreHorizontal, MoreVertical, PanelTop, Pause, Play, Repeat1, RotateCw, Settings2, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Square, SquarePen, Volume2 } from '@lucide/vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import MotionTransition from './MotionTransition.vue'
@@ -480,6 +529,8 @@ import Playlist from './Playlist.vue'
 import PlaybackModePopover from './PlaybackModePopover.vue'
 import VolumePopover from './VolumePopover.vue'
 import RangeSlider from './RangeSlider.vue'
+import SettingsComboBox from './SettingsComboBox.vue'
+import { useAppSettingsStore } from '../stores/appSettingsStore.js'
 import { bassCall } from '../services/bassApi.js'
 import { APPLE_SPRING, INSTANT_MOTION, MICRO_SPRING, SOFT_SPRING } from '../utils/motion.js'
 import { User2Icon } from '@lucide/vue'
@@ -680,11 +731,80 @@ const toggleBrowserFullscreen = async () => {
 }
 
 const isPlaybackOptionsOpen = ref(false)
-const compactViewport = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches)
 const lyricsRangeRef = ref(null)
-const lyricsFontSize = ref(null)
-const lyricsFontSizeValue = computed(() => lyricsFontSize.value ?? (compactViewport.value ? 22 : 32))
+
+// 播放器偏好：字号 / 副歌词 / 唱片形状，统一持久化到 settings.json
+const appSettings = useAppSettingsStore()
+const lyricsFontSizeValue = computed(() => appSettings.state.lyricsFontSize)
+const showSecondaryLyrics = computed(() => appSettings.state.showSecondaryLyrics)
+const albumShape = computed(() => appSettings.state.albumShape)
+// 仅圆形唱片会旋转；圆角矩形保持静止
+const albumRotationEnabled = computed(() => appSettings.state.albumRotation && albumShape.value === 'circle')
 const lyricsStyle = computed(() => ({ '--lyrics-font-size': `${lyricsFontSizeValue.value}px` }))
+const albumShapeClass = computed(() => `album-visual--${albumShape.value}`)
+const isCircleShape = computed(() => albumShape.value === 'circle')
+
+// 播放页选项的分区导航：字号 → 外观 → 背景
+const settingsPanelIndex = ref(0)
+const SETTINGS_PANELS = 3
+const settingsPanelOptions = computed(() => [
+    { value: 0, label: t('player.lyricsSize'), icon: Settings2 },
+    { value: 1, label: t('player.appearance'), icon: Square },
+    { value: 2, label: t('player.background'), icon: MoreHorizontal }
+])
+const settingsPanelLabel = computed(() => settingsPanelOptions.value[settingsPanelIndex.value]?.label ?? '')
+const isSettingsPanelOpen = ref(false)
+
+const handleLyricsFontSizeInput = (nextSize) => {
+    appSettings.updateLyricsFontSize(nextSize)
+}
+
+const handleToggleSecondaryLyrics = () => {
+    appSettings.updateShowSecondaryLyrics(!showSecondaryLyrics.value)
+}
+
+const handleAlbumShapeSelect = (value) => {
+    appSettings.updateAlbumShape(value)
+}
+
+const handleAlbumRotationSelect = (value) => {
+    appSettings.updateAlbumRotation(value === 'on')
+}
+
+const albumShapeOptions = computed(() => [
+    { value: 'circle', label: t('player.shapeCircle'), icon: Circle },
+    { value: 'rounded-rect', label: t('player.shapeRoundedRect'), icon: Square }
+])
+
+const albumShapeLabel = computed(() =>
+    albumShapeOptions.value.find((option) => option.value === albumShape.value)?.label ?? '')
+const albumRotationOptions = computed(() => [
+    { value: 'on', label: t('player.rotationOn'), icon: RotateCw },
+    { value: 'off', label: t('player.rotationOff'), icon: Pause }
+])
+
+const albumRotationLabel = computed(() =>
+    albumRotationOptions.value.find((option) => option.value === (albumRotationEnabled.value ? 'on' : 'off'))?.label ?? '')
+
+const handleSettingsPanelSelect = (value) => {
+    settingsPanelIndex.value = Number(value)
+}
+
+const isDiscShapeOpen = ref(false)
+const isDiscRotationOpen = ref(false)
+const panelInitial = { opacity: 0, x: 24 }
+const panelAnimate = { opacity: 1, x: 0 }
+const panelExit = { opacity: 0, x: -24 }
+const panelTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+
+// 形状切换为圆角矩形时立即停止旋转并复位角度
+watch(albumShape, (shape) => {
+    if (shape !== 'circle') {
+        stopAlbumRotation()
+        albumRotationAngle.value = 0
+        if (albumVisualRef.value) albumVisualRef.value.style.transform = 'rotate(0deg)'
+    }
+})
 
 const ZERO_BANDS = { bass: 0, mid: 0, treble: 0, level: 0 }
 const audioBands = ref({ ...ZERO_BANDS })
@@ -832,16 +952,11 @@ const setBackgroundMode = (mode) => {
     emit('background-mode-change', mode)
 }
 
-const handleLyricsFontSizeInput = (nextSize) => {
-    lyricsFontSize.value = Math.max(20, Math.min(56, nextSize))
-}
-
 const handleLyricsRangeKeydown = (event) => {
     if (event.key !== 'Escape') event.stopPropagation()
 }
 
 const updateCompactViewport = () => {
-    compactViewport.value = window.matchMedia('(max-width: 720px)').matches
     isNarrow.value = window.matchMedia(`(max-width: ${NARROW_BREAKPOINT}px)`).matches
     // 不重置 narrowPage / isPlaylistOpen，避免调节窗口尺寸时丢失当前页面状态
 }
@@ -1038,9 +1153,9 @@ const stopAlbumRotation = () => {
 
 const updateAlbumRotation = (now) => {
     albumRotationFrame = undefined
-    // 仅在播放且可见时推进角度；元素缺失（窄/宽屏切换瞬间）时保留角度并停帧，
+    // 仅在播放且可见且开启旋转时推进角度；元素缺失（窄/宽屏切换瞬间）时保留角度并停帧，
     // 由 syncAlbumRotation 在元素恢复后重启，避免切换后停止旋转。
-    if (props.isVisible && props.isPlaying && !reducedMotion.value) {
+    if (props.isVisible && props.isPlaying && !reducedMotion.value && albumRotationEnabled.value) {
         if (!albumRotationLastTime) albumRotationLastTime = now
         const elapsed = Math.min(100, now - albumRotationLastTime)
         albumRotationLastTime = now
@@ -1055,7 +1170,7 @@ const updateAlbumRotation = (now) => {
 }
 
 const syncAlbumRotation = () => {
-    if (!props.isVisible || !props.isPlaying || reducedMotion.value) {
+    if (!props.isVisible || !props.isPlaying || reducedMotion.value || !albumRotationEnabled.value) {
         stopAlbumRotation()
         return
     }
@@ -1249,7 +1364,7 @@ watch([() => props.isVisible, () => props.currentSong?.id, () => props.lyrics], 
 }, { flush: 'post' })
 watch(() => [props.isVisible, props.channelId, normalizedBackgroundMode.value], startAudioBands)
 watch(() => [props.isVisible, props.channelId, props.currentSong?.id, props.currentSong?.title], startBassTrackInfo, { immediate: true })
-watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRotation, { immediate: true })
+watch([() => props.isVisible, () => props.isPlaying, reducedMotion, albumRotationEnabled], syncAlbumRotation, { immediate: true })
 </script>
 
 <style scoped>
@@ -1385,6 +1500,19 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
     border-radius: 50%;
     border: 2px solid rgba(101, 87, 80, 0.44);
     pointer-events: none;
+}
+
+/* 圆角矩形唱片：外框、内环与封面同步变为圆角矩形 */
+.disc-shell.album-visual--rounded-rect {
+    border-radius: 20px;
+}
+
+.disc-shell.album-visual--rounded-rect::before {
+    border-radius: 20px;
+}
+
+.album-cover.album-visual--rounded-rect {
+    border-radius: 10px;
 }
 
 .album-cover-frame {
@@ -1741,7 +1869,7 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
 
 .playback-options {
     display: grid;
-    grid-template-columns: minmax(180px, 0.8fr) minmax(300px, 1.25fr) minmax(250px, 1fr);
+    grid-template-columns: auto 1fr 20px;
     align-items: center;
     gap: clamp(26px, 5vw, 88px);
 }
@@ -1760,6 +1888,26 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
     min-width: 0;
 }
 
+.playback-panel {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 16px clamp(22px, 3vw, 56px);
+    min-width: 0;
+}
+
+.combo-row {
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    gap: 12px;
+}
+
+.toggle-option {
+    flex: 0 0 auto;
+}
+
 .playback-options-title {
     overflow: hidden;
     color: rgba(255, 255, 255, 0.86);
@@ -1772,11 +1920,12 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
 .playback-option {
     min-width: 0;
     gap: 18px;
+    width: 100%;
 }
 
 .lyrics-size-option {
-    display: grid;
-    gap: 8px;
+    display: flex;
+    gap: 10px;
 }
 
 .option-label-row {
@@ -1788,6 +1937,9 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
     color: rgba(255, 255, 255, 0.58);
     font-size: 12px;
     white-space: nowrap;
+}
+
+.option-label-row .option-label {
     margin-left: auto;
 }
 
@@ -1819,10 +1971,6 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
     font-size: 18px;
 }
 
-.background-option-group {
-    justify-content: space-between;
-}
-
 .background-options {
     gap: 8px;
 }
@@ -1843,6 +1991,57 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
     border-color: rgba(var(--primary-color), 0.72);
     color: #ffffff;
     background: rgba(var(--primary-color), 0.22);
+}
+
+.toggle-option {
+    gap: 12px;
+    cursor: pointer;
+}
+
+.switch-wrap {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+}
+
+.switch-wrap input {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.switch-track {
+    position: relative;
+    display: block;
+    width: 40px;
+    height: 22px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.14);
+    transition: background-color 160ms ease;
+}
+
+.switch-thumb {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.82);
+    transition: transform 160ms ease;
+}
+
+.switch-wrap input:checked+.switch-track {
+    background: rgb(var(--primary-color));
+}
+
+.switch-wrap input:checked+.switch-track .switch-thumb {
+    transform: translateX(18px);
 }
 
 .footer-side {
@@ -2246,6 +2445,17 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
         transform-origin: bottom left;
     }
 
+    .overflow-menu-enter-active,
+    .overflow-menu-leave-active {
+        transition: opacity 160ms ease, transform 160ms ease;
+    }
+
+    .overflow-menu-enter-from,
+    .overflow-menu-leave-to {
+        opacity: 0;
+        transform: translateY(6px) scale(0.98);
+    }
+
     .overflow-menu-item {
         display: flex;
         align-items: center;
@@ -2267,14 +2477,29 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
     }
 
     .playback-options {
-        grid-template-columns: auto minmax(0, 1fr);
-        gap: 8px 10px;
-        align-content: center;
+        grid-template-columns: 1fr;
+        grid-auto-rows: min-content;
+        gap: 10px;
+        align-content: start;
         padding: 0;
     }
 
     .playback-options .playback-option {
         gap: 8px;
+    }
+
+    .playback-options-leading {
+        flex-wrap: wrap;
+        row-gap: 8px;
+    }
+
+    .settings-panel-combobox {
+        margin-left: 0;
+    }
+
+    .playback-panel {
+        flex-wrap: wrap;
+        gap: 12px 16px;
     }
 }
 </style>

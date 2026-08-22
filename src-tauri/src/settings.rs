@@ -14,6 +14,11 @@ const DEFAULT_LANGUAGE: &str = "system";
 const DEFAULT_SIDEBAR_WIDTH: u32 = 280;
 const MIN_SIDEBAR_WIDTH: u32 = 200;
 const MAX_SIDEBAR_WIDTH: u32 = 480;
+const MIN_LYRICS_FONT_SIZE: u32 = 20;
+const MAX_LYRICS_FONT_SIZE: u32 = 56;
+const DEFAULT_SHOW_SECONDARY_LYRICS: bool = true;
+const DEFAULT_ALBUM_SHAPE: &str = "circle";
+const DEFAULT_ALBUM_ROTATION: bool = true;
 
 fn default_theme_mode() -> String {
     DEFAULT_THEME_MODE.to_string()
@@ -33,6 +38,22 @@ fn default_language() -> String {
 
 fn default_sidebar_width() -> u32 {
     DEFAULT_SIDEBAR_WIDTH
+}
+
+fn default_lyrics_font_size() -> u32 {
+    32
+}
+
+fn default_show_secondary_lyrics() -> bool {
+    DEFAULT_SHOW_SECONDARY_LYRICS
+}
+
+fn default_album_shape() -> String {
+    DEFAULT_ALBUM_SHAPE.to_string()
+}
+
+fn default_album_rotation() -> bool {
+    DEFAULT_ALBUM_ROTATION
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -56,6 +77,14 @@ pub struct AppSettings {
     pub language: String,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: u32,
+    #[serde(default = "default_lyrics_font_size")]
+    pub lyrics_font_size: u32,
+    #[serde(default = "default_show_secondary_lyrics")]
+    pub show_secondary_lyrics: bool,
+    #[serde(default = "default_album_shape")]
+    pub album_shape: String,
+    #[serde(default = "default_album_rotation")]
+    pub album_rotation: bool,
 }
 
 impl Default for AppSettings {
@@ -68,6 +97,10 @@ impl Default for AppSettings {
             manual_theme_color: default_manual_theme_color(),
             language: default_language(),
             sidebar_width: DEFAULT_SIDEBAR_WIDTH,
+            lyrics_font_size: default_lyrics_font_size(),
+            show_secondary_lyrics: default_show_secondary_lyrics(),
+            album_shape: default_album_shape(),
+            album_rotation: default_album_rotation(),
         }
     }
 }
@@ -110,6 +143,13 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
     let sidebar_width = settings
         .sidebar_width
         .clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
+    let lyrics_font_size = settings
+        .lyrics_font_size
+        .clamp(MIN_LYRICS_FONT_SIZE, MAX_LYRICS_FONT_SIZE);
+    let album_shape = match settings.album_shape.as_str() {
+        "circle" | "rounded-rect" => settings.album_shape,
+        _ => default_album_shape(),
+    };
 
     Ok(AppSettings {
         version: SETTINGS_VERSION,
@@ -119,6 +159,10 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
         manual_theme_color,
         language,
         sidebar_width,
+        lyrics_font_size,
+        show_secondary_lyrics: settings.show_secondary_lyrics,
+        album_shape,
+        album_rotation: settings.album_rotation,
     })
 }
 
