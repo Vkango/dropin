@@ -2,12 +2,15 @@ import { invoke } from '@tauri-apps/api/core'
 import { computed, reactive } from 'vue'
 import { frameRateLimits, setGlobalAnimationFrameRate } from '../utils/frameRateScheduler.js'
 
-const SETTINGS_VERSION = 3
+const SETTINGS_VERSION = 4
 const SAVE_DELAY_MS = 220
 const DEFAULT_THEME_MODE = 'system'
 const DEFAULT_AUTO_ALBUM_THEME = true
 const DEFAULT_MANUAL_THEME_COLOR = '#88d0ec'
 const DEFAULT_LANGUAGE = 'system'
+const DEFAULT_SIDEBAR_WIDTH = 280
+const SIDEBAR_MIN_WIDTH = 200
+const SIDEBAR_MAX_WIDTH = 480
 const THEME_MODES = ['system', 'light', 'dark']
 const LANGUAGE_PATTERN = /^[a-zA-Z0-9_-]{1,32}$/
 
@@ -18,6 +21,7 @@ const state = reactive({
   autoAlbumTheme: DEFAULT_AUTO_ALBUM_THEME,
   manualThemeColor: DEFAULT_MANUAL_THEME_COLOR,
   language: DEFAULT_LANGUAGE,
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   loading: false,
   saving: false,
   error: null
@@ -47,13 +51,20 @@ const normalizeLanguage = (value) => {
   return LANGUAGE_PATTERN.test(trimmed) ? trimmed : DEFAULT_LANGUAGE
 }
 
+const normalizeSidebarWidth = (value) => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return DEFAULT_SIDEBAR_WIDTH
+  return Math.round(Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, numericValue)))
+}
+
 const normalizeSettings = (settings = {}) => ({
   version: SETTINGS_VERSION,
   animationFrameRate: normalizeFrameRate(settings.animationFrameRate),
   themeMode: normalizeThemeMode(settings.themeMode),
   autoAlbumTheme: settings.autoAlbumTheme !== false,
   manualThemeColor: normalizeManualThemeColor(settings.manualThemeColor),
-  language: normalizeLanguage(settings.language)
+  language: normalizeLanguage(settings.language),
+  sidebarWidth: normalizeSidebarWidth(settings.sidebarWidth)
 })
 
 const applySettings = (settings) => {
@@ -64,6 +75,7 @@ const applySettings = (settings) => {
   state.autoAlbumTheme = normalized.autoAlbumTheme
   state.manualThemeColor = normalized.manualThemeColor
   state.language = normalized.language
+  state.sidebarWidth = normalized.sidebarWidth
   setGlobalAnimationFrameRate(normalized.animationFrameRate)
   return normalized
 }
@@ -134,6 +146,11 @@ export function updateLanguage(value) {
   scheduleSave()
 }
 
+export function updateSidebarWidth(value) {
+  state.sidebarWidth = normalizeSidebarWidth(value)
+  scheduleSave()
+}
+
 export function useAppSettingsStore() {
   return {
     state,
@@ -144,7 +161,8 @@ export function useAppSettingsStore() {
     updateThemeMode,
     updateAutoAlbumTheme,
     updateManualThemeColor,
-    updateLanguage
+    updateLanguage,
+    updateSidebarWidth
   }
 }
 
@@ -154,5 +172,8 @@ export {
   DEFAULT_AUTO_ALBUM_THEME,
   DEFAULT_MANUAL_THEME_COLOR,
   DEFAULT_LANGUAGE,
+  DEFAULT_SIDEBAR_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_MAX_WIDTH,
   THEME_MODES
 }

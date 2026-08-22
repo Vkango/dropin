@@ -1,9 +1,15 @@
 <template>
   <Teleport to="#decorum-player-mount">
     <div v-if="!isFullscreen" class="title-bar-player">
-      <PlayerControls :current-song="currentSong" :is-playing="isPlaying" :current-time="currentTime"
-        :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress" :lyrics="lyrics"
-        :lyrics-loading="lyricsLoading" @toggle-play="$emit('toggle-play')" @previous="$emit('previous')"
+      <!-- 窄窗口下的汉堡菜单：展开/收起抽屉式侧边栏 -->
+      <button v-if="isDrawer" type="button" class="menu-toggle" :aria-label="t('sidebar.menuToggle')"
+        :aria-expanded="isDrawerOpen" @click="$emit('menu')">
+        <Menu :size="18" :stroke-width="1.8" />
+      </button>
+      <PlayerControls class="title-bar-controls" :current-song="currentSong" :is-playing="isPlaying"
+        :current-time="currentTime" :current-time-ms="currentTimeMs" :total-time="totalTime"
+        :progress="progress" :lyrics="lyrics" :lyrics-loading="lyricsLoading"
+        @toggle-play="$emit('toggle-play')" @previous="$emit('previous')"
         @next="$emit('next')" @progress-change="$emit('progress-change', $event)"
         @progress-commit="$emit('progress-commit', $event)"
         :playback-mode="playbackMode" :list-loop="listLoop"
@@ -18,7 +24,11 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { Menu } from '@lucide/vue'
 import PlayerControls from './PlayerControls.vue'
+import { useI18n } from '../i18n/index.js'
+
+const { t } = useI18n()
 
 const props = defineProps({
   currentSong: {
@@ -76,6 +86,14 @@ const props = defineProps({
   muted: {
     type: Boolean,
     default: false
+  },
+  isDrawer: {
+    type: Boolean,
+    default: false
+  },
+  isDrawerOpen: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -90,7 +108,8 @@ defineEmits([
   'mute-change',
   'queue',
   'expand-player',
-  'progress-commit'
+  'progress-commit',
+  'menu'
 ])
 
 const syncTitlebarState = () => {
@@ -112,10 +131,38 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .title-bar-player {
+  display: flex;
+  align-items: stretch;
   width: 100%;
   height: 60px;
   min-width: 0;
   pointer-events: auto;
   font-family: MiSans, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.title-bar-controls {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  margin: 6px 4px 6px 10px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: rgb(var(--text-color));
+  background: transparent;
+  cursor: pointer;
+}
+
+.menu-toggle:hover {
+  color: rgb(var(--primary-color));
+  background: rgba(var(--primary-color), 0.14);
 }
 </style>

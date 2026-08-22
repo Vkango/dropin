@@ -11,6 +11,9 @@ const DEFAULT_THEME_MODE: &str = "system";
 const DEFAULT_AUTO_ALBUM_THEME: bool = true;
 const DEFAULT_MANUAL_THEME_COLOR: &str = "#88d0ec";
 const DEFAULT_LANGUAGE: &str = "system";
+const DEFAULT_SIDEBAR_WIDTH: u32 = 280;
+const MIN_SIDEBAR_WIDTH: u32 = 200;
+const MAX_SIDEBAR_WIDTH: u32 = 480;
 
 fn default_theme_mode() -> String {
     DEFAULT_THEME_MODE.to_string()
@@ -26,6 +29,10 @@ fn default_manual_theme_color() -> String {
 
 fn default_language() -> String {
     DEFAULT_LANGUAGE.to_string()
+}
+
+fn default_sidebar_width() -> u32 {
+    DEFAULT_SIDEBAR_WIDTH
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -47,6 +54,8 @@ pub struct AppSettings {
     pub manual_theme_color: String,
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: u32,
 }
 
 impl Default for AppSettings {
@@ -58,6 +67,7 @@ impl Default for AppSettings {
             auto_album_theme: default_auto_album_theme(),
             manual_theme_color: default_manual_theme_color(),
             language: default_language(),
+            sidebar_width: DEFAULT_SIDEBAR_WIDTH,
         }
     }
 }
@@ -97,6 +107,9 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
         default_manual_theme_color()
     };
     let language = normalize_language(&settings.language);
+    let sidebar_width = settings
+        .sidebar_width
+        .clamp(MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH);
 
     Ok(AppSettings {
         version: SETTINGS_VERSION,
@@ -105,6 +118,7 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
         auto_album_theme: settings.auto_album_theme,
         manual_theme_color,
         language,
+        sidebar_width,
     })
 }
 

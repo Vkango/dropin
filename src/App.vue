@@ -15,7 +15,7 @@ import Drawer from './components/Drawer.vue'
 import Playlist from './components/Playlist.vue'
 import Notification from './components/notification/Notification.vue'
 import LoadingWithTip from './components/notification/LoadingWithTip.vue'
-import { useReducedMotion } from 'motion-v'
+import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import { themeManager } from './utils/themeManager.js'
 import { bassCall, listenToBassEvents } from './services/bassApi.js'
 import { smtcApi, listenToSmtcEvents } from './services/smtcApi.js'
@@ -23,7 +23,7 @@ import { useLibraryStore } from './stores/libraryStore.js'
 import { useAppSettingsStore } from './stores/appSettingsStore.js'
 import { useI18n } from './i18n/index.js'
 import { activateLocale } from './stores/i18nStore.js'
-import { animateElement, APPLE_SPRING } from './utils/motion.js'
+import { animateElement, APPLE_SPRING, INSTANT_MOTION, SOFT_SPRING } from './utils/motion.js'
 
 const libraryStore = useLibraryStore()
 const settingsStore = useAppSettingsStore()
@@ -39,6 +39,50 @@ const pageCache = reactive(new Map())
 const showFullscreenPlayer = ref(false)
 const isTitlebarScrolled = ref(false)
 let unbindScrollSources = () => { }
+
+// 侧边栏布局：宽度持久化到 settings.json；窗口过窄时切换为抽屉
+const SIDEBAR_MIN_WIDTH = 200
+const SIDEBAR_MAX_WIDTH = 480
+const DEFAULT_SIDEBAR_WIDTH = 280
+const DRAWER_BREAKPOINT = 860
+const sidebarWidth = ref(
+  Number.isFinite(settingsStore.state.sidebarWidth)
+    ? Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, settingsStore.state.sidebarWidth))
+    : DEFAULT_SIDEBAR_WIDTH
+)
+const isSidebarDrawer = ref(
+  typeof window !== 'undefined' && window.matchMedia(`(max-width: ${DRAWER_BREAKPOINT}px)`).matches
+)
+const isSidebarDrawerOpen = ref(false)
+let sidebarDrawerMediaQuery = null
+let sidebarDrawerQueryHandler = null
+
+const toggleSidebarDrawer = () => {
+  isSidebarDrawerOpen.value = !isSidebarDrawerOpen.value
+}
+
+const closeSidebarDrawer = () => {
+  isSidebarDrawerOpen.value = false
+}
+
+const updateSidebarWidth = (value) => {
+  const next = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(Number(value) || 0)))
+  sidebarWidth.value = next
+  settingsStore.updateSidebarWidth(next)
+}
+
+const handleSidebarResize = (value) => {
+  sidebarWidth.value = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, Math.round(Number(value) || 0)))
+}
+
+const handleSidebarResizeCommit = (value) => {
+  updateSidebarWidth(value)
+}
+
+// 抽屉弹出动画：Apple Spring
+const MotionDiv = motion.div
+const sidebarDrawerTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : APPLE_SPRING)
+const sidebarScrimTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : SOFT_SPRING)
 
 // 页面组件映射
 const pageComponents = {
@@ -183,6 +227,12 @@ watch(
 // 数据集合
 const albumsData = reactive([])
 
+// 主内容区左边距：跟随侧边栏宽度（抽屉模式下为 0）
+const mainContentStyle = computed(() =>
+  isSidebarDrawer.value ? { left: '0px', width: '100%' } : { left: `${sidebarWidth.value}px`, width: `calc(100% - ${sidebarWidth.value}px)` }
+)
+const sidebarWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }))
+
 const artistsData = reactive([])
 
 const homePageData = reactive({
@@ -313,6 +363,7 @@ const handleSearchUpdate = (query) => {
 
 const handleNavItemClick = (item) => {
   navigateToPage(item.id)
+  if (isSidebarDrawer.value) closeSidebarDrawer()
   console.log('导航点击:', item.label)
 }
 
@@ -961,6 +1012,29 @@ const handleBackgroundModeChange = (mode) => {
   fullscreenBackgroundMode.value = mode === 'blur' ? 'blur' : 'flowing'
 }
 
+const handleSidebarResizeStart = (event) => {
+  if (event.button !== 0) return
+  event.preventDefault()
+
+  const onMove = (moveEvent) => {
+    handleSidebarResize(moveEvent.clientX)
+  }
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    window.removeEventListener('pointercancel', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    handleSidebarResizeCommit(sidebarWidth.value)
+  }
+
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+  window.addEventListener('pointercancel', onUp)
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+}
+
 // 获取当前页面所需的props
 const getPageProps = () => {
   switch (currentPage.value) {
@@ -1035,6 +1109,15 @@ onMounted(async () => {
   await releaseBassResources()
   window.addEventListener('beforeunload', handleWindowExit)
   window.addEventListener('pagehide', handleWindowExit)
+
+  // 窗口过窄时侧边栏切换为抽屉
+  sidebarDrawerMediaQuery = window.matchMedia(`(max-width: ${DRAWER_BREAKPOINT}px)`)
+  sidebarDrawerQueryHandler = (event) => {
+    isSidebarDrawer.value = event.matches
+    if (!event.matches) isSidebarDrawerOpen.value = false
+  }
+  sidebarDrawerMediaQuery.addEventListener('change', sidebarDrawerQueryHandler)
+
   unlistenBassEvents = await listenToBassEvents(handleBassEvent)
   unlistenSmtcEvents = await listenToSmtcEvents(handleSmtcEvent)
 
@@ -1059,6 +1142,11 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleWindowExit)
   window.removeEventListener('pagehide', handleWindowExit)
+  if (sidebarDrawerMediaQuery && sidebarDrawerQueryHandler) {
+    sidebarDrawerMediaQuery.removeEventListener('change', sidebarDrawerQueryHandler)
+    sidebarDrawerMediaQuery = null
+    sidebarDrawerQueryHandler = null
+  }
   isAppDisposing = true
   void releaseBassResources()
   unlistenBassEvents()
@@ -1075,22 +1163,49 @@ onBeforeUnmount(() => {
       :current-time-ms="currentTimeMs" :total-time="totalTime" :progress="progress" :lyrics="lyricsPayload"
       :lyrics-loading="lyricsLoading" :is-fullscreen="showFullscreenPlayer" :is-scrolled="isTitlebarScrolled"
       :playback-mode="playbackMode" :list-loop="listLoop"
-      :volume="volume" :muted="muted"
+      :volume="volume" :muted="muted" :is-drawer="isSidebarDrawer" :is-drawer-open="isSidebarDrawerOpen"
       @toggle-play="handleTogglePlay" @previous="handlePrevious" @next="handleNext"
       @progress-change="handleProgressChange" @playback-mode-change="handlePlaybackModeChange"
       @list-loop-change="handleListLoopChange" @volume-change="handleVolumeChange" @mute-change="handleMuteChange"
-      @queue="handleQueue"
+      @queue="handleQueue" @menu="toggleSidebarDrawer"
       @progress-commit="handleProgressCommit" @expand-player="handleExpandPlayer" />
 
-    <!-- 侧边栏 -->
-    <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
-      :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
-      @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
-      @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin"
-      @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" />
+    <!-- 宽屏常驻侧边栏：无背景、无分割线，右缘可拖拽调宽（写入 settings.json） -->
+    <div v-if="!isSidebarDrawer" class="sidebar-shell" :style="sidebarWidthStyle">
+      <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
+        :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
+        @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
+        @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin"
+        @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" />
+
+      <div class="sidebar-resize-handle" title="拖动调整侧边栏宽度" @pointerdown="handleSidebarResizeStart" />
+    </div>
+
+    <!-- 窄屏抽屉式侧边栏：背景色 + 背景模糊，Apple Spring 弹出 -->
+    <Teleport to="body">
+      <AnimatePresence>
+        <MotionDiv v-if="isSidebarDrawer && isSidebarDrawerOpen" class="sidebar-drawer-layer"
+          role="presentation" @click.self="closeSidebarDrawer">
+          <MotionDiv class="sidebar-drawer-scrim" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
+            :exit="{ opacity: 0 }" :transition="sidebarScrimTransition" aria-hidden="true"
+            @click="closeSidebarDrawer" />
+          <MotionDiv class="sidebar-drawer-panel" :style="sidebarWidthStyle"
+            :initial="{ x: '-100%', opacity: 0.4 }" :animate="{ x: 0, opacity: 1 }"
+            :exit="{ x: '-100%', opacity: 0.4 }" :transition="sidebarDrawerTransition">
+            <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
+              :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
+              :is-drawer="true"
+              @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
+              @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin"
+              @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag"
+              @collapse="closeSidebarDrawer" />
+          </MotionDiv>
+        </MotionDiv>
+      </AnimatePresence>
+    </Teleport>
 
     <!-- 主内容区 -->
-    <div class="main-content-wrapper">
+    <div class="main-content-wrapper" :style="mainContentStyle">
       <Transition mode="sync" :css="false" @before-leave="beforePageLeave" @leave="leavePage"
         @after-leave="afterPageLeave">
         <KeepAlive :max="5">
@@ -1300,23 +1415,79 @@ body {
 
 <style scoped>
 .music-player {
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  grid-template-rows: 1fr;
-  grid-template-areas: "sidebar main";
+  display: block;
+  position: relative;
   height: 100vh;
   height: 100dvh;
+  overflow: hidden;
   background: color-mix(in srgb, rgba(var(--background-color)), rgb(var(--global-color)) 40%);
   color: rgb(var(--text-color));
   font-family: MiSans, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+.sidebar-shell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+}
+
+.sidebar-shell .sidebar-scroll {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+/* 尺寸调节分割线：平时与调节中均不显示，仅靠光标提示 */
+.sidebar-shell .sidebar-resize-handle {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  border: transparent;
+  background: transparent;
+}
+
+.sidebar-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+  display: flex;
+  pointer-events: auto;
+}
+
+.sidebar-drawer-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.28);
+  will-change: opacity;
+}
+
+.sidebar-drawer-panel {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
+  color: rgb(var(--text-color));
+  background: color-mix(in srgb, rgb(var(--surface-color)) 90%, rgb(var(--global-color)) 10%);
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+  box-shadow: 14px 0 40px rgba(0, 0, 0, 0.22);
+  will-change: transform, opacity;
+}
+
+.sidebar-drawer-panel .sidebar-scroll {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
 .main-content-wrapper {
-  grid-area: main;
   position: absolute;
   min-width: 0;
-  left: 300px;
-  width: calc(100% - 300px);
   top: 0;
   height: 100%;
   overflow: hidden;

@@ -74,7 +74,7 @@ const animateContentBlocks = () => {
                 element.style.opacity = ''
                 element.style.transform = ''
                 element.style.filter = ''
-            }, () => {})
+            }, () => { })
         })
     })
 }
@@ -156,10 +156,6 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 768px) {
-    .page-layout-header {
-        padding: 0 24px;
-    }
-
     .page-layout-content {
         padding: 24px;
     }

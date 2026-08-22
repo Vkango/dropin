@@ -16,7 +16,9 @@
     "pluginsSection": "Plugins",
     "untagged": "Untagged 001",
     "footprints": "My Footprints",
-    "timedStop": "Timed Stop"
+    "timedStop": "Timed Stop",
+    "menuToggle": "Toggle navigation menu",
+    "collapseMenu": "Collapse menu"
   },
   "player": {
     "noSongSelected": "No song selected",
@@ -60,6 +62,8 @@
     "blur": "Gaussian blur",
     "lyrics": "Lyrics",
     "backToLyrics": "Back to lyrics",
+    "backToAlbum": "Back to album",
+    "showLyrics": "Show lyrics",
     "interlude": "Jump to interlude",
     "playbackSettings": "Playback settings",
     "lyricsPanel": "Lyrics panel",

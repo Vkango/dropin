@@ -101,6 +101,14 @@
             </div>
 
             <div class="sidebar-footer">
+                <MotionDiv v-if="isDrawer" class="nav-item" :while-hover="{ y: -1 }"
+                    :transition="microTransition" :aria-label="t('sidebar.collapseMenu')"
+                    @click="$emit('collapse')">
+                    <span class="nav-icon">
+                        <PanelLeftClose :size="16" :stroke-width="1.8" />
+                    </span>
+                    <span class="nav-label">{{ t('sidebar.collapseMenu') }}</span>
+                </MotionDiv>
                 <MotionDiv :class="['nav-item', { active: settingsItem.id === currentPage }]"
                     :aria-current="settingsItem.id === currentPage ? 'page' : undefined" :while-hover="{ y: -1 }"
                     :transition="microTransition" @click="$emit('nav-item-click', settingsItem)">
@@ -120,6 +128,7 @@
 
 <script setup>
 import { defineProps, defineEmits, computed, reactive } from 'vue'
+import { PanelLeftClose } from '@lucide/vue'
 import Icon from './Icon.vue';
 import { motion, useReducedMotion } from 'motion-v'
 import { APPLE_SPRING, INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
@@ -151,6 +160,10 @@ const props = defineProps({
     tags: {
         type: Array,
         default: () => []
+    },
+    isDrawer: {
+        type: Boolean,
+        default: false
     }
 })
 
@@ -161,7 +174,8 @@ const emit = defineEmits([
     'add-playlist',
     'add-plugin',
     'select-playlist',
-    'select-tag'
+    'select-tag',
+    'collapse'
 ])
 
 const MotionDiv = motion.div
@@ -184,12 +198,12 @@ const toggleSection = (sectionName) => {
 
 <style scoped>
 .sidebar-scroll {
-    grid-area: sidebar;
     width: 100%;
     height: 100%;
     min-width: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    background: transparent;
 }
 
 .sidebar {

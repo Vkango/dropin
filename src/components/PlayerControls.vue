@@ -5,8 +5,7 @@
                 <div class="now-playing">
                     <MotionButton class="mini-cover-container" :while-hover="{ scale: 1.05 }"
                         :while-press="{ scale: 0.96 }" :transition="microTransition"
-                        :aria-label="t('player.openFullscreen')"
-                        @mousedown.stop @click.stop="$emit('expand-player')">
+                        :aria-label="t('player.openFullscreen')" @mousedown.stop @click.stop="$emit('expand-player')">
                         <MotionTransition variant="miniCover" mode="out-in">
                             <MotionImg :key="currentSong.cover" :src="currentSong.cover" :alt="currentSong.title"
                                 :while-hover="{ scale: 1.05 }" :transition="microTransition" class="mini-cover" />
@@ -31,7 +30,8 @@
                     </div>
                 </div>
 
-                <div class="drag-region drag-region-left" data-tauri-drag-region :aria-label="t('player.dragWindow')"></div>
+                <div class="drag-region drag-region-left" data-tauri-drag-region :aria-label="t('player.dragWindow')">
+                </div>
             </div>
 
             <div class="controls" :aria-label="t('player.playbackMode')" @mousedown.stop>
@@ -39,8 +39,7 @@
                     <div id="mini-playback-anchor" ref="miniPopoverAnchorRef" class="mini-popover-anchor">
                         <MotionButton class="control-button secondary-control" :while-hover="buttonHover"
                             :while-press="buttonPress" :transition="microTransition"
-                            :aria-label="t('player.volumeAndOrder')"
-                            :aria-expanded="isPlaybackModePopoverOpen"
+                            :aria-label="t('player.volumeAndOrder')" :aria-expanded="isPlaybackModePopoverOpen"
                             @click.stop="isPlaybackModePopoverOpen = !isPlaybackModePopoverOpen">
                             <Menu :size="14" :stroke-width="1.8" />
                         </MotionButton>
@@ -53,7 +52,8 @@
                             @close="isPlaybackModePopoverOpen = false" />
                     </div>
                     <MotionButton class="control-button" :while-hover="buttonHover" :while-press="buttonPress"
-                        :transition="microTransition" :aria-label="t('player.previous')" @click.stop="$emit('previous')">
+                        :transition="microTransition" :aria-label="t('player.previous')"
+                        @click.stop="$emit('previous')">
                         <SkipBack :size="14" :stroke-width="1.8" />
                     </MotionButton>
                     <MotionButton class="control-button play-pause" :while-hover="buttonHover"
@@ -88,7 +88,8 @@
                 </div>
             </div>
 
-            <div class="drag-region drag-region-right" data-tauri-drag-region :aria-label="t('player.dragWindow')"></div>
+            <div class="drag-region drag-region-right" data-tauri-drag-region :aria-label="t('player.dragWindow')">
+            </div>
         </div>
     </div>
 </template>
@@ -359,7 +360,8 @@ onBeforeUnmount(() => {
 
 .drag-region-right {
     grid-column: 3;
-    width: 100%;
+    /* 宽度由所在网格列决定：宽屏占满右侧 1fr 列，窄屏铺满列 2 剩余空间 */
+    min-width: 0;
 }
 
 .mini-cover-container {
@@ -482,6 +484,12 @@ onBeforeUnmount(() => {
     background: rgba(var(--surface-color), 0.16);
 }
 
+@media (max-width: 1000px) {
+    .playing-meta {
+        display: none;
+    }
+}
+
 @media (max-width: 720px) {
     .player-layout {
         grid-template-columns: auto minmax(0, 1fr);
@@ -492,26 +500,39 @@ onBeforeUnmount(() => {
 
     .left-zone {
         grid-column: 1;
+        flex: 0 0 auto;
     }
 
+    /* 只隐藏音乐标题和小歌词，保留封面，让窗口缩到很小时仍有空白调节尺寸。
+       右侧拖拽区铺满列 2 的全部剩余空间（控件靠左、拖拽区补在右边）。 */
     .song-info-section,
     .secondary-control,
     .drag-region-left {
         display: none;
     }
 
+    .now-playing {
+        gap: 0;
+    }
+
+
+
     .controls {
         grid-column: 2;
+        grid-row: 1;
         justify-self: start;
-        width: 100%;
+        width: auto;
+        margin-left: 20px;
+    }
+
+    .drag-region-right {
+        grid-column: 2;
+        grid-row: 1;
+        flex: 1 1 auto;
     }
 
     .transport-buttons {
         gap: 3px;
-    }
-
-    .drag-region-right {
-        display: none;
     }
 
     .mini-cover-container {

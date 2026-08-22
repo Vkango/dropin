@@ -16,7 +16,9 @@
     "pluginsSection": "外挂奇技",
     "untagged": "混沌未分之物",
     "footprints": "吾之游历",
-    "timedStop": "限时止乐"
+    "timedStop": "限时止乐",
+    "menuToggle": "展收导航之目",
+    "collapseMenu": "收合菜单"
   },
   "player": {
     "noSongSelected": "尚未择曲",
@@ -60,6 +62,8 @@
     "blur": "朦胧雾境",
     "lyrics": "词文",
     "backToLyrics": "归返词文",
+    "backToAlbum": "归返曲谱",
+    "showLyrics": "展看词文",
     "interlude": "直抵间奏",
     "playbackSettings": "演奏之设定",
     "lyricsPanel": "词文之板",

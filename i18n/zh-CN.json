@@ -16,7 +16,9 @@
     "pluginsSection": "扩展插件",
     "untagged": "未分类标签001",
     "footprints": "我的足迹",
-    "timedStop": "定时停止"
+    "timedStop": "定时停止",
+    "menuToggle": "展开或收起导航菜单",
+    "collapseMenu": "收起菜单"
   },
   "player": {
     "noSongSelected": "未选择歌曲",
@@ -60,6 +62,8 @@
     "blur": "高斯模糊",
     "lyrics": "歌词",
     "backToLyrics": "返回歌词",
+    "backToAlbum": "返回专辑",
+    "showLyrics": "查看歌词",
     "interlude": "跳转到间奏",
     "playbackSettings": "播放设置",
     "lyricsPanel": "歌词面板",
