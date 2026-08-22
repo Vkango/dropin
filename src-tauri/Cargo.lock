@@ -318,8 +318,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
-name = "bass-rs"
+name = "bass-library"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4b1249f87825cb988a459dfbc0a18392c656944cb791732663242b065424697"
 dependencies = [
  "libloading 0.8.9",
  "thiserror 2.0.12",
@@ -987,7 +989,7 @@ name = "dropin"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "bass-rs",
+ "bass-library",
  "encoding_rs",
  "lofty",
  "lrc",
@@ -4089,6 +4091,8 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 [[package]]
 name = "smtc-player"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e507f0d79e3f446d7ecaaf5ce8c7c416affc2a209d78ab2e704f53ea5d85d00e"
 dependencies = [
  "windows 0.58.0",
 ]

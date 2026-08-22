@@ -6,43 +6,48 @@
 
 # Dropin
 
+A voice with reason, an encounter unlooked for
+
 <span></span>
 
-![Version](https://img.shields.io/badge/🐢-Slow%20Updates-red.svg) ![STARS](https://img.shields.io/github/stars/Vkango/dropin?style=round-square&logo=github&color=yellow) ![FORKS](https://img.shields.io/github/forks/Vkango/dropin?style=round-square)
+![Version](https://img.shields.io/badge/🐢-Slow_updates-red.svg) ![STARS](https://img.shields.io/github/stars/Vkango/dropin?style=round-square&logo=github&color=yellow) ![FORKS](https://img.shields.io/github/forks/Vkango/dropin?style=round-square)
 
-A music player built with `Tauri2.0` + `Vue3` + `BASS`, designed for desktop, with slow-paced updates...
+A music player built with `Tauri2.0` + `Vue3` + `BASS`, for desktop applications. Updates are slow but steady……
 
-Dropin is developed openly. PRs and related explorations are welcome. Thanks for your support.
+Dropin is developed in an open manner. PRs and related exploration are welcome. Thanks for your support.
 
 </div>
 
 > [!warning]
 >
-> **This software is for learning and educational purposes only. Commercial use is strictly prohibited. The author is not responsible for any consequences that may arise!**
+> **This software is for learning and exchange purposes only. Commercial use is strictly prohibited. The author is not responsible for any consequences that may arise!**
 
+> [!caution]
+>
+> **The application is currently in an early stage of development. There are issues such as unstable operation and unavailable features. For testing purposes only!**
 
 ## 🚀 Features
 
-- [x] Local music library: import music folders, automatically scan tracks / albums / artists, with cover extraction
+- [x] Local music library: import music folders, automatically scan tracks / albums / artists, supports cover extraction
 - [x] Playback: sequential / shuffle / repeat one, list repeat, playback progress memory
-- [x] Lyrics: read local lyric files, full-screen lyric display
+- [x] Lyrics: read local lyrics files, full-screen lyrics display
 - [x] Windows system integration: SMTC media control (system media keys / volume panel)
-- [x] Themes: follow system dark/light mode, automatic accent color from album covers
+- [x] Themes: follow system light/dark mode, automatic color extraction from album covers
 - [x] Multi-language support.
-- [ ] Audio effect settings
+- [ ] Audio effects settings
 - [ ] Plugin system
 
-And so on, one step at a time!
+And so on, one by one!
 
-## 🐛 Try It Out & Debugging
+## 🐛 Try it out & Debugging
 
-Make sure you have the Rust toolchain and [Tauri prerequisites](https://tauri.app/start/prerequisites/) installed.
+Make sure the Rust toolchain and [Tauri prerequisites](https://tauri.app/start/prerequisites/) are installed.
 
 Install dependencies: `pnpm install`
 
-Run the dev build: `pnpm tauri dev`
+Run Dev version: `pnpm tauri dev`
 
-Build the release version: `pnpm tauri build`
+Build release version: `pnpm tauri build`
 
 ## 📷 Screenshots
 

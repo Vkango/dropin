@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bass_rs::{
+use bass_library::{
     raw, ActiveState, BassEngine, BassEngineOptions, BassError, BassFxEffect, Channel, ChannelKind,
     DspCallback, DspInfo, Effect, EffectKind, InitOptions, OutputBackend, Plugin, RemoteProgress,
     SourceOptions, SyncEvent, SyncKind, TagKind, TempoChannel, UrlOptions,
@@ -154,15 +154,15 @@ struct BassRuntime {
     channels: HashMap<u64, ChannelObject>,
     plugins: HashMap<u64, Plugin>,
     effects: HashMap<u64, EffectRecord>,
-    syncs: HashMap<u64, Registration<bass_rs::SyncRegistration>>,
-    dsps: HashMap<u64, Registration<bass_rs::DspRegistration>>,
+    syncs: HashMap<u64, Registration<bass_library::SyncRegistration>>,
+    dsps: HashMap<u64, Registration<bass_library::DspRegistration>>,
     next_id: u64,
 }
 
 enum ChannelObject {
     Plain(Channel),
     Tempo(TempoChannel),
-    Reverse(bass_rs::ReverseChannel),
+    Reverse(bass_library::ReverseChannel),
 }
 
 struct EffectRecord {
@@ -462,7 +462,7 @@ impl BassRuntime {
 
     fn simple_engine_call<F>(&self, operation: &str, call: F) -> Result<Value, BridgeError>
     where
-        F: FnOnce(&BassEngine) -> bass_rs::Result<()>,
+        F: FnOnce(&BassEngine) -> bass_library::Result<()>,
     {
         call(self.engine(operation)?).map_err(|error| bass_error(operation, error))?;
         Ok(json!({ "ok": true }))
@@ -502,15 +502,17 @@ impl BassRuntime {
         )?;
         let id = self.next_id();
         let app = self.app.clone();
-        let callback: bass_rs::DownloadCallback = Box::new(move |event| {
+        let callback: bass_library::DownloadCallback = Box::new(move |event| {
             let payload = match event {
-                bass_rs::DownloadEvent::Data { length } => {
+                bass_library::DownloadEvent::Data { length } => {
                     json!({ "channelId": id, "kind": "data", "length": length })
                 }
-                bass_rs::DownloadEvent::Status(status) => {
+                bass_library::DownloadEvent::Status(status) => {
                     json!({ "channelId": id, "kind": "status", "status": status })
                 }
-                bass_rs::DownloadEvent::Finished => json!({ "channelId": id, "kind": "finished" }),
+                bass_library::DownloadEvent::Finished => {
+                    json!({ "channelId": id, "kind": "finished" })
+                }
             };
             let _ = app.emit(EVENT_DOWNLOAD, payload);
         });
@@ -736,7 +738,7 @@ impl BassRuntime {
         call: F,
     ) -> Result<Value, BridgeError>
     where
-        F: FnOnce(&Channel, f32) -> bass_rs::Result<()>,
+        F: FnOnce(&Channel, f32) -> bass_library::Result<()>,
     {
         let id = required_id(&args, "channelId", "bass_channel_set_attribute")?;
         let value = required_f32(&args, field, "bass_channel_set_attribute")?;
@@ -857,14 +859,20 @@ impl BassRuntime {
             .info()
             .map_err(|error| bass_error("bass_channel_fft", error))?;
         if info.frequency == 0 {
-            return Err(bridge_error("bass_channel_fft", "channel has no sample rate"));
+            return Err(bridge_error(
+                "bass_channel_fft",
+                "channel has no sample rate",
+            ));
         }
 
         let spectrum = channel
             .read_fft_data(fft_size, raw::BASS_DATA_FFT_REMOVEDC)
             .map_err(|error| bass_error("bass_channel_fft", error))?;
         if spectrum.len() < 2 {
-            return Err(bridge_error("bass_channel_fft", "BASS returned an empty FFT"));
+            return Err(bridge_error(
+                "bass_channel_fft",
+                "BASS returned an empty FFT",
+            ));
         }
 
         let bass = fft_band(&spectrum, fft_size, info.frequency, 20.0, 250.0);
@@ -907,7 +915,7 @@ impl BassRuntime {
         let kind = parse_sync_kind(&args)?;
         let registration_id = self.next_id();
         let app = self.app.clone();
-        let callback: bass_rs::SyncCallback = Box::new(move |event: SyncEvent| {
+        let callback: bass_library::SyncCallback = Box::new(move |event: SyncEvent| {
             let _ = app.emit(
                 EVENT_SYNC,
                 json!({
@@ -1138,7 +1146,7 @@ impl BassRuntime {
             normalize_object(args.get("options").cloned().unwrap_or_else(|| json!({}))),
             "bass_add_loudness",
         )?;
-        let options = bass_rs::LoudnessOptions {
+        let options = bass_library::LoudnessOptions {
             gain_db: input.gain_db,
             threshold_db: input.threshold_db,
             ratio: input.ratio,
@@ -1237,14 +1245,14 @@ impl BassRuntime {
 
     fn midi_load(&self, args: Value) -> Result<Value, BridgeError> {
         let path = required_string(&args, "path", "bass_midi_load")?;
-        bass_rs::midi::MidiAddon::load(path)
+        bass_library::midi::MidiAddon::load(path)
             .map(|addon| json!({ "path": addon.path }))
             .map_err(|error| bass_error("bass_midi_load", error))
     }
 
     fn midi_load_from_directory(&self, args: Value) -> Result<Value, BridgeError> {
         let directory = required_string(&args, "directory", "bass_midi_load_from_directory")?;
-        bass_rs::midi::MidiAddon::load_from_directory(directory)
+        bass_library::midi::MidiAddon::load_from_directory(directory)
             .map(|addon| json!({ "path": addon.path }))
             .map_err(|error| bass_error("bass_midi_load_from_directory", error))
     }
@@ -1252,10 +1260,10 @@ impl BassRuntime {
     fn midi_set_max_polyphony(&self, args: Value) -> Result<Value, BridgeError> {
         let path = required_string(&args, "path", "bass_midi_set_max_polyphony")?;
         let max_polyphony = required_u32(&args, "maxPolyphony", "bass_midi_set_max_polyphony")?;
-        let addon = bass_rs::midi::MidiAddon::load(path)
+        let addon = bass_library::midi::MidiAddon::load(path)
             .map_err(|error| bass_error("bass_midi_set_max_polyphony", error))?;
         addon
-            .set_max_polyphony(bass_rs::midi::MidiOptions {
+            .set_max_polyphony(bass_library::midi::MidiOptions {
                 max_polyphony: Some(max_polyphony),
             })
             .map(|_| json!({ "maxPolyphony": max_polyphony }))
@@ -1631,7 +1639,7 @@ struct LoudnessInput {
 
 impl Default for LoudnessInput {
     fn default() -> Self {
-        let defaults = bass_rs::LoudnessOptions::default();
+        let defaults = bass_library::LoudnessOptions::default();
         Self {
             gain_db: defaults.gain_db,
             threshold_db: defaults.threshold_db,
@@ -1656,7 +1664,7 @@ impl Default for InitInput {
     }
 }
 
-fn device_json(device: bass_rs::DeviceInfo) -> Value {
+fn device_json(device: bass_library::DeviceInfo) -> Value {
     json!({
         "index": device.index,
         "name": device.name,
@@ -2465,14 +2473,18 @@ fn raw_catalog() -> Value {
         json!(raw::BASS_FX_RVS_FORWARD),
     );
     json!({
-        "bassApiVersion": bass_rs::BASS_API_VERSION,
-        "bassFxApiVersion": bass_rs::BASS_FX_API_VERSION,
+        "bassApiVersion": bass_library::BASS_API_VERSION,
+        "bassFxApiVersion": bass_library::BASS_FX_API_VERSION,
         "constants": constants,
         "constantCount": 283,
     })
 }
 
-fn set_effect_parameters(effect: &Effect, kind: EffectKind, value: &Value) -> bass_rs::Result<()> {
+fn set_effect_parameters(
+    effect: &Effect,
+    kind: EffectKind,
+    value: &Value,
+) -> bass_library::Result<()> {
     match kind {
         EffectKind::Dx8(raw::BASS_FX_DX8_PARAMEQ) => {
             effect.set_parameters(&raw::BASS_DX8_PARAMEQ {
@@ -2744,7 +2756,7 @@ fn set_effect_parameters(effect: &Effect, kind: EffectKind, value: &Value) -> ba
     }
 }
 
-fn get_effect_parameters(effect: &Effect, kind: EffectKind) -> bass_rs::Result<Value> {
+fn get_effect_parameters(effect: &Effect, kind: EffectKind) -> bass_library::Result<Value> {
     match kind {
         EffectKind::Dx8(raw::BASS_FX_DX8_PARAMEQ) => {
             let p = effect.get_parameters::<raw::BASS_DX8_PARAMEQ>()?;
@@ -2944,7 +2956,7 @@ fn get_effect_parameters(effect: &Effect, kind: EffectKind) -> bass_rs::Result<V
     }
 }
 
-fn number(value: &Value, field: &str) -> bass_rs::Result<f32> {
+fn number(value: &Value, field: &str) -> bass_library::Result<f32> {
     value
         .get(field)
         .and_then(Value::as_f64)
@@ -2955,7 +2967,7 @@ fn number(value: &Value, field: &str) -> bass_rs::Result<f32> {
         })
 }
 
-fn integer(value: &Value, field: &str) -> bass_rs::Result<i32> {
+fn integer(value: &Value, field: &str) -> bass_library::Result<i32> {
     value
         .get(field)
         .and_then(Value::as_i64)
@@ -2966,7 +2978,7 @@ fn integer(value: &Value, field: &str) -> bass_rs::Result<i32> {
         })
 }
 
-fn integers(value: &Value, field: &str) -> bass_rs::Result<Vec<i32>> {
+fn integers(value: &Value, field: &str) -> bass_library::Result<Vec<i32>> {
     value
         .get(field)
         .and_then(Value::as_array)
@@ -2987,7 +2999,7 @@ fn integers(value: &Value, field: &str) -> bass_rs::Result<Vec<i32>> {
         .collect()
 }
 
-fn env_nodes(value: &Value, field: &str) -> bass_rs::Result<Vec<raw::BASS_BFX_ENV_NODE>> {
+fn env_nodes(value: &Value, field: &str) -> bass_library::Result<Vec<raw::BASS_BFX_ENV_NODE>> {
     value
         .get(field)
         .and_then(Value::as_array)
@@ -3017,7 +3029,7 @@ fn env_nodes(value: &Value, field: &str) -> bass_rs::Result<Vec<raw::BASS_BFX_EN
         .collect()
 }
 
-fn unsigned(value: &Value, field: &str) -> bass_rs::Result<u32> {
+fn unsigned(value: &Value, field: &str) -> bass_library::Result<u32> {
     value
         .get(field)
         .and_then(Value::as_u64)
@@ -3033,7 +3045,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn source_defaults_match_bass_rs_defaults() {
+    fn source_defaults_match_bass_library_defaults() {
         let options = source_options(Value::Null).expect("default source options");
         assert!(options.float);
         assert!(options.prescan);
@@ -3087,7 +3099,10 @@ mod tests {
     #[test]
     fn raw_catalog_contains_runtime_constants() {
         let catalog = raw_catalog();
-        assert_eq!(catalog["bassApiVersion"], json!(bass_rs::BASS_API_VERSION));
+        assert_eq!(
+            catalog["bassApiVersion"],
+            json!(bass_library::BASS_API_VERSION)
+        );
         assert_eq!(catalog["constantCount"], json!(283));
         assert!(catalog["constants"]["BASS_ATTRIB_VOL"].is_number());
     }

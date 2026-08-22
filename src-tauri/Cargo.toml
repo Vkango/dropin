@@ -23,15 +23,18 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-decorum = "1.1.1"
-bass-rs = { package = "bass-rs", path = "../../../Rust/bass-rs" }
+bass-library = "0.1.0"
 rfd = "0.15"
 lofty = "0.25.1"
 rusqlite = { version = "0.32", features = ["bundled"] }
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "blocking",
+    "rustls-tls",
+] }
 sha2 = "0.10"
 base64 = "0.22"
 lrc = "0.2"
 encoding_rs = "0.8"
 
 [target.'cfg(windows)'.dependencies]
-smtc-player = { package = "smtc-player", path = "../../../Rust/smtc-player" }
+smtc-player = "0.1.0"
