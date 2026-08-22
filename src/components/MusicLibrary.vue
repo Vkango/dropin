@@ -2,7 +2,7 @@
     <PageLayout>
         <template #header>
             <!-- Banner 区域 -->
-            <div class="music-banner" @click="showAlbumDetail">
+            <div class="music-banner">
                 <div class="image-container">
                     <MotionTransition variant="banner">
                         <img :key="bannerImage" class="background-image" :src="bannerImage"
@@ -38,9 +38,6 @@
                 @select="handleAlphabetSelect" />
         </div>
 
-        <!-- 专辑详情卡片 -->
-        <AlbumDetailCard :visible="albumDetailVisible" :album="currentAlbumDetail" @close="hideAlbumDetail"
-            @play-all="handlePlayAll" @track-select="handleTrackSelect" @track-play="handleTrackPlay" />
     </PageLayout>
 </template>
 
@@ -49,7 +46,6 @@ import { defineProps, defineEmits, computed, inject, ref } from 'vue'
 import SongList from './SongList.vue'
 import AlphabetFilter from './AlphabetFilter.vue'
 import Icon from './Icon.vue'
-import AlbumDetailCard from './AlbumDetailCard.vue'
 import PageLayout from './PageLayout.vue'
 import MotionTransition from './MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
@@ -72,7 +68,7 @@ const props = defineProps({
     }
 })
 
-const emit = defineEmits(['header-control-click', 'song-select', 'song-play', 'album-play'])
+const emit = defineEmits(['header-control-click', 'song-select', 'song-play'])
 
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
@@ -93,65 +89,12 @@ const { activeInitial, alphabetTopOffset, handleAlphabetSelect, handleGroupLabel
     availableInitials
 )
 
-// 专辑详情状态
-const albumDetailVisible = ref(false)
-const currentAlbumDetail = ref(null)
-
 const bannerImage = computed(() => {
     return currentSong.value.cover
 })
 
 const getIconPath = (iconName) => {
     return `/assets/${iconName}`
-}
-
-// 显示专辑详情
-const showAlbumDetail = () => {
-    currentAlbumDetail.value = {
-        title: "はたらく細胞BLACK (Original Soundtrack)",
-        artist: "菅野祐悟",
-        coverUrl: currentSong.value.cover,
-        releaseYear: "2024",
-        totalTracks: props.musicLibrary.totalSongs,
-        duration: props.musicLibrary.totalDuration,
-        genres: ["Electronic", "Ambient", "Pop"],
-        description: "A curated collection of modern electronic and ambient music pieces featuring artists from around the world.",
-        tracks: props.musicLibrary.songs.map((song, index) => ({
-            id: song.id,
-            number: index + 1,
-            title: song.title,
-            artist: song.artist,
-            duration: song.duration,
-            url: song.url
-        }))
-    }
-    albumDetailVisible.value = true
-}
-
-// 隐藏专辑详情
-const hideAlbumDetail = () => {
-    albumDetailVisible.value = false
-}
-
-// 播放专辑所有歌曲
-const handlePlayAll = () => {
-    if (currentAlbumDetail.value) emit('album-play', currentAlbumDetail.value)
-}
-
-// 选择曲目
-const handleTrackSelect = (track) => {
-    const song = props.musicLibrary.songs.find(s => s.title === track.title)
-    if (song) {
-        emit('song-select', song)
-    }
-}
-
-// 播放指定曲目
-const handleTrackPlay = (track) => {
-    const song = props.musicLibrary.songs.find(s => s.title === track.title)
-    if (song) {
-        emit('song-play', song)
-    }
 }
 </script>
 

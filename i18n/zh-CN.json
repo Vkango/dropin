@@ -74,7 +74,9 @@
     "recentlyPlayed": "最近播放",
     "recommended": "为您推荐",
     "seeAll": "查看全部",
-    "bannerDescription": "这东西一次能吃一袋我丢"
+    "bannerDescription": "这东西一次能吃一袋我丢",
+    "emptyRecentlyPlayed": "暂无播放记录",
+    "emptyRecommended": "暂无推荐"
   },
   "library": {
     "title": "库",
@@ -105,7 +107,8 @@
     "genreElectronic": "电子",
     "genrePop": "流行",
     "genreRock": "摇滚",
-    "genreClassical": "古典"
+    "genreClassical": "古典",
+    "empty": "暂无专辑"
   },
   "artists": {
     "title": "艺术家",
@@ -121,7 +124,8 @@
     "sortBy": "排序",
     "sortName": "按名称排序",
     "sortAlbums": "按专辑数排序",
-    "sortRecent": "最近播放"
+    "sortRecent": "最近播放",
+    "empty": "暂无艺术家"
   },
   "plugins": {
     "title": "扩展插件",

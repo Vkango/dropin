@@ -47,7 +47,7 @@
 
         <!-- 艺术家网格/列表 -->
         <MotionTransition variant="page" mode="out-in">
-            <div v-if="viewMode === 'grid'" key="grid" class="artists-grid-view">
+            <div v-if="viewMode === 'grid' && filteredArtists.length" key="grid" class="artists-grid-view">
                 <div v-for="group in visibleGroups" :key="group.key" class="artist-group">
                     <GroupLabel v-if="group.initial" :label="group.initial"
                         @click="handleGroupLabelClick(group.initial)" />
@@ -81,7 +81,7 @@
                 </div>
             </div>
 
-            <div v-else key="list" class="artists-list">
+            <div v-else-if="viewMode === 'list' && filteredArtists.length" key="list" class="artists-list">
                 <div class="list-header">
                     <div class="header-avatar"></div>
                     <div class="header-name">{{ t('artists.headerName') }}</div>
@@ -122,6 +122,8 @@
                     </MotionDiv>
                 </template>
             </div>
+
+            <div v-else key="empty" class="artists-empty">{{ t('artists.empty') }}</div>
         </MotionTransition>
         </div>
         <AlphabetFilter :active-initial="activeInitial" :top-offset="alphabetTopOffset"
@@ -507,6 +509,14 @@ const { activeInitial, alphabetTopOffset, handleAlphabetSelect, handleGroupLabel
     cursor: pointer;
     padding: 6px;
     border-radius: 50%;
+}
+
+/* 空状态 */
+.artists-empty {
+    padding: 60px 0;
+    text-align: center;
+    color: rgba(var(--text-color), 0.5);
+    font-size: 14px;
 }
 
 /* 滚动条样式 */

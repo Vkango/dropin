@@ -47,7 +47,7 @@
 
         <!-- 专辑网格/列表 -->
         <MotionTransition variant="page" mode="out-in">
-            <div v-if="viewMode === 'grid'" key="grid" class="albums-grid-view">
+            <div v-if="viewMode === 'grid' && filteredAlbums.length" key="grid" class="albums-grid-view">
                 <div v-for="group in visibleGroups" :key="group.key" class="album-group">
                     <GroupLabel v-if="group.initial" :label="group.initial"
                         @click="handleGroupLabelClick(group.initial)" />
@@ -78,7 +78,7 @@
                 </div>
             </div>
 
-            <div v-else key="list" class="albums-list">
+            <div v-else-if="viewMode === 'list' && filteredAlbums.length" key="list" class="albums-list">
                 <div class="list-header">
                     <div class="header-cover"></div>
                     <div class="header-title">{{ t('albums.headerTitle') }}</div>
@@ -110,6 +110,8 @@
                     </MotionDiv>
                 </template>
             </div>
+
+            <div v-else key="empty" class="albums-empty">{{ t('albums.empty') }}</div>
         </MotionTransition>
         </div>
         <AlphabetFilter :active-initial="activeInitial" :top-offset="alphabetTopOffset"
@@ -483,6 +485,14 @@ const handleTrackPlay = (track) => {
     cursor: pointer;
     padding: 8px;
     border-radius: 50%;
+}
+
+/* 空状态 */
+.albums-empty {
+    padding: 60px 0;
+    text-align: center;
+    color: rgba(var(--text-color), 0.5);
+    font-size: 14px;
 }
 
 /* 滚动条样式 */

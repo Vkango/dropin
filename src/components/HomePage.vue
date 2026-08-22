@@ -24,7 +24,7 @@
                 <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }" :transition="microTransition"
                     @click="$emit('navigate', 'library')">{{ t('home.seeAll') }}</MotionButton>
             </div>
-            <div class="recent-grid">
+            <div class="recent-grid" v-if="recentlyPlayed.length">
                 <MotionDiv v-for="item in recentlyPlayed" :key="item.id" class="recent-item" initial="rest"
                     while-hover="hover" :variants="cardVariants" @click="$emit('song-play', item)">
                     <div class="recent-cover">
@@ -42,6 +42,7 @@
                     </div>
                 </MotionDiv>
             </div>
+            <div v-else class="section-empty">{{ t('home.emptyRecentlyPlayed') }}</div>
             </div>
 
             <!-- 推荐播放列表 -->
@@ -51,7 +52,7 @@
                 <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }" :transition="microTransition"
                     @click="$emit('navigate', 'playlists')">{{ t('home.seeAll') }}</MotionButton>
             </div>
-            <div class="playlist-grid">
+            <div class="playlist-grid" v-if="recommendedPlaylists.length">
                 <MotionDiv v-for="playlist in recommendedPlaylists" :key="playlist.id" class="playlist-item"
                     initial="rest" while-hover="hover" :variants="cardVariants"
                     @click="$emit('playlist-play', playlist)">
@@ -67,6 +68,7 @@
                     </div>
                 </MotionDiv>
             </div>
+            <div v-else class="section-empty">{{ t('home.emptyRecommended') }}</div>
             </div>
         </div>
     </PageLayout>
@@ -301,6 +303,14 @@ onMounted(() => {
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+}
+
+/* 空状态 */
+.section-empty {
+    padding: 40px 0;
+    text-align: center;
+    color: rgba(var(--text-color), 0.5);
+    font-size: 14px;
 }
 
 /* 滚动条样式 */

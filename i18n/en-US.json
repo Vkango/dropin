@@ -74,7 +74,9 @@
     "recentlyPlayed": "Recently Played",
     "recommended": "Recommended for You",
     "seeAll": "See all",
-    "bannerDescription": "This thing eats a whole bag at once, no way"
+    "bannerDescription": "This thing eats a whole bag at once, no way",
+    "emptyRecentlyPlayed": "No recent plays",
+    "emptyRecommended": "No recommendations"
   },
   "library": {
     "title": "Library",
@@ -105,7 +107,8 @@
     "genreElectronic": "Electronic",
     "genrePop": "Pop",
     "genreRock": "Rock",
-    "genreClassical": "Classical"
+    "genreClassical": "Classical",
+    "empty": "No albums"
   },
   "artists": {
     "title": "Artists",
@@ -121,7 +124,8 @@
     "sortBy": "Sort",
     "sortName": "Sort by name",
     "sortAlbums": "Sort by albums",
-    "sortRecent": "Recently played"
+    "sortRecent": "Recently played",
+    "empty": "No artists"
   },
   "plugins": {
     "title": "Plugins",

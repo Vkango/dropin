@@ -74,7 +74,9 @@
     "recentlyPlayed": "近日所奏",
     "recommended": "为君荐曲",
     "seeAll": "览其全貌",
-    "bannerDescription": "此物甚妙，一袋可尽，嗟乎！"
+    "bannerDescription": "此物甚妙，一袋可尽，嗟乎！",
+    "emptyRecentlyPlayed": "未曾奏曲",
+    "emptyRecommended": "无曲可荐"
   },
   "library": {
     "title": "藏经阁",
@@ -105,7 +107,8 @@
     "genreElectronic": "电音之术",
     "genrePop": "世俗之乐",
     "genreRock": "摇滚之狂",
-    "genreClassical": "古韵之风"
+    "genreClassical": "古韵之风",
+    "empty": "尚无曲谱"
   },
   "artists": {
     "title": "乐师",
@@ -121,7 +124,8 @@
     "sortBy": "排布之法",
     "sortName": "依名讳排布",
     "sortAlbums": "依曲谱多寡排布",
-    "sortRecent": "近日所奏"
+    "sortRecent": "近日所奏",
+    "empty": "尚无乐师"
   },
   "plugins": {
     "title": "外挂奇技",
