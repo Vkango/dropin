@@ -9,7 +9,7 @@ use std::{
         Arc,
     },
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use base64::Engine;
@@ -24,13 +24,12 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::bass_bridge::{BassService, BridgeError};
 use crate::lyrics::LyricsPayload;
 
 const EVENT_SCAN_PROGRESS: &str = "media/scan-progress";
-const EVENT_TRACK_ADDED: &str = "media/track-added";
 const EVENT_TRACK_UPDATED: &str = "media/track-updated";
 const EVENT_METADATA_UPDATED: &str = "media/metadata-updated";
 const EVENT_SCAN_FINISHED: &str = "media/scan-finished";
@@ -119,6 +118,7 @@ pub struct MediaTrack {
     pub format: Option<String>,
     pub cover_id: Option<String>,
     pub cover_mime_type: Option<String>,
+    pub file_hash: Option<String>,
     pub warnings: Vec<String>,
     pub added_at: Option<i64>,
     pub updated_at: Option<i64>,
@@ -169,13 +169,13 @@ pub struct MediaService {
 }
 
 impl MediaService {
-    pub fn new(app: AppHandle) -> Self {
+    pub fn new(app: AppHandle, paths: crate::paths::AppPaths) -> Self {
         let (sender, receiver) = mpsc::channel::<MediaRequest>();
         let worker_sender = sender.clone();
         thread::Builder::new()
             .name("media-db".into())
             .spawn(move || {
-                let mut runtime = MediaRuntime::new(app, worker_sender);
+                let mut runtime = MediaRuntime::new(app, worker_sender, paths);
                 while let Ok(request) = receiver.recv() {
                     let result = runtime.dispatch(&request.operation, request.args);
                     let _ = request.reply.send(result);
@@ -203,28 +203,17 @@ impl MediaService {
 struct MediaRuntime {
     app: AppHandle,
     sender: Sender<MediaRequest>,
-    db_path: PathBuf,
-    cache_dir: PathBuf,
+    paths: crate::paths::AppPaths,
     connection: Option<Connection>,
     scan_flags: HashMap<String, Arc<AtomicBool>>,
 }
 
 impl MediaRuntime {
-    fn new(app: AppHandle, sender: Sender<MediaRequest>) -> Self {
-        let app_data = app
-            .path()
-            .app_data_dir()
-            .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data"));
-        let cache_dir = app
-            .path()
-            .app_cache_dir()
-            .unwrap_or_else(|_| app_data.join("cache"))
-            .join("metadata-cache");
+    fn new(app: AppHandle, sender: Sender<MediaRequest>, paths: crate::paths::AppPaths) -> Self {
         Self {
             app,
             sender,
-            db_path: app_data.join("dropin.sqlite3"),
-            cache_dir,
+            paths,
             connection: None,
             scan_flags: HashMap::new(),
         }
@@ -232,12 +221,11 @@ impl MediaRuntime {
 
     fn connection(&mut self, operation: &str) -> Result<&mut Connection, MediaError> {
         if self.connection.is_none() {
-            if let Some(parent) = self.db_path.parent() {
-                fs::create_dir_all(parent).map_err(|error| io_error(operation, error))?;
-            }
-            fs::create_dir_all(&self.cache_dir).map_err(|error| io_error(operation, error))?;
-            let connection =
-                Connection::open(&self.db_path).map_err(|error| sqlite_error(operation, error))?;
+            self.paths
+                .prepare()
+                .map_err(|error| io_error(operation, error))?;
+            let connection = Connection::open(&self.paths.database)
+                .map_err(|error| sqlite_error(operation, error))?;
             connection
                 .busy_timeout(Duration::from_secs(5))
                 .map_err(|error| sqlite_error(operation, error))?;
@@ -278,13 +266,25 @@ impl MediaRuntime {
             "media_scan_cleanup" => self.scan_cleanup(args),
             "media_url_cache_touch" => self.url_cache_touch(args),
             "media_track_source" => self.track_source(args),
+            "media_playlist_create" => self.playlist_create(args),
+            "media_playlist_remove" => self.playlist_remove(args),
+            "media_playlist_rename" => self.playlist_rename(args),
+            "media_playlist_list" => self.playlist_list(args),
+            "media_playlist_add_track" => self.playlist_add_track(args),
+            "media_playlist_remove_track" => self.playlist_remove_track(args),
+            "media_tag_create" => self.tag_create(args),
+            "media_tag_remove" => self.tag_remove(args),
+            "media_tag_list" => self.tag_list(args),
+            "media_track_tag" => self.track_tag(args),
+            "media_track_untag" => self.track_untag(args),
             _ => Err(media_error(operation, "unknown media operation")),
         }
     }
 
     fn metadata_read_file(&mut self, args: Value) -> Result<Value, MediaError> {
-        let path = required_string(&args, "path", "media_metadata_read_file")?;
-        let parsed = parse_audio_file(Path::new(&path), &self.cache_dir)?;
+        let stored = required_string(&args, "path", "media_metadata_read_file")?;
+        let resolved = self.paths.resolve_track_path(&stored);
+        let parsed = parse_audio_file(&resolved, &self.paths)?;
         serde_json::to_value(parsed)
             .map_err(|error| media_error("media_metadata_read_file", error.to_string()))
     }
@@ -330,9 +330,26 @@ impl MediaRuntime {
         };
 
         let payload = match path {
-            Some(path) if Path::new(&path).is_file() => {
-                crate::lyrics::read_for_audio_path(Path::new(&path), allow_sidecar)
-                    .map_err(|error| media_error("media_lyrics_read", error))?
+            Some(stored) => {
+                let candidate = if source_kind == "url" {
+                    PathBuf::from(stored)
+                } else {
+                    self.paths.resolve_track_path(&stored)
+                };
+                if candidate.is_file() {
+                    crate::lyrics::read_for_audio_path(&candidate, allow_sidecar)
+                        .map_err(|error| media_error("media_lyrics_read", error))?
+                } else {
+                    LyricsPayload {
+                        source: "none".into(),
+                        warnings: if source_kind == "url" {
+                            vec!["cached audio is unavailable; embedded lyrics were not read".into()]
+                        } else {
+                            vec!["audio file is unavailable".into()]
+                        },
+                        ..Default::default()
+                    }
+                }
             }
             _ => LyricsPayload {
                 source: "none".into(),
@@ -366,21 +383,21 @@ impl MediaRuntime {
         let job_id = track.id.clone();
         let app = self.app.clone();
         let sender = self.sender.clone();
-        let cache_dir = self.cache_dir.clone();
+        let paths = self.paths.clone();
         thread::Builder::new()
             .name("media-url-metadata".into())
             .spawn(move || {
                 let result = cached_path
                     .filter(|path| Path::new(path).is_file())
                     .map(|path| {
-                        let mut parsed = parse_audio_file(Path::new(&path), &cache_dir)?;
+                        let mut parsed = parse_audio_file(Path::new(&path), &paths)?;
                         parsed.source = "url".into();
                         parsed.path = None;
                         parsed.url = Some(url.clone());
                         let size = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
                         Ok((parsed, PathBuf::from(path), None, None, None, size))
                     })
-                    .unwrap_or_else(|| download_and_parse_url(&url, &cache_dir));
+                    .unwrap_or_else(|| download_and_parse_url(&url, &paths));
                 match result {
                     Ok((mut parsed, cache_path, etag, last_modified, content_type, size)) => {
                         parsed.id = job_id.clone();
@@ -429,25 +446,28 @@ impl MediaRuntime {
     }
 
     fn add_root(&mut self, args: Value) -> Result<Value, MediaError> {
-        let path = canonical_directory(required_string(&args, "path", "media_library_add_root")?)?;
+        let absolute =
+            canonical_directory(required_string(&args, "path", "media_library_add_root")?)?;
+        let stored = self.paths.store_track_path(&absolute);
+        let absolute_text = absolute.to_string_lossy().into_owned();
         let now = now_ms();
         let connection = self.connection("media_library_add_root")?;
         connection
             .execute(
                 "INSERT INTO library_roots(path, enabled, added_at) VALUES(?1, 1, ?2)
-                 ON CONFLICT(path) DO UPDATE SET enabled = 1",
-                params![path, now],
+                  ON CONFLICT(path) DO UPDATE SET enabled = 1",
+                params![stored, now],
             )
             .map_err(|error| sqlite_error("media_library_add_root", error))?;
         let id: i64 = connection
             .query_row(
                 "SELECT id FROM library_roots WHERE path = ?1",
-                params![path],
+                params![stored],
                 |row| row.get(0),
             )
             .map_err(|error| sqlite_error("media_library_add_root", error))?;
         Ok(
-            json!({ "root": LibraryRoot { id, path, enabled: true, added_at: now, last_scan_at: None } }),
+            json!({ "root": LibraryRoot { id, path: absolute_text, enabled: true, added_at: now, last_scan_at: None } }),
         )
     }
 
@@ -463,10 +483,15 @@ impl MediaRuntime {
             .optional()
             .map_err(|error| sqlite_error("media_library_remove_root", error))?;
         if let Some(path) = path {
+            let prefix = if path.ends_with('/') {
+                path.clone()
+            } else {
+                format!("{path}/")
+            };
             connection
                 .execute(
-                    "DELETE FROM tracks WHERE source = 'file' AND path LIKE ?1",
-                    params![format!("{path}%")],
+                    "DELETE FROM tracks WHERE source = 'file' AND (path = ?1 OR path LIKE ?2)",
+                    params![path, format!("{prefix}%")],
                 )
                 .map_err(|error| sqlite_error("media_library_remove_root", error))?;
         }
@@ -511,7 +536,7 @@ impl MediaRuntime {
         self.scan_flags.insert(job_id.clone(), cancel.clone());
         let app = self.app.clone();
         let sender = self.sender.clone();
-        let cache_dir = self.cache_dir.clone();
+        let paths = self.paths.clone();
         let root_ids = roots.iter().map(|(id, _)| *id).collect::<Vec<_>>();
         let thread_job_id = job_id.clone();
         let thread_root_ids = root_ids.clone();
@@ -521,7 +546,7 @@ impl MediaRuntime {
                 run_scan(
                     app,
                     sender,
-                    cache_dir,
+                    paths,
                     thread_job_id,
                     roots,
                     thread_root_ids,
@@ -538,36 +563,42 @@ impl MediaRuntime {
         &mut self,
         root_ids: Option<Vec<i64>>,
     ) -> Result<Vec<(i64, PathBuf)>, MediaError> {
-        let connection = self.connection("media_library_scan")?;
-        let mut result = Vec::new();
-        if let Some(ids) = root_ids {
-            for id in ids {
-                if let Some(path) = connection
-                    .query_row(
-                        "SELECT path FROM library_roots WHERE id = ?1 AND enabled = 1",
-                        params![id],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .optional()
-                    .map_err(|error| sqlite_error("media_library_scan", error))?
-                {
-                    result.push((id, PathBuf::from(path)));
+        let stored_roots: Vec<(i64, String)> = {
+            let connection = self.connection("media_library_scan")?;
+            let mut result = Vec::new();
+            if let Some(ids) = root_ids {
+                for id in ids {
+                    if let Some(stored) = connection
+                        .query_row(
+                            "SELECT path FROM library_roots WHERE id = ?1 AND enabled = 1",
+                            params![id],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .optional()
+                        .map_err(|error| sqlite_error("media_library_scan", error))?
+                    {
+                        result.push((id, stored));
+                    }
                 }
+            } else {
+                let mut statement = connection
+                    .prepare("SELECT id, path FROM library_roots WHERE enabled = 1 ORDER BY path")
+                    .map_err(|error| sqlite_error("media_library_scan", error))?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|error| sqlite_error("media_library_scan", error))?;
+                result = rows
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| sqlite_error("media_library_scan", error))?;
             }
-        } else {
-            let mut statement = connection
-                .prepare("SELECT id, path FROM library_roots WHERE enabled = 1 ORDER BY path")
-                .map_err(|error| sqlite_error("media_library_scan", error))?;
-            let rows = statement
-                .query_map([], |row| {
-                    Ok((row.get(0)?, PathBuf::from(row.get::<_, String>(1)?)))
-                })
-                .map_err(|error| sqlite_error("media_library_scan", error))?;
-            result = rows
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|error| sqlite_error("media_library_scan", error))?;
-        }
-        Ok(result)
+            result
+        };
+        Ok(stored_roots
+            .into_iter()
+            .map(|(id, stored)| (id, self.paths.resolve_track_path(&stored)))
+            .collect())
     }
 
     fn cancel_scan(&mut self, args: Value) -> Result<Value, MediaError> {
@@ -600,33 +631,64 @@ impl MediaRuntime {
             .unwrap_or("")
             .trim()
             .to_owned();
+        let playlist_id = args
+            .get("playlistId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty());
+        let tag_id = args
+            .get("tagId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty());
+        let mut clauses: Vec<String> = Vec::new();
+        if playlist_id.is_some() {
+            clauses.push(
+                "t.id IN (SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1)".to_string(),
+            );
+        }
+        if tag_id.is_some() {
+            let index = if playlist_id.is_some() { 2 } else { 1 };
+            clauses.push(format!(
+                "t.id IN (SELECT track_id FROM track_tags WHERE tag_id = ?{index})"
+            ));
+        }
+        clauses.push(
+            "(?3 = '' OR t.title LIKE '%' || ?3 || '%' OR t.artist LIKE '%' || ?3 || '%' OR t.album LIKE '%' || ?3 || '%')"
+                .to_string(),
+        );
+        let filter_sql = clauses.join(" AND ");
         let connection = self.connection("media_library_tracks")?;
+        let sql = format!(
+            "SELECT t.id, t.source, t.path, t.url, t.title, t.artist, t.album, t.album_artist, t.composer,
+                    t.genres_json, t.year, t.track_number, t.track_total, t.disc_number, t.disc_total,
+                    t.duration_ms, t.bitrate, t.sample_rate, t.channels, t.codec, t.format, t.cover_id,
+                    t.cover_mime_type, t.file_hash, t.warnings_json, t.added_at, t.updated_at, t.last_played_at
+             FROM tracks t
+             WHERE t.missing = 0 AND {filter_sql}
+             ORDER BY COALESCE(t.album, ''), t.disc_number IS NULL, t.disc_number, t.track_number IS NULL, t.track_number, t.title
+             LIMIT ?4 OFFSET ?5",
+        );
+        let total_sql =
+            format!("SELECT COUNT(*) FROM tracks t WHERE t.missing = 0 AND {filter_sql}");
         let mut statement = connection
-            .prepare(
-                "SELECT id, source, path, url, title, artist, album, album_artist, composer,
-                        genres_json, year, track_number, track_total, disc_number, disc_total,
-                        duration_ms, bitrate, sample_rate, channels, codec, format, cover_id,
-                        cover_mime_type, warnings_json, added_at, updated_at, last_played_at
-                 FROM tracks
-                 WHERE missing = 0 AND (?1 = '' OR title LIKE '%' || ?1 || '%' OR artist LIKE '%' || ?1 || '%' OR album LIKE '%' || ?1 || '%')
-                 ORDER BY COALESCE(album, ''), disc_number IS NULL, disc_number, track_number IS NULL, track_number, title
-                 LIMIT ?2 OFFSET ?3",
-            )
+            .prepare(&sql)
             .map_err(|error| sqlite_error("media_library_tracks", error))?;
         let rows = statement
-            .query_map(params![search, limit, offset], row_to_track)
+            .query_map(
+                params![playlist_id, tag_id, search, limit, offset],
+                row_to_track,
+            )
             .map_err(|error| sqlite_error("media_library_tracks", error))?;
         let tracks = rows
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| sqlite_error("media_library_tracks", error))?;
-        let total: i64 = connection
-            .query_row("SELECT COUNT(*) FROM tracks WHERE missing = 0", [], |row| {
-                row.get(0)
-            })
+        let mut total_statement = connection
+            .prepare(&total_sql)
+            .map_err(|error| sqlite_error("media_library_tracks", error))?;
+        let total: i64 = total_statement
+            .query_row(params![playlist_id, tag_id, search], |row| row.get(0))
             .map_err(|error| sqlite_error("media_library_tracks", error))?;
         Ok(json!({ "tracks": tracks, "total": total, "limit": limit, "offset": offset }))
     }
-
     fn albums(&mut self, args: Value) -> Result<Value, MediaError> {
         let search = args
             .get("search")
@@ -716,10 +778,12 @@ impl MediaRuntime {
             )
             .optional()
             .map_err(|error| sqlite_error("media_library_refresh_track", error))?;
-        let path = path.ok_or_else(|| {
+        let stored = path.ok_or_else(|| {
             media_error("media_library_refresh_track", "track is not a local file")
         })?;
-        let track = parse_audio_file(Path::new(&path), &self.cache_dir)?;
+        let resolved = self.paths.resolve_track_path(&stored);
+        let mut track = parse_audio_file(&resolved, &self.paths)?;
+        track.path = Some(stored);
         self.upsert_track(&track, None, None)?;
         Ok(json!({ "track": track }))
     }
@@ -844,16 +908,17 @@ impl MediaRuntime {
     }
 
     fn should_refresh(&mut self, args: Value) -> Result<Value, MediaError> {
-        let path = required_string(&args, "path", "media_should_refresh")?;
+        let stored = required_string(&args, "path", "media_should_refresh")?;
+        let resolved = self.paths.resolve_track_path(&stored);
         let metadata =
-            fs::metadata(&path).map_err(|error| io_error("media_should_refresh", error))?;
+            fs::metadata(&resolved).map_err(|error| io_error("media_should_refresh", error))?;
         let size = metadata.len() as i64;
         let modified_at = modified_ms(&metadata).unwrap_or(0);
         let existing: Option<(i64, i64)> = self
             .connection("media_should_refresh")?
             .query_row(
                 "SELECT file_size, file_modified_at FROM tracks WHERE path = ?1",
-                params![path],
+                params![stored],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
@@ -894,32 +959,39 @@ impl MediaRuntime {
         url_cache: Option<&Value>,
         scan_token: Option<&str>,
     ) -> Result<(), MediaError> {
-        let cache_dir = self.cache_dir.clone();
+        let covers_dir = self.paths.covers_dir.clone();
+        let resolved_path = track
+            .path
+            .as_deref()
+            .map(|stored| self.paths.resolve_track_path(stored));
+        let metadata = resolved_path
+            .as_ref()
+            .and_then(|resolved| fs::metadata(resolved).ok());
+        let file_size = metadata.as_ref().map(|meta| meta.len() as i64).unwrap_or(0);
+        let file_modified_at = metadata
+            .as_ref()
+            .and_then(|meta| modified_ms(meta))
+            .unwrap_or(0);
+        let file_hash = resolved_path
+            .as_ref()
+            .and_then(|resolved| compute_file_hash(resolved));
         let connection = self.connection("media_upsert_track")?;
         let tx = connection
             .transaction()
             .map_err(|error| sqlite_error("media_upsert_track", error))?;
         let now = now_ms();
-        let path = track.path.clone();
-        let file_size = path
-            .as_deref()
-            .and_then(|value| fs::metadata(value).ok())
-            .map(|meta| meta.len() as i64)
-            .unwrap_or(0);
-        let file_modified_at = path
-            .as_deref()
-            .and_then(|value| fs::metadata(value).ok())
-            .and_then(|meta| modified_ms(&meta))
-            .unwrap_or(0);
         tx.execute(
             "INSERT INTO tracks(
                 id, source, path, url, title, artist, album, album_artist, composer, genres_json,
                 year, track_number, track_total, disc_number, disc_total, duration_ms, bitrate,
-                sample_rate, channels, codec, format, cover_id, cover_mime_type, warnings_json,
+                sample_rate, channels, codec, format, cover_id, cover_mime_type, file_hash, warnings_json,
                 file_size, file_modified_at, scan_token, missing, added_at, updated_at, last_played_at
              ) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16,
-                      ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, 0, COALESCE((SELECT added_at FROM tracks WHERE id = ?1), ?28), ?28, COALESCE((SELECT last_played_at FROM tracks WHERE id = ?1), NULL))
-             ON CONFLICT(id) DO UPDATE SET
+                       ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, 0,
+                       COALESCE((SELECT added_at FROM tracks WHERE id = ?1), ?29),
+                       ?29,
+                       COALESCE((SELECT last_played_at FROM tracks WHERE id = ?1), NULL))
+              ON CONFLICT(id) DO UPDATE SET
                 source=excluded.source, path=excluded.path, url=excluded.url, title=excluded.title,
                 artist=excluded.artist, album=excluded.album, album_artist=excluded.album_artist,
                 composer=excluded.composer, genres_json=excluded.genres_json, year=excluded.year,
@@ -928,7 +1000,7 @@ impl MediaRuntime {
                 duration_ms=excluded.duration_ms, bitrate=excluded.bitrate, sample_rate=excluded.sample_rate,
                 channels=excluded.channels, codec=excluded.codec, format=excluded.format,
                 cover_id=excluded.cover_id, cover_mime_type=excluded.cover_mime_type,
-                warnings_json=excluded.warnings_json, file_size=excluded.file_size,
+                file_hash=excluded.file_hash, warnings_json=excluded.warnings_json, file_size=excluded.file_size,
                 file_modified_at=excluded.file_modified_at, scan_token=excluded.scan_token,
                 missing=0, updated_at=excluded.updated_at",
             params![
@@ -955,6 +1027,7 @@ impl MediaRuntime {
                 track.format,
                 track.cover_id,
                 track.cover_mime_type,
+                file_hash,
                 serde_json::to_string(&track.warnings).unwrap_or_else(|_| "[]".into()),
                 file_size,
                 file_modified_at,
@@ -964,9 +1037,7 @@ impl MediaRuntime {
         )
         .map_err(|error| sqlite_error("media_upsert_track", error))?;
         if let (Some(cover_id), Some(mime_type)) = (&track.cover_id, &track.cover_mime_type) {
-            let cover_path = cache_dir
-                .join("covers")
-                .join(format!("{cover_id}.{}", cover_extension(mime_type)));
+            let cover_path = covers_dir.join(format!("{cover_id}.{}", cover_extension(mime_type)));
             if cover_path.exists() {
                 let byte_length = fs::metadata(&cover_path)
                     .map(|meta| meta.len() as i64)
@@ -1030,12 +1101,39 @@ impl MediaRuntime {
             .and_then(Value::as_str)
             .unwrap_or("finished")
             .to_owned();
+        let stats = json!({
+            "scanned": args.get("scanned").and_then(Value::as_u64).unwrap_or(0),
+            "imported": args.get("imported").and_then(Value::as_u64).unwrap_or(0),
+            "skipped": args.get("skipped").and_then(Value::as_u64).unwrap_or(0),
+            "failed": args.get("failed").and_then(Value::as_u64).unwrap_or(0)
+        });
         let connection = self.connection("media_scan_cleanup")?;
         if complete {
             for root_id in root_ids {
-                connection
-                    .execute("UPDATE tracks SET missing = 1, updated_at = ?1 WHERE source = 'file' AND path LIKE (SELECT path || '%' FROM library_roots WHERE id = ?2) AND COALESCE(scan_token, '') <> ?3", params![now_ms(), root_id, job_id])
+                let root_stored: Option<String> = connection
+                    .query_row(
+                        "SELECT path FROM library_roots WHERE id = ?1",
+                        params![root_id],
+                        |row| row.get(0),
+                    )
+                    .optional()
                     .map_err(|error| sqlite_error("media_scan_cleanup", error))?;
+                if let Some(root_stored) = root_stored {
+                    let prefix = if root_stored.ends_with('/') {
+                        root_stored.clone()
+                    } else {
+                        format!("{root_stored}/")
+                    };
+                    connection
+                        .execute(
+                            "UPDATE tracks SET missing = 1, updated_at = ?1
+                             WHERE source = 'file'
+                               AND (path = ?2 OR path LIKE ?3)
+                               AND COALESCE(scan_token, '') <> ?4",
+                            params![now_ms(), root_stored, format!("{prefix}%"), job_id],
+                        )
+                        .map_err(|error| sqlite_error("media_scan_cleanup", error))?;
+                }
                 connection
                     .execute(
                         "UPDATE library_roots SET last_scan_at = ?1 WHERE id = ?2",
@@ -1045,16 +1143,18 @@ impl MediaRuntime {
             }
         }
         self.scan_flags.remove(&job_id);
-        let _ = self.app.emit(
-            EVENT_SCAN_FINISHED,
-            json!({ "jobId": job_id, "state": state }),
-        );
+        let mut payload = json!({ "jobId": job_id, "state": state });
+        if let (Some(target), Some(source)) = (payload.as_object_mut(), stats.as_object()) {
+            for (key, value) in source {
+                target.insert(key.clone(), value.clone());
+            }
+        }
+        let _ = self.app.emit(EVENT_SCAN_FINISHED, payload);
         Ok(json!({ "jobId": job_id, "finished": complete }))
     }
 
     fn url_cache_touch(&mut self, args: Value) -> Result<Value, MediaError> {
         let url = required_string(&args, "url", "media_url_cache_touch")?;
-        let cache_dir = self.cache_dir.clone();
         let connection = self.connection("media_url_cache_touch")?;
         connection
             .execute(
@@ -1062,8 +1162,7 @@ impl MediaRuntime {
                 params![now_ms(), url],
             )
             .map_err(|error| sqlite_error("media_url_cache_touch", error))?;
-        cleanup_cache(&connection, &cache_dir)
-            .map_err(|error| sqlite_error("media_url_cache_touch", error))?;
+        cleanup_cache(&connection).map_err(|error| sqlite_error("media_url_cache_touch", error))?;
         Ok(json!({ "url": url, "touched": true }))
     }
 
@@ -1085,6 +1184,195 @@ impl MediaRuntime {
             ));
         };
         Ok(json!({ "trackId": id, "source": kind, "path": path, "url": url }))
+    }
+
+    fn playlist_create(&mut self, args: Value) -> Result<Value, MediaError> {
+        let name = required_string(&args, "name", "media_playlist_create")?;
+        let description = args
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let connection = self.connection("media_playlist_create")?;
+        let id = format!("pl-{}", now_ms());
+        let now = now_ms();
+        connection
+            .execute(
+                "INSERT INTO playlists(id, name, description, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?4)",
+                params![id, name, description, now],
+            )
+            .map_err(|error| sqlite_error("media_playlist_create", error))?;
+        Ok(json!({ "id": id, "name": name, "description": description }))
+    }
+
+    fn playlist_remove(&mut self, args: Value) -> Result<Value, MediaError> {
+        let id = required_string(&args, "playlistId", "media_playlist_remove")?;
+        let connection = self.connection("media_playlist_remove")?;
+        let removed = connection
+            .execute("DELETE FROM playlists WHERE id = ?1", params![id])
+            .map_err(|error| sqlite_error("media_playlist_remove", error))?;
+        Ok(json!({ "playlistId": id, "removed": removed > 0 }))
+    }
+
+    fn playlist_rename(&mut self, args: Value) -> Result<Value, MediaError> {
+        let id = required_string(&args, "playlistId", "media_playlist_rename")?;
+        let name = required_string(&args, "name", "media_playlist_rename")?;
+        let description = args
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let connection = self.connection("media_playlist_rename")?;
+        connection
+            .execute(
+                "UPDATE playlists SET name = ?2, description = COALESCE(?3, description), updated_at = ?4 WHERE id = ?1",
+                params![id, name, description, now_ms()],
+            )
+            .map_err(|error| sqlite_error("media_playlist_rename", error))?;
+        Ok(json!({ "playlistId": id, "name": name, "description": description }))
+    }
+
+    fn playlist_list(&mut self, _args: Value) -> Result<Value, MediaError> {
+        let connection = self.connection("media_playlist_list")?;
+        let mut statement = connection
+            .prepare(
+                "SELECT p.id, p.name, COALESCE(p.description, ''), p.cover_track_id, p.created_at, p.updated_at,
+                        (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = p.id)
+                 FROM playlists p ORDER BY p.created_at",
+            )
+            .map_err(|error| sqlite_error("media_playlist_list", error))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(json!({
+                    "id": row.get::<_, String>(0)?,
+                    "name": row.get::<_, String>(1)?,
+                    "description": row.get::<_, String>(2)?,
+                    "coverTrackId": row.get::<_, Option<String>>(3)?,
+                    "createdAt": row.get::<_, i64>(4)?,
+                    "updatedAt": row.get::<_, i64>(5)?,
+                    "trackCount": row.get::<_, i64>(6)?,
+                }))
+            })
+            .map_err(|error| sqlite_error("media_playlist_list", error))?;
+        let playlists = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| sqlite_error("media_playlist_list", error))?;
+        Ok(json!({ "playlists": playlists }))
+    }
+
+    fn playlist_add_track(&mut self, args: Value) -> Result<Value, MediaError> {
+        let playlist_id = required_string(&args, "playlistId", "media_playlist_add_track")?;
+        let track_id = required_string(&args, "trackId", "media_playlist_add_track")?;
+        let position = args
+            .get("position")
+            .and_then(Value::as_i64)
+            .unwrap_or(i64::MAX);
+        let connection = self.connection("media_playlist_add_track")?;
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position) VALUES(?1, ?2, ?3)",
+                params![playlist_id, track_id, position],
+            )
+            .map_err(|error| sqlite_error("media_playlist_add_track", error))?;
+        let _ = connection.execute(
+            "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
+            params![playlist_id, now_ms()],
+        );
+        Ok(json!({ "playlistId": playlist_id, "trackId": track_id, "added": true }))
+    }
+
+    fn playlist_remove_track(&mut self, args: Value) -> Result<Value, MediaError> {
+        let playlist_id = required_string(&args, "playlistId", "media_playlist_remove_track")?;
+        let track_id = required_string(&args, "trackId", "media_playlist_remove_track")?;
+        let connection = self.connection("media_playlist_remove_track")?;
+        let removed = connection
+            .execute(
+                "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
+                params![playlist_id, track_id],
+            )
+            .map_err(|error| sqlite_error("media_playlist_remove_track", error))?;
+        let _ = connection.execute(
+            "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
+            params![playlist_id, now_ms()],
+        );
+        Ok(json!({ "playlistId": playlist_id, "trackId": track_id, "removed": removed > 0 }))
+    }
+
+    fn tag_create(&mut self, args: Value) -> Result<Value, MediaError> {
+        let label = required_string(&args, "label", "media_tag_create")?;
+        let connection = self.connection("media_tag_create")?;
+        let id = stable_id(&format!("tag\n{label}"));
+        connection
+            .execute(
+                "INSERT INTO tags(id, label, created_at) VALUES(?1, ?2, ?3)
+                 ON CONFLICT(id) DO NOTHING",
+                params![id, label, now_ms()],
+            )
+            .map_err(|error| sqlite_error("media_tag_create", error))?;
+        Ok(json!({ "id": id, "label": label }))
+    }
+
+    fn tag_remove(&mut self, args: Value) -> Result<Value, MediaError> {
+        let id = required_string(&args, "tagId", "media_tag_remove")?;
+        let connection = self.connection("media_tag_remove")?;
+        let removed = connection
+            .execute("DELETE FROM tags WHERE id = ?1", params![id])
+            .map_err(|error| sqlite_error("media_tag_remove", error))?;
+        Ok(json!({ "tagId": id, "removed": removed > 0 }))
+    }
+
+    fn tag_list(&mut self, _args: Value) -> Result<Value, MediaError> {
+        let connection = self.connection("media_tag_list")?;
+        let mut statement = connection
+            .prepare(
+                "SELECT t.id, t.label, (SELECT COUNT(*) FROM track_tags tt WHERE tt.tag_id = t.id)
+                 FROM tags t ORDER BY t.label COLLATE NOCASE",
+            )
+            .map_err(|error| sqlite_error("media_tag_list", error))?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok(json!({
+                    "id": row.get::<_, String>(0)?,
+                    "label": row.get::<_, String>(1)?,
+                    "trackCount": row.get::<_, i64>(2)?,
+                }))
+            })
+            .map_err(|error| sqlite_error("media_tag_list", error))?;
+        let tags = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| sqlite_error("media_tag_list", error))?;
+        Ok(json!({ "tags": tags }))
+    }
+
+    fn track_tag(&mut self, args: Value) -> Result<Value, MediaError> {
+        let track_id = required_string(&args, "trackId", "media_track_tag")?;
+        let label = required_string(&args, "label", "media_track_tag")?;
+        let connection = self.connection("media_track_tag")?;
+        let tag_id = stable_id(&format!("tag\n{label}"));
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO tags(id, label, created_at) VALUES(?1, ?2, ?3)",
+                params![tag_id, label, now_ms()],
+            )
+            .map_err(|error| sqlite_error("media_track_tag", error))?;
+        connection
+            .execute(
+                "INSERT OR IGNORE INTO track_tags(track_id, tag_id) VALUES(?1, ?2)",
+                params![track_id, tag_id],
+            )
+            .map_err(|error| sqlite_error("media_track_tag", error))?;
+        Ok(json!({ "trackId": track_id, "tagId": tag_id, "tagged": true }))
+    }
+
+    fn track_untag(&mut self, args: Value) -> Result<Value, MediaError> {
+        let track_id = required_string(&args, "trackId", "media_track_untag")?;
+        let tag_id = required_string(&args, "tagId", "media_track_untag")?;
+        let connection = self.connection("media_track_untag")?;
+        let removed = connection
+            .execute(
+                "DELETE FROM track_tags WHERE track_id = ?1 AND tag_id = ?2",
+                params![track_id, tag_id],
+            )
+            .map_err(|error| sqlite_error("media_track_untag", error))?;
+        Ok(json!({ "trackId": track_id, "tagId": tag_id, "removed": removed > 0 }))
     }
 }
 
@@ -1121,6 +1409,7 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
             format TEXT,
             cover_id TEXT,
             cover_mime_type TEXT,
+            file_hash TEXT,
             warnings_json TEXT NOT NULL DEFAULT '[]',
             file_size INTEGER NOT NULL DEFAULT 0,
             file_modified_at INTEGER NOT NULL DEFAULT 0,
@@ -1133,21 +1422,25 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_tracks_path ON tracks(path);
         CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
         CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
+        CREATE INDEX IF NOT EXISTS idx_tracks_file_hash ON tracks(file_hash);
         CREATE TABLE IF NOT EXISTS track_artists(track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, artist TEXT NOT NULL, PRIMARY KEY(track_id, artist));
-        CREATE TABLE IF NOT EXISTS track_tags(track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, tag_key TEXT NOT NULL, tag_value TEXT NOT NULL, PRIMARY KEY(track_id, tag_key, tag_value));
+        CREATE TABLE IF NOT EXISTS tags(id TEXT PRIMARY KEY, label TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS track_tags(track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE, PRIMARY KEY(track_id, tag_id));
+        CREATE TABLE IF NOT EXISTS playlists(id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, cover_track_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS playlist_tracks(playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, position INTEGER NOT NULL, PRIMARY KEY(playlist_id, track_id));
         CREATE TABLE IF NOT EXISTS albums(id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT, year INTEGER, cover_id TEXT, updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS artists(id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, cover_id TEXT, updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS covers(id TEXT PRIMARY KEY, path TEXT NOT NULL, mime_type TEXT NOT NULL, byte_length INTEGER NOT NULL, created_at INTEGER NOT NULL, last_accessed_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS url_cache(url TEXT PRIMARY KEY, local_path TEXT NOT NULL, etag TEXT, last_modified TEXT, content_type TEXT, content_length INTEGER, fetched_at INTEGER NOT NULL, last_accessed_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS scan_jobs(id TEXT PRIMARY KEY, state TEXT NOT NULL, root_ids_json TEXT NOT NULL, scanned INTEGER NOT NULL DEFAULT 0, imported INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, started_at INTEGER NOT NULL, finished_at INTEGER, error TEXT);
         CREATE TABLE IF NOT EXISTS playback_history(id INTEGER PRIMARY KEY AUTOINCREMENT, track_id TEXT NOT NULL, played_at INTEGER NOT NULL, position_ms INTEGER NOT NULL DEFAULT 0);
-        PRAGMA user_version = 1;",
+        PRAGMA user_version = 2;",
     )
 }
 
 fn row_to_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<MediaTrack> {
     let genres_json: String = row.get(9)?;
-    let warnings_json: String = row.get(23)?;
+    let warnings_json: String = row.get(24)?;
     Ok(MediaTrack {
         id: row.get(0)?,
         source: row.get(1)?,
@@ -1172,17 +1465,18 @@ fn row_to_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<MediaTrack> {
         format: row.get(20)?,
         cover_id: row.get(21)?,
         cover_mime_type: row.get(22)?,
+        file_hash: row.get(23)?,
         warnings: serde_json::from_str(&warnings_json).unwrap_or_default(),
-        added_at: row.get(24)?,
-        updated_at: row.get(25)?,
-        last_played_at: row.get(26)?,
+        added_at: row.get(25)?,
+        updated_at: row.get(26)?,
+        last_played_at: row.get(27)?,
     })
 }
 
 fn run_scan(
     app: AppHandle,
     sender: Sender<MediaRequest>,
-    cache_dir: PathBuf,
+    paths: crate::paths::AppPaths,
     job_id: String,
     roots: Vec<(i64, PathBuf)>,
     root_ids: Vec<i64>,
@@ -1192,52 +1486,72 @@ fn run_scan(
     let mut imported = 0_u64;
     let mut skipped = 0_u64;
     let mut failed = 0_u64;
-    let _ = app.emit(EVENT_SCAN_PROGRESS, json!({ "jobId": job_id, "state": "running", "scanned": 0, "imported": 0, "skipped": 0, "failed": 0 }));
+    let started = Instant::now();
+    let progress_interval = Duration::from_millis(200);
+    let mut last_emit = started;
+    for (root_id, root) in &roots {
+        append_scan_log(
+            &paths,
+            &format!("scan {} started: root_id={} root={}", job_id, root_id, root.display()),
+        );
+    }
+    let _ = app.emit(
+        EVENT_SCAN_PROGRESS,
+        json!({ "jobId": job_id, "state": "running", "scanned": 0, "imported": 0, "skipped": 0, "failed": 0 }),
+    );
     for (root_id, root) in roots {
         for path in audio_files(&root) {
             if cancel.load(Ordering::Acquire) {
                 let _ = call_worker(
                     &sender,
                     "media_scan_cleanup",
-                    json!({ "jobId": job_id, "rootIds": root_ids.clone(), "state": "cancelled", "complete": false }),
-                );
-                let _ = app.emit(
-                    EVENT_SCAN_FINISHED,
-                    json!({ "jobId": job_id, "state": "cancelled" }),
+                    json!({
+                        "jobId": job_id,
+                        "rootIds": root_ids.clone(),
+                        "state": "cancelled",
+                        "complete": false,
+                        "scanned": scanned,
+                        "imported": imported,
+                        "skipped": skipped,
+                        "failed": failed
+                    }),
                 );
                 return;
             }
             scanned += 1;
-            let should_refresh = call_worker(
-                &sender,
-                "media_should_refresh",
-                json!({ "path": path.to_string_lossy() }),
-            )
-            .ok()
-            .and_then(|value| value.get("refresh").and_then(Value::as_bool))
-            .unwrap_or(true);
+            let stored = paths.store_track_path(&path);
+            let should_refresh =
+                call_worker(&sender, "media_should_refresh", json!({ "path": stored }))
+                    .ok()
+                    .and_then(|value| value.get("refresh").and_then(Value::as_bool))
+                    .unwrap_or(true);
             if !should_refresh {
                 skipped += 1;
                 let _ = call_worker(
                     &sender,
                     "media_mark_seen",
-                    json!({ "path": path.to_string_lossy(), "scanToken": job_id }),
+                    json!({ "path": stored, "scanToken": job_id }),
                 );
             } else {
-                match parse_audio_file(&path, &cache_dir) {
+                match parse_audio_file(&path, &paths) {
                     Ok(mut track) => {
                         track.source = "file".into();
-                        track.path = Some(path.to_string_lossy().into_owned());
+                        let stored_for_log = stored.clone();
+                        track.path = Some(stored);
                         let value =
                             json!({ "track": track, "scanToken": job_id, "rootId": root_id });
-                        if call_worker(&sender, "media_upsert_track", value).is_ok() {
-                            imported += 1;
-                            let _ = app.emit(
-                                EVENT_TRACK_ADDED,
-                                json!({ "path": path, "rootId": root_id }),
-                            );
-                        } else {
-                            failed += 1;
+                        match call_worker(&sender, "media_upsert_track", value) {
+                            Ok(_) => imported += 1,
+                            Err(error) => {
+                                failed += 1;
+                                append_scan_log(&paths, &format!(
+                                    "upsert FAILED: file={} stored={} id={} error={}",
+                                    path.display(),
+                                    stored_for_log,
+                                    track.id,
+                                    error
+                                ));
+                            }
                         }
                     }
                     Err(error) => {
@@ -1245,21 +1559,54 @@ fn run_scan(
                         let _ = call_worker(
                             &sender,
                             "media_mark_seen",
-                            json!({ "path": path.to_string_lossy(), "scanToken": job_id }),
+                            json!({ "path": stored, "scanToken": job_id }),
                         );
-                        let _ = app.emit(EVENT_ERROR, json!({ "operation": "media_library_scan", "path": path, "error": error }));
+                        append_scan_log(&paths, &format!(
+                            "parse FAILED: file={} error={}",
+                            path.display(),
+                            error
+                        ));
                     }
                 }
             }
-            let _ = app.emit(EVENT_SCAN_PROGRESS, json!({ "jobId": job_id, "state": "running", "scanned": scanned, "imported": imported, "skipped": skipped, "failed": failed }));
+            let now = Instant::now();
+            if now.duration_since(last_emit) >= progress_interval || scanned % 50 == 0 {
+                last_emit = now;
+                let _ = app.emit(
+                    EVENT_SCAN_PROGRESS,
+                    json!({ "jobId": job_id, "state": "running", "scanned": scanned, "imported": imported, "skipped": skipped, "failed": failed }),
+                );
+            }
         }
     }
+    let _ = app.emit(
+        EVENT_SCAN_PROGRESS,
+        json!({ "jobId": job_id, "state": "finished", "scanned": scanned, "imported": imported, "skipped": skipped, "failed": failed }),
+    );
     let _ = call_worker(
         &sender,
         "media_scan_cleanup",
-        json!({ "jobId": job_id, "rootIds": root_ids }),
+        json!({
+            "jobId": job_id,
+            "rootIds": root_ids,
+            "scanned": scanned,
+            "imported": imported,
+            "skipped": skipped,
+            "failed": failed
+        }),
     );
-    let _ = app.emit(EVENT_SCAN_PROGRESS, json!({ "jobId": job_id, "state": "finished", "scanned": scanned, "imported": imported, "skipped": skipped, "failed": failed }));
+}
+
+fn append_scan_log(paths: &crate::paths::AppPaths, line: &str) {
+    use std::io::Write;
+    let path = &paths.log_file;
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut file) = fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{} {}", now_ms(), line);
+    }
+    eprintln!("[scan] {line}");
 }
 
 fn call_worker(
@@ -1280,7 +1627,7 @@ fn call_worker(
         .map_err(|_| fatal_media_error(operation, "media worker dropped the response"))?
 }
 
-fn parse_audio_file(path: &Path, cache_dir: &Path) -> Result<MediaTrack, MediaError> {
+fn parse_audio_file(path: &Path, paths: &crate::paths::AppPaths) -> Result<MediaTrack, MediaError> {
     if !path.is_file() {
         return Err(media_error(
             "media_metadata_read_file",
@@ -1338,9 +1685,12 @@ fn parse_audio_file(path: &Path, cache_dir: &Path) -> Result<MediaTrack, MediaEr
     if tag.is_none() {
         warnings.push("file has no embedded tags; filename fallback was used".into());
     }
-    let (cover_id, cover_mime_type) = store_first_cover(&tagged_file, cache_dir)?;
+    let (cover_id, cover_mime_type) = store_first_cover(&tagged_file, paths)?;
     let format = Some(format!("{:?}", tagged_file.file_type()));
-    let id = stable_id(&path.to_string_lossy());
+    let file_hash = compute_file_hash(path);
+    let id = file_hash
+        .clone()
+        .unwrap_or_else(|| stable_id(&path.to_string_lossy()));
     Ok(MediaTrack {
         id,
         source: "file".into(),
@@ -1367,6 +1717,7 @@ fn parse_audio_file(path: &Path, cache_dir: &Path) -> Result<MediaTrack, MediaEr
         format,
         cover_id,
         cover_mime_type,
+        file_hash,
         warnings,
         added_at: None,
         updated_at: None,
@@ -1376,7 +1727,7 @@ fn parse_audio_file(path: &Path, cache_dir: &Path) -> Result<MediaTrack, MediaEr
 
 fn store_first_cover(
     file: &lofty::file::TaggedFile,
-    cache_dir: &Path,
+    paths: &crate::paths::AppPaths,
 ) -> Result<(Option<String>, Option<String>), MediaError> {
     let Some(picture) = file
         .tags()
@@ -1399,7 +1750,7 @@ fn store_first_cover(
         .mime_type()
         .and_then(|mime| mime.ext())
         .unwrap_or("img");
-    let directory = cache_dir.join("covers");
+    let directory = paths.covers_dir.clone();
     fs::create_dir_all(&directory).map_err(|error| io_error("media_cover_store", error))?;
     let path = directory.join(format!("{id}.{extension}"));
     if !path.exists() {
@@ -1433,7 +1784,7 @@ fn provisional_url_track(url: &str) -> MediaTrack {
 
 fn download_and_parse_url(
     url: &str,
-    cache_dir: &Path,
+    paths: &crate::paths::AppPaths,
 ) -> Result<
     (
         MediaTrack,
@@ -1476,7 +1827,7 @@ fn download_and_parse_url(
         .and_then(|value| value.split('?').next())
         .filter(|value| value.len() <= 8)
         .unwrap_or("audio");
-    let directory = cache_dir.join("urls");
+    let directory = paths.urls_dir.clone();
     fs::create_dir_all(&directory).map_err(|error| io_error("media_metadata_read_url", error))?;
     let id = stable_id(url);
     let path = directory.join(format!("{id}.{extension}"));
@@ -1494,10 +1845,12 @@ fn download_and_parse_url(
     }
     drop(file);
     fs::rename(&part, &path).map_err(|error| io_error("media_metadata_read_url", error))?;
-    let mut track = parse_audio_file(&path, cache_dir)?;
+    let mut track = parse_audio_file(&path, paths)?;
     track.source = "url".into();
     track.path = None;
     track.url = Some(url.into());
+    track.id = stable_id(url);
+    track.file_hash = None;
     Ok((track, path, etag, last_modified, content_type, copied))
 }
 
@@ -1509,7 +1862,7 @@ fn header_string(response: &reqwest::blocking::Response, name: &str) -> Option<S
         .map(ToOwned::to_owned)
 }
 
-fn cleanup_cache(connection: &Connection, cache_dir: &Path) -> rusqlite::Result<()> {
+fn cleanup_cache(connection: &Connection) -> rusqlite::Result<()> {
     let total: i64 = connection.query_row(
         "SELECT COALESCE(SUM(content_length), 0) FROM url_cache",
         [],
@@ -1534,7 +1887,6 @@ fn cleanup_cache(connection: &Connection, cache_dir: &Path) -> rusqlite::Result<
         connection.execute("DELETE FROM url_cache WHERE local_path = ?1", params![path])?;
         current = current.saturating_sub(size.max(0) as u64);
     }
-    let _ = cache_dir;
     Ok(())
 }
 
@@ -1583,7 +1935,7 @@ fn is_supported_audio(path: &Path) -> bool {
     )
 }
 
-fn canonical_directory(value: String) -> Result<String, MediaError> {
+fn canonical_directory(value: String) -> Result<PathBuf, MediaError> {
     let path =
         fs::canonicalize(&value).map_err(|error| io_error("media_library_add_root", error))?;
     if !path.is_dir() {
@@ -1592,7 +1944,23 @@ fn canonical_directory(value: String) -> Result<String, MediaError> {
             "path is not a directory",
         ));
     }
-    Ok(path.to_string_lossy().into_owned())
+    Ok(path)
+}
+
+fn compute_file_hash(path: &Path) -> Option<String> {
+    let mut file = fs::File::open(path).ok()?;
+    let mut hasher = md5::Context::new();
+    let mut buffer = [0u8; 65536];
+    loop {
+        let Ok(read) = file.read(&mut buffer) else {
+            return None;
+        };
+        if read == 0 {
+            break;
+        }
+        hasher.consume(&buffer[..read]);
+    }
+    Some(format!("{:x}", hasher.compute()))
 }
 
 fn validate_url(url: &str) -> Result<(), MediaError> {
@@ -1763,10 +2131,18 @@ pub fn media_library_tracks(
     search: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
+    playlist_id: Option<String>,
+    tag_id: Option<String>,
 ) -> Result<Value, MediaError> {
     service.call(
         "media_library_tracks",
-        json!({ "search": search.unwrap_or_default(), "limit": limit, "offset": offset }),
+        json!({
+            "search": search.unwrap_or_default(),
+            "limit": limit,
+            "offset": offset,
+            "playlistId": playlist_id,
+            "tagId": tag_id
+        }),
     )
 }
 
@@ -1928,6 +2304,117 @@ pub fn media_playback_open(
         json!({ "trackId": track_id, "positionMs": 0 }),
     );
     Ok(json!({ "trackId": track_id, "channel": bass_result }))
+}
+
+#[tauri::command]
+pub fn media_playlist_create(
+    service: State<'_, MediaService>,
+    name: String,
+    description: Option<String>,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_create",
+        json!({ "name": name, "description": description }),
+    )
+}
+
+#[tauri::command]
+pub fn media_playlist_remove(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_remove",
+        json!({ "playlistId": playlist_id }),
+    )
+}
+
+#[tauri::command]
+pub fn media_playlist_rename(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+    name: String,
+    description: Option<String>,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_rename",
+        json!({ "playlistId": playlist_id, "name": name, "description": description }),
+    )
+}
+
+#[tauri::command]
+pub fn media_playlist_list(service: State<'_, MediaService>) -> Result<Value, MediaError> {
+    service.call("media_playlist_list", json!({}))
+}
+
+#[tauri::command]
+pub fn media_playlist_add_track(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+    track_id: String,
+    position: Option<i64>,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_add_track",
+        json!({ "playlistId": playlist_id, "trackId": track_id, "position": position }),
+    )
+}
+
+#[tauri::command]
+pub fn media_playlist_remove_track(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+    track_id: String,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_remove_track",
+        json!({ "playlistId": playlist_id, "trackId": track_id }),
+    )
+}
+
+#[tauri::command]
+pub fn media_tag_create(
+    service: State<'_, MediaService>,
+    label: String,
+) -> Result<Value, MediaError> {
+    service.call("media_tag_create", json!({ "label": label }))
+}
+
+#[tauri::command]
+pub fn media_tag_remove(
+    service: State<'_, MediaService>,
+    tag_id: String,
+) -> Result<Value, MediaError> {
+    service.call("media_tag_remove", json!({ "tagId": tag_id }))
+}
+
+#[tauri::command]
+pub fn media_tag_list(service: State<'_, MediaService>) -> Result<Value, MediaError> {
+    service.call("media_tag_list", json!({}))
+}
+
+#[tauri::command]
+pub fn media_track_tag(
+    service: State<'_, MediaService>,
+    track_id: String,
+    label: String,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_track_tag",
+        json!({ "trackId": track_id, "label": label }),
+    )
+}
+
+#[tauri::command]
+pub fn media_track_untag(
+    service: State<'_, MediaService>,
+    track_id: String,
+    tag_id: String,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_track_untag",
+        json!({ "trackId": track_id, "tagId": tag_id }),
+    )
 }
 
 fn bridge_to_media_error(operation: &str, error: BridgeError) -> MediaError {

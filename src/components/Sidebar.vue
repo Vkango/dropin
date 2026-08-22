@@ -32,7 +32,16 @@
                             :transition="microTransition" @click.stop="$emit('add-tag')">+</MotionButton>
                     </div>
                     <div v-if="sections.tags" class="section-content">
-                        <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition">
+                        <MotionDiv v-for="tag in tags" :key="tag.id" class="nav-item"
+                            :while-hover="{ y: -1 }" :transition="microTransition"
+                            @click="$emit('select-tag', tag)">
+                            <span class="section-icon">
+                                <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
+                            </span>
+                            <span class="nav-label">{{ tag.label }}</span>
+                        </MotionDiv>
+                        <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition"
+                            @click="$emit('select-tag', null)">
                             <span class="section-icon">
                                 <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
                             </span>
@@ -52,6 +61,16 @@
                         <span class="section-title">{{ t('sidebar.playlists') }}</span>
                         <MotionButton class="add-btn" :while-hover="{ color: '#ffffff', scale: 1.08 }"
                             :transition="microTransition" @click.stop="$emit('add-playlist')">+</MotionButton>
+                    </div>
+                    <div v-if="sections.playlists" class="section-content">
+                        <MotionDiv v-for="playlist in playlists" :key="playlist.id" class="nav-item"
+                            :while-hover="{ y: -1 }" :transition="microTransition"
+                            @click="$emit('select-playlist', playlist)">
+                            <span class="section-icon">
+                                <Icon src="/assets/playlist.svg" style="scale: 0.7" :color="iconColor" />
+                            </span>
+                            <span class="nav-label">{{ playlist.name }}</span>
+                        </MotionDiv>
                     </div>
                 </div>
 
@@ -124,6 +143,14 @@ const props = defineProps({
     isDark: {
         type: Boolean,
         default: false
+    },
+    playlists: {
+        type: Array,
+        default: () => []
+    },
+    tags: {
+        type: Array,
+        default: () => []
     }
 })
 
@@ -132,7 +159,9 @@ const emit = defineEmits([
     'nav-item-click',
     'add-tag',
     'add-playlist',
-    'add-plugin'
+    'add-plugin',
+    'select-playlist',
+    'select-tag'
 ])
 
 const MotionDiv = motion.div

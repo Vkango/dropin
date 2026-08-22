@@ -13,6 +13,8 @@ import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
 import Drawer from './components/Drawer.vue'
 import Playlist from './components/Playlist.vue'
+import Notification from './components/notification/Notification.vue'
+import LoadingWithTip from './components/notification/LoadingWithTip.vue'
 import { useReducedMotion } from 'motion-v'
 import { themeManager } from './utils/themeManager.js'
 import { bassCall, listenToBassEvents } from './services/bassApi.js'
@@ -102,6 +104,10 @@ const lyricsPayload = ref(null)
 const lyricsLoading = ref(false)
 let lyricsRequestId = 0
 
+// 通知系统
+const notificationRef = ref(null)
+let activeProgressNotifyId = null
+
 // 搜索查询
 const searchQuery = ref('')
 
@@ -140,52 +146,11 @@ watch(
   }
 )
 
-// 音乐库数据
+// 音乐库数据（由 libraryStore 驱动，初始为空）
 const musicLibrary = reactive({
-  totalSongs: 5,
-  totalDuration: "18' 56\"",
-  songs: [
-    {
-      id: 1,
-      title: '僕たち、やっと行けるんだね!',
-      artist: '菅野祐悟',
-      album: 'TVアニメ『はたらく細胞...』',
-      duration: '02:04',
-      cover: '/assets/cover.jpg'
-    },
-    {
-      id: 2,
-      title: '1996 Internet Starter Kit - Velkommen (Original Mix)',
-      artist: 'Stan LePard',
-      album: '1996 Internet Starter Kit - Velkommen (Original Mix)',
-      duration: '05:24',
-      cover: '/assets/1996 Internet Starter Kit - Velkommen (Original Mix) - Stan LePard.jpg'
-    },
-    {
-      id: 3,
-      title: 'Afternoon Delight',
-      artist: 'Starland Vocal Band',
-      album: 'AM Gold: Mellow Hits of the \'70s',
-      duration: '03:15',
-      cover: '/assets/Afternoon Delight - Starland Vocal Band.jpg'
-    },
-    {
-      id: 4,
-      title: 'Alright!',
-      artist: 'Juju B. Goode; HOHYUN',
-      album: 'Garden',
-      duration: '03:04',
-      cover: '/assets/Alright! - Juju B. Goode, HOHYUN.jpg'
-    },
-    {
-      id: 5,
-      title: 'Between Worlds',
-      artist: 'Roger Subirana',
-      album: 'X I I',
-      duration: '05:09',
-      cover: '/assets/Between Worlds - Roger Subirana.jpg'
-    }
-  ]
+  totalSongs: 0,
+  totalDuration: '0s',
+  songs: []
 })
 
 // 侧边栏导航项（标签随语言切换响应更新）
@@ -351,13 +316,83 @@ const handleNavItemClick = (item) => {
   console.log('导航点击:', item.label)
 }
 
+const handleScanNotify = (name, payload) => {
+  if (!notificationRef.value) return
+  const notify = notificationRef.value
+  if (name === 'media/scan-progress' && payload?.jobId) {
+    if (!activeProgressNotifyId) return
+    if (payload.state === 'running') {
+      notify.updateNotification(activeProgressNotifyId, {
+        props: {
+          Tip: t('notification.scanProgress', {
+            imported: payload.imported ?? 0,
+            scanned: payload.scanned ?? 0,
+            skipped: payload.skipped ?? 0,
+            failed: payload.failed ?? 0
+          })
+        }
+      })
+    }
+  } else if (name === 'media/scan-finished' && activeProgressNotifyId) {
+    const id = activeProgressNotifyId
+    activeProgressNotifyId = null
+    if (payload.state === 'cancelled') {
+      notify.updateNotification(id, {
+        title: t('notification.importing'),
+        props: { Tip: t('notification.scanStarted') },
+        duration: 4000
+      })
+    } else {
+      notify.updateNotification(id, {
+        title: t('notification.importDone'),
+        props: {
+          Tip: t('notification.scanFinished', {
+            imported: payload.imported ?? 0,
+            skipped: payload.skipped ?? 0,
+            failed: payload.failed ?? 0
+          })
+        },
+        duration: 6000
+      })
+    }
+  } else if (name === 'media/error' && activeProgressNotifyId) {
+    const id = activeProgressNotifyId
+    activeProgressNotifyId = null
+    notify.updateNotification(id, {
+      title: t('notification.importFailed'),
+      props: { Tip: String(payload?.error?.message || payload?.error || 'unknown error') },
+      duration: 8000
+    })
+  }
+}
+
 const handleHeaderControlClick = async (control) => {
   if (!['system', 'local', 'import'].includes(control.id)) return
   try {
     const result = await libraryStore.mediaApi.pickFolder()
-    if (result?.path) await libraryStore.addRootAndScan(result.path)
+    if (!result?.path) return
+    if (notificationRef.value) {
+      activeProgressNotifyId = await notificationRef.value.addNotification(
+        t('notification.importing'),
+        t('notification.source'),
+        LoadingWithTip,
+        null,
+        { Tip: t('notification.scanStarted') },
+        0
+      )
+    }
+    await libraryStore.addRootAndScan(result.path)
   } catch (error) {
     console.error('导入音乐目录失败:', error)
+    if (activeProgressNotifyId && notificationRef.value) {
+      const id = activeProgressNotifyId
+      activeProgressNotifyId = null
+      notificationRef.value.updateNotification(id, {
+        title: t('notification.importFailed'),
+        props: { Tip: String(error?.message || error) },
+        duration: 8000
+      })
+    }
   }
 }
 
@@ -813,12 +848,48 @@ const handleProgressCommit = (percent) => {
   scheduleSeek()
 }
 
-const handleAddTag = () => {
-  console.log('添加标签')
+const handleAddTag = async () => {
+  const label = prompt('新标签名称（如：BPM 128、轻柔）')
+  if (!label || !label.trim()) return
+  try {
+    await libraryStore.createTag(label.trim())
+  } catch (error) {
+    console.error('创建标签失败:', error)
+  }
 }
 
-const handleAddPlaylist = () => {
-  console.log('添加播放列表')
+const handleAddPlaylist = async () => {
+  const name = prompt('新播放列表名称')
+  if (!name || !name.trim()) return
+  try {
+    await libraryStore.createPlaylist(name.trim())
+  } catch (error) {
+    console.error('创建播放列表失败:', error)
+  }
+}
+
+const handleSelectPlaylist = async (playlist) => {
+  try {
+    const tracks = await libraryStore.playlistTracks(playlist.id)
+    if (tracks.length) {
+      shufflePlayedIds.clear()
+      playSong(tracks[0], tracks)
+    }
+  } catch (error) {
+    console.error('加载播放列表失败:', error)
+  }
+}
+
+const handleSelectTag = async (tag) => {
+  try {
+    const tracks = tag ? await libraryStore.tracksByTag(tag.id) : libraryStore.tracks.value
+    if (tracks.length) {
+      shufflePlayedIds.clear()
+      playSong(tracks[0], tracks)
+    }
+  } catch (error) {
+    console.error('加载标签歌曲失败:', error)
+  }
 }
 
 const handleAddPlugin = () => {
@@ -979,7 +1050,7 @@ onMounted(async () => {
 
   // 先绑定页面滚动，避免桌面端事件初始化失败时影响标题栏状态联动。
   await bindScrollSources()
-  await libraryStore.installListeners()
+  await libraryStore.installListeners(handleScanNotify)
   await libraryStore.refresh()
   await libraryStore.hydrateCovers()
   syncLibraryState()
@@ -1013,8 +1084,10 @@ onBeforeUnmount(() => {
 
     <!-- 侧边栏 -->
     <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
-      :is-dark="isDarkTheme" @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
-      @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin" />
+      :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
+      @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
+      @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin"
+      @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" />
 
     <!-- 主内容区 -->
     <div class="main-content-wrapper">
@@ -1052,6 +1125,8 @@ onBeforeUnmount(() => {
       <Playlist :songs="effectiveQueue" :current-song="currentSong" :is-playing="isPlaying"
         @song-select="handleQueueSongSelect" />
     </Drawer>
+
+    <Notification ref="notificationRef" class="app-notification-layer" />
   </div>
 </template>
 
@@ -1120,12 +1195,16 @@ select {
 
   --md-sys-color-outline: 121, 116, 126;
   --md-sys-color-outline-variant: 202, 182, 224;
+
+  /* 白色图标资源（close.svg / sys_music.svg 等）在亮色主题下反转为深色 */
+  --invert: 1;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --global-color: 0, 0, 0;
     --global-inverse-color: 255, 255, 255;
+    --invert: 0;
   }
 }
 
@@ -1241,5 +1320,19 @@ body {
   top: 0;
   height: 100%;
   overflow: hidden;
+}
+
+.app-notification-layer {
+  position: fixed;
+  top: 80px;
+  right: 16px;
+  z-index: 1200;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+
+.app-notification-layer :deep(.notification) {
+  pointer-events: auto;
 }
 </style>

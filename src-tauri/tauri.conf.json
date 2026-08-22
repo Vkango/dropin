@@ -34,7 +34,8 @@
       "resources/bass/x64/bass.dll": "bass/x64/bass.dll",
       "resources/bass/x64/bass_fx.dll": "bass/x64/bass_fx.dll",
       "resources/bass/licenses/bass.txt": "bass/licenses/bass.txt",
-      "resources/bass/licenses/bass_fx.txt": "bass/licenses/bass_fx.txt"
+      "resources/bass/licenses/bass_fx.txt": "bass/licenses/bass_fx.txt",
+      "../i18n/*.json": "i18n/"
     },
     "icon": [
       "icons/32x32.png",

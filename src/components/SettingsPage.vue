@@ -117,12 +117,34 @@
                     </label>
                 </div>
             </section>
+
+            <section class="settings-row">
+                <div class="setting-copy">
+                    <div>
+                        <h2>{{ t('settings.dataDir') }}</h2>
+                        <p>{{ t('settings.dataDirHint') }}</p>
+                    </div>
+                    <strong class="status-pill">{{ dataDirLabel }}</strong>
+                </div>
+                <div class="settings-note">
+                    <Icon src="/assets/info.svg" size="sm" />
+                    <span>{{ t('settings.dataDirRestartHint') }}</span>
+                </div>
+                <div class="data-dir-control">
+                    <button type="button" class="data-dir-button" @click="handleChooseDataDir">
+                        {{ t('settings.dataDirChoose') }}
+                    </button>
+                    <button type="button" class="data-dir-button secondary" @click="handleResetDataDir">
+                        {{ t('settings.dataDirReset') }}
+                    </button>
+                </div>
+            </section>
         </div>
     </PageLayout>
 </template>
 
 <script setup>
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, onMounted, ref, watch } from 'vue'
 import { ZapIcon } from '@lucide/vue'
 import Icon from './Icon.vue'
 import MotionTransition from './MotionTransition.vue'
@@ -132,6 +154,7 @@ import { frameRateLimits, useAppSettingsStore, THEME_MODES } from '../stores/app
 import { LeafIcon } from '@lucide/vue'
 import { useI18n } from '../i18n/index.js'
 import { useLocaleList } from '../stores/i18nStore.js'
+import { mediaApi } from '../services/mediaApi.js'
 
 const { t } = useI18n()
 const { available } = useLocaleList()
@@ -140,6 +163,39 @@ const currentSong = inject('currentSong')
 const settingsStore = useAppSettingsStore()
 const draftFrameRate = ref(settingsStore.state.animationFrameRate ?? frameRateLimits.default)
 const manualColorText = ref(settingsStore.state.manualThemeColor)
+const dataDir = ref(null)
+
+onMounted(async () => {
+    try {
+        dataDir.value = await mediaApi.dataDirRead()
+    } catch (error) {
+        console.error('读取数据目录失败:', error)
+    }
+})
+
+const dataDirLabel = computed(() => dataDir.value || t('settings.dataDirDefault'))
+
+const handleChooseDataDir = async () => {
+    try {
+        const selected = await open({ directory: true, multiple: false, title: t('settings.dataDirChoose') })
+        if (!selected) return
+        await mediaApi.dataDirSet(selected)
+        dataDir.value = selected
+        alert(t('settings.dataDirRestartNotice'))
+    } catch (error) {
+        console.error('设置数据目录失败:', error)
+    }
+}
+
+const handleResetDataDir = async () => {
+    try {
+        await mediaApi.dataDirSet(null)
+        dataDir.value = null
+        alert(t('settings.dataDirRestartNotice'))
+    } catch (error) {
+        console.error('重置数据目录失败:', error)
+    }
+}
 
 const themeModeOptions = [
     { value: 'system', label: t('settings.followSystem') },
@@ -397,6 +453,36 @@ const commitManualColorInput = () => {
     background: transparent;
     font-size: 12px;
     line-height: 1.5;
+}
+
+.data-dir-control {
+    display: flex;
+    gap: 10px;
+}
+
+.data-dir-button {
+    padding: 7px 14px;
+    border: 1px solid rgba(var(--outline-color), 0.28);
+    border-radius: 5px;
+    background: rgba(var(--primary-color), 0.14);
+    color: rgb(var(--text-color));
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 160ms ease;
+}
+
+.data-dir-button:hover {
+    background: rgba(var(--primary-color), 0.24);
+}
+
+.data-dir-button.secondary {
+    background: transparent;
+    color: rgba(var(--text-color), 0.62);
+}
+
+.data-dir-button.secondary:hover {
+    background: rgba(var(--text-color), 0.06);
 }
 
 @media (max-width: 720px) {

@@ -20,7 +20,20 @@ const commands = {
   history: 'media_playback_history',
   record: 'media_playback_record',
   pickFolder: 'media_pick_folder',
-  playbackOpen: 'media_playback_open'
+  playbackOpen: 'media_playback_open',
+  playlistCreate: 'media_playlist_create',
+  playlistRemove: 'media_playlist_remove',
+  playlistRename: 'media_playlist_rename',
+  playlistList: 'media_playlist_list',
+  playlistAddTrack: 'media_playlist_add_track',
+  playlistRemoveTrack: 'media_playlist_remove_track',
+  tagCreate: 'media_tag_create',
+  tagRemove: 'media_tag_remove',
+  tagList: 'media_tag_list',
+  trackTag: 'media_track_tag',
+  trackUntag: 'media_track_untag',
+  dataDirRead: 'data_dir_read',
+  dataDirSet: 'data_dir_set'
 }
 
 export const mediaApi = {
@@ -32,7 +45,8 @@ export const mediaApi = {
   roots: () => invoke(commands.roots),
   scan: (rootIds = null) => invoke(commands.scan, { rootIds }),
   cancelScan: (jobId) => invoke(commands.cancelScan, { jobId }),
-  tracks: ({ search = '', limit = 500, offset = 0 } = {}) => invoke(commands.tracks, { search, limit, offset }),
+  tracks: ({ search = '', limit = 500, offset = 0, playlistId = null, tagId = null } = {}) =>
+    invoke(commands.tracks, { search, limit, offset, playlistId, tagId }),
   albums: (search = '') => invoke(commands.albums, { search }),
   artists: (search = '') => invoke(commands.artists, { search }),
   refreshTrack: (trackId) => invoke(commands.refreshTrack, { trackId }),
@@ -42,13 +56,25 @@ export const mediaApi = {
   history: (limit = 50) => invoke(commands.history, { limit }),
   record: (trackId, positionMs = 0) => invoke(commands.record, { trackId, positionMs }),
   pickFolder: () => invoke(commands.pickFolder),
-  openPlayback: (trackId) => invoke(commands.playbackOpen, { trackId })
+  openPlayback: (trackId) => invoke(commands.playbackOpen, { trackId }),
+  playlistCreate: (name, description = null) => invoke(commands.playlistCreate, { name, description }),
+  playlistRemove: (playlistId) => invoke(commands.playlistRemove, { playlistId }),
+  playlistRename: (playlistId, name, description = null) => invoke(commands.playlistRename, { playlistId, name, description }),
+  playlistList: () => invoke(commands.playlistList),
+  playlistAddTrack: (playlistId, trackId, position = null) => invoke(commands.playlistAddTrack, { playlistId, trackId, position }),
+  playlistRemoveTrack: (playlistId, trackId) => invoke(commands.playlistRemoveTrack, { playlistId, trackId }),
+  tagCreate: (label) => invoke(commands.tagCreate, { label }),
+  tagRemove: (tagId) => invoke(commands.tagRemove, { tagId }),
+  tagList: () => invoke(commands.tagList),
+  trackTag: (trackId, label) => invoke(commands.trackTag, { trackId, label }),
+  trackUntag: (trackId, tagId) => invoke(commands.trackUntag, { trackId, tagId }),
+  dataDirRead: () => invoke(commands.dataDirRead),
+  dataDirSet: (dataDir = null) => invoke(commands.dataDirSet, { dataDir })
 }
 
 export async function listenToMediaEvents(handler) {
   const eventNames = [
     'media/scan-progress',
-    'media/track-added',
     'media/track-updated',
     'media/metadata-updated',
     'media/scan-finished',

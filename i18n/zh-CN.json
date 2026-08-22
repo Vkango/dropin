@@ -189,7 +189,27 @@
     "languageHint": "界面显示语言。语言文件为可执行文件旁 i18n 目录下的 JSON 文件，文件名即语言代码。",
     "followSystem": "跟随系统",
     "light": "亮色",
-    "dark": "暗色"
+    "dark": "暗色",
+    "dataDir": "应用数据目录",
+    "dataDirHint": "播放列表、音乐库数据库、封面与网络缓存均存储在此目录。更换目录即可切换整套音乐库（多库）。",
+    "dataDirDefault": "可执行文件所在目录",
+    "dataDirChoose": "选择目录…",
+    "dataDirReset": "恢复默认",
+    "dataDirRestartHint": "更改数据目录后需要重启应用才能生效。",
+    "dataDirRestartNotice": "数据目录已更改，请重启应用以生效。"
+  },
+  "notification": {
+    "source": "音乐库",
+    "importing": "正在导入",
+    "importDone": "导入完成",
+    "importFailed": "导入失败",
+    "scanStarted": "正在扫描文件夹…",
+    "scanProgress": "已导入 {imported} / 已扫描 {scanned}（跳过 {skipped}，失败 {failed}）",
+    "scanFinished": "导入完成：{imported} 首，跳过 {skipped}，失败 {failed}",
+    "timeAgoNow": "刚刚",
+    "timeAgoMin": "{n} 分钟前",
+    "timeAgoHour": "{n} 小时前",
+    "timeAgoDay": "{n} 天前"
   },
   "albumCard": {
     "typeMusicAlbum": "音乐专辑",

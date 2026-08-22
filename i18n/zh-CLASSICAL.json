@@ -189,7 +189,27 @@
     "languageHint": "界面所用之言语，可于可执行文件旁之 i18n 目录中，置自定义JSON言语典籍。",
     "followSystem": "随系统之变",
     "light": "明光之貌",
-    "dark": "幽暗之貌"
+    "dark": "幽暗之貌",
+    "dataDir": "应用数据之目录",
+    "dataDirHint": "名录、乐库之库、封面与网路之缓存皆藏于此。更易此目录，则整套乐库随之而换。",
+    "dataDirDefault": "可执行文件所在之目录",
+    "dataDirChoose": "择目录…",
+    "dataDirReset": "复归默认",
+    "dataDirRestartHint": "更目录之后，须重启应用方生效。",
+    "dataDirRestartNotice": "目录已更，请重启应用以生效。"
+  },
+  "notification": {
+    "source": "音乐库",
+    "importing": "正在导入",
+    "importDone": "导入既毕",
+    "importFailed": "导入有失",
+    "scanStarted": "正在遍历曲目录…",
+    "scanProgress": "已导入 {imported} / 已遍历 {scanned}（略 {skipped}，失 {failed}）",
+    "scanFinished": "导入既毕：{imported} 曲，略 {skipped}，失 {failed}",
+    "timeAgoNow": "刚刚",
+    "timeAgoMin": "{n} 分前",
+    "timeAgoHour": "{n} 时前",
+    "timeAgoDay": "{n} 日前"
   },
   "albumCard": {
     "typeMusicAlbum": "音律曲谱",

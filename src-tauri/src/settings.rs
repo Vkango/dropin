@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-const SETTINGS_VERSION: u32 = 3;
+const SETTINGS_VERSION: u32 = 4;
 const DEFAULT_FRAME_RATE: u32 = 60;
 const MIN_FRAME_RATE: u32 = 15;
 const MAX_FRAME_RATE: u32 = 120;
@@ -26,6 +26,12 @@ fn default_manual_theme_color() -> String {
 
 fn default_language() -> String {
     DEFAULT_LANGUAGE.to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BootstrapSettings {
+    pub data_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,13 +62,24 @@ impl Default for AppSettings {
     }
 }
 
-fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let directory = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?;
-    fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-    Ok(directory.join("settings.json"))
+fn bootstrap_path(app: &AppHandle) -> Option<PathBuf> {
+    let directory = app.path().app_data_dir().ok()?;
+    Some(directory.join("settings.json"))
+}
+
+pub fn bootstrap_data_dir(app: &AppHandle) -> Option<String> {
+    let path = bootstrap_path(app)?;
+    let contents = fs::read_to_string(path).ok()?;
+    let settings: BootstrapSettings = serde_json::from_str(&contents).ok()?;
+    settings
+        .data_dir
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn settings_path(paths: &crate::paths::AppPaths) -> Result<PathBuf, String> {
+    fs::create_dir_all(&paths.root).map_err(|error| error.to_string())?;
+    Ok(paths.settings_file.clone())
 }
 
 fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
@@ -114,8 +131,8 @@ fn is_valid_theme_color(value: &str) -> bool {
 }
 
 #[tauri::command]
-pub fn app_settings_read(app: AppHandle) -> Result<AppSettings, String> {
-    let path = settings_path(&app)?;
+pub fn app_settings_read(paths: tauri::State<'_, crate::paths::AppPaths>) -> Result<AppSettings, String> {
+    let path = settings_path(&paths)?;
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -131,9 +148,12 @@ pub fn app_settings_read(app: AppHandle) -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
-pub fn app_settings_write(app: AppHandle, settings: AppSettings) -> Result<AppSettings, String> {
+pub fn app_settings_write(
+    paths: tauri::State<'_, crate::paths::AppPaths>,
+    settings: AppSettings,
+) -> Result<AppSettings, String> {
     let normalized = normalize(settings)?;
-    let path = settings_path(&app)?;
+    let path = settings_path(&paths)?;
     let temporary_path = path.with_extension("json.tmp");
     let contents = serde_json::to_vec_pretty(&normalized).map_err(|error| error.to_string())?;
 
@@ -144,4 +164,41 @@ pub fn app_settings_write(app: AppHandle, settings: AppSettings) -> Result<AppSe
     fs::rename(&temporary_path, &path).map_err(|error| error.to_string())?;
 
     Ok(normalized)
+}
+
+fn write_bootstrap(app: &AppHandle, data_dir: Option<String>) -> Result<(), String> {
+    let path = bootstrap_path(app).ok_or_else(|| "cannot resolve bootstrap settings path".to_string())?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let payload = BootstrapSettings {
+        data_dir: data_dir.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()),
+    };
+    let contents = serde_json::to_vec_pretty(&payload).map_err(|error| error.to_string())?;
+    let temporary_path = path.with_extension("json.tmp");
+    fs::write(&temporary_path, contents).map_err(|error| error.to_string())?;
+    if path.exists() {
+        fs::remove_file(&path).map_err(|error| error.to_string())?;
+    }
+    fs::rename(&temporary_path, &path).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn data_dir_read(app: AppHandle) -> Result<Option<String>, String> {
+    Ok(bootstrap_data_dir(&app))
+}
+
+#[tauri::command]
+pub fn data_dir_set(app: AppHandle, data_dir: Option<String>) -> Result<Option<String>, String> {
+    let value = data_dir
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(ref dir) = value {
+        if !Path::new(dir).is_absolute() {
+            return Err("data dir must be an absolute path".to_string());
+        }
+        fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    }
+    write_bootstrap(&app, value.clone())?;
+    Ok(value)
 }

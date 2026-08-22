@@ -189,7 +189,27 @@
     "languageHint": "Interface display language. Language files are JSON files in the i18n folder next to the executable; the file name is the language code.",
     "followSystem": "Follow system",
     "light": "Light",
-    "dark": "Dark"
+    "dark": "Dark",
+    "dataDir": "Application data directory",
+    "dataDirHint": "Playlists, the music library database, covers and network cache are stored here. Changing the directory switches the entire library (multi-library).",
+    "dataDirDefault": "Executable directory",
+    "dataDirChoose": "Choose directory…",
+    "dataDirReset": "Reset to default",
+    "dataDirRestartHint": "A restart is required for the data directory change to take effect.",
+    "dataDirRestartNotice": "Data directory changed. Please restart the app to apply."
+  },
+  "notification": {
+    "source": "Music Library",
+    "importing": "Importing",
+    "importDone": "Import finished",
+    "importFailed": "Import failed",
+    "scanStarted": "Scanning folder…",
+    "scanProgress": "Imported {imported} / Scanned {scanned} (skipped {skipped}, failed {failed})",
+    "scanFinished": "Import finished: {imported} tracks, {skipped} skipped, {failed} failed",
+    "timeAgoNow": "just now",
+    "timeAgoMin": "{n} min ago",
+    "timeAgoHour": "{n} h ago",
+    "timeAgoDay": "{n} d ago"
   },
   "albumCard": {
     "typeMusicAlbum": "Music album",

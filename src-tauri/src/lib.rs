@@ -2,6 +2,7 @@ mod bass_bridge;
 mod i18n;
 mod lyrics;
 mod media_library;
+mod paths;
 mod settings;
 mod smtc_bridge;
 
@@ -38,7 +39,13 @@ pub fn run() {
                     let _ = smtc_cleanup_service.call_operation("smtc_close", json!({}));
                 }
             });
-            app.manage(media_library::MediaService::new(app.handle().clone()));
+            let app_paths = paths::app_paths_from_app(app.handle());
+            let _ = app_paths.prepare();
+            app.manage(app_paths);
+            app.manage(media_library::MediaService::new(
+                app.handle().clone(),
+                paths::app_paths_from_app(app.handle()),
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -63,8 +70,21 @@ pub fn run() {
             media_library::media_playback_record,
             media_library::media_pick_folder,
             media_library::media_playback_open,
+            media_library::media_playlist_create,
+            media_library::media_playlist_remove,
+            media_library::media_playlist_rename,
+            media_library::media_playlist_list,
+            media_library::media_playlist_add_track,
+            media_library::media_playlist_remove_track,
+            media_library::media_tag_create,
+            media_library::media_tag_remove,
+            media_library::media_tag_list,
+            media_library::media_track_tag,
+            media_library::media_track_untag,
             settings::app_settings_read,
             settings::app_settings_write,
+            settings::data_dir_read,
+            settings::data_dir_set,
             i18n::i18n_list_custom,
             i18n::i18n_load_custom,
             smtc_bridge::smtc_call
