@@ -843,10 +843,7 @@ const handleLyricsRangeKeydown = (event) => {
 const updateCompactViewport = () => {
     compactViewport.value = window.matchMedia('(max-width: 720px)').matches
     isNarrow.value = window.matchMedia(`(max-width: ${NARROW_BREAKPOINT}px)`).matches
-    if (isNarrow.value) {
-        narrowPage.value = 'album'
-        isPlaylistOpen.value = false
-    }
+    // 不重置 narrowPage / isPlaylistOpen，避免调节窗口尺寸时丢失当前页面状态
 }
 
 const handlePlaybackOptionsAnimationComplete = () => {
@@ -862,6 +859,7 @@ const ALBUM_ROTATION_SPEED = 360 / 48000
 const ALBUM_MAX_SIZE = 560
 let albumRotationFrame
 let albumRotationLastTime = 0
+const albumRotationAngle = ref(0)
 let albumResizeObserver
 let lyricsResizeObserver
 let lyricsMeasureFrame
@@ -1031,34 +1029,34 @@ const albumVisualStyle = computed(() => {
     }
 })
 
-const stopAlbumRotation = (reset = false) => {
+const stopAlbumRotation = () => {
     if (albumRotationFrame) window.cancelAnimationFrame(albumRotationFrame)
     albumRotationFrame = undefined
     albumRotationLastTime = 0
-    if (reset && albumVisualRef.value) {
-        albumVisualRef.value.style.transform = 'rotate(0deg)'
-    }
+    // 暂停只停帧、保留当前角度，继续播放时从原位置接着转，不再复位到 0 度
 }
 
 const updateAlbumRotation = (now) => {
     albumRotationFrame = undefined
-    if (!props.isVisible || !props.isPlaying || reducedMotion.value || !albumVisualRef.value) return
-
-    if (!albumRotationLastTime) albumRotationLastTime = now
-    const elapsed = Math.min(100, now - albumRotationLastTime)
-    albumRotationLastTime = now
+    // 仅在播放且可见时推进角度；元素缺失（窄/宽屏切换瞬间）时保留角度并停帧，
+    // 由 syncAlbumRotation 在元素恢复后重启，避免切换后停止旋转。
+    if (props.isVisible && props.isPlaying && !reducedMotion.value) {
+        if (!albumRotationLastTime) albumRotationLastTime = now
+        const elapsed = Math.min(100, now - albumRotationLastTime)
+        albumRotationLastTime = now
+        albumRotationAngle.value = (albumRotationAngle.value + elapsed * ALBUM_ROTATION_SPEED) % 360
+    }
 
     const element = albumVisualRef.value
-    const currentRotation = Number(element.dataset.rotation || 0)
-    const nextRotation = (currentRotation + elapsed * ALBUM_ROTATION_SPEED) % 360
-    element.dataset.rotation = String(nextRotation)
-    element.style.transform = `rotate(${nextRotation}deg)`
+    if (element) {
+        element.style.transform = `rotate(${albumRotationAngle.value}deg)`
+    }
     albumRotationFrame = window.requestAnimationFrame(updateAlbumRotation)
 }
 
 const syncAlbumRotation = () => {
     if (!props.isVisible || !props.isPlaying || reducedMotion.value) {
-        stopAlbumRotation(!props.isPlaying)
+        stopAlbumRotation()
         return
     }
 
@@ -1240,6 +1238,9 @@ watch([isNarrow, narrowPage, isPlaylistOpen], async () => {
     const lyricsVisible = !isPlaylistOpen.value && (narrowPage.value === 'lyrics' || !isNarrow.value)
     if (lyricsVisible && lyricsWindowRef.value) lyricsResizeObserver?.observe(lyricsWindowRef.value)
     scheduleLyricsMeasure()
+
+    // 封面元素在窄/宽屏间切换后是新的 DOM 实例，重启旋转以立即恢复
+    syncAlbumRotation()
 }, { flush: 'post' })
 watch([() => props.isVisible, () => props.currentSong?.id, () => props.lyrics], () => {
     clearLyricsIdleTimer()
@@ -2061,6 +2062,7 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion], syncAlbumRo
         text-align: center;
         cursor: pointer;
         font: inherit;
+        margin-bottom: 30px;
     }
 
     .song-info-nav .song-details-inner {

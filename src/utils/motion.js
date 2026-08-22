@@ -53,8 +53,10 @@ export const motionVariants = {
     absolute: true
   },
   albumCover: {
-    enter: { opacity: [0, 1], scale: [0.8, 1], rotate: [-10, 0] },
-    leave: { opacity: [1, 0], scale: [1, 1.2], rotate: [0, 10] },
+    // 封面替换只做淡入淡出+缩放，不带动 rotate，
+    // 避免 motion 在离场时把唱片当前旋转角拉回 0 度。
+    enter: { opacity: [0, 1], scale: [0.92, 1] },
+    leave: { opacity: [1, 0], scale: [1, 1.08] },
     spring: SOFT_SPRING,
     absolute: true
   },
