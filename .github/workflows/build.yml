@@ -70,7 +70,6 @@ jobs:
           path: |
             src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
             src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
-            src-tauri/target/${{ matrix.target }}/release/*.exe
           if-no-files-found: warn
 
   release:
@@ -85,11 +84,15 @@ jobs:
         with:
           path: artifacts
 
+      - name: Set build date
+        shell: bash
+        run: echo "BUILD_DATE=$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
+
       - name: Publish pre-release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: prerelease-${{ github.run_number }}.${{ github.run_attempt }}
-          name: Dropin Pre-release ${{ github.run_number }}.${{ github.run_attempt }}
+          tag_name: prerelease-${{ env.BUILD_DATE }}.${{ github.run_number }}.${{ github.run_attempt }}
+          name: Dropin Pre-release ${{ env.BUILD_DATE }}
           body: |
             Automated pre-release build from `${{ github.sha }}`.
           prerelease: true
@@ -97,4 +100,4 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             artifacts/**/*.msi
-            artifacts/**/dropin.exe
+            artifacts/**/*.exe
