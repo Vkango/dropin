@@ -24,7 +24,7 @@ Dropin is developed in an open manner. PRs and related exploration are welcome. 
 
 > [!caution]
 >
-> **The application is currently in an early stage of development. There are issues such as unstable operation and unavailable features. For testing purposes only!**
+> **The application is currently in early development. It may run unstably, and some features may be unavailable. The data format is subject to change at any time and may not be backward compatible. For testing purposes only!**
 
 ## 🚀 Features
 
@@ -58,3 +58,22 @@ Build release version: `pnpm tauri build`
 ![3](assets/3.png)
 
 ![4](assets/4.png)
+
+## 📚 Credits & References
+
+Dropin's development was inspired by and built upon the following open-source projects and libraries:
+
+| Project / Package | Usage |
+| --- | --- |
+| [Tauri](https://tauri.app/) | Cross-platform desktop application framework |
+| [Vue 3](https://vuejs.org/) | Frontend UI framework |
+| [Vite](https://vitejs.dev/) | Frontend build tool |
+| [BASS](https://www.un4seen.com/) ([bass-library](https://crates.io/crates/bass-library)) | Audio playback core |
+| [lofty](https://crates.io/crates/lofty) | Audio metadata reading & cover extraction |
+| [rusqlite](https://crates.io/crates/rusqlite) | Local SQLite data storage |
+| [smtc-player](https://crates.io/crates/smtc-player) | Windows SMTC media control integration |
+| [rfd](https://crates.io/crates/rfd) | Cross-platform file/folder picker dialogs |
+| [lrc](https://crates.io/crates/lrc) | LRC lyrics parsing |
+| [motion-v](https://motion.dev/) | Vue animation library |
+| [Lucide](https://lucide.dev/) (@lucide/vue) | Icon library |
+| [pinyin-pro](https://github.com/hotoo/pinyin-pro) | Chinese pinyin conversion (alphabetical sorting) |

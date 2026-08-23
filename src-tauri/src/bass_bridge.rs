@@ -162,6 +162,7 @@ struct BassRuntime {
 enum ChannelObject {
     Plain(Channel),
     Tempo(TempoChannel),
+    TempoReverse(TempoChannel),
     Reverse(bass_library::ReverseChannel),
 }
 
@@ -225,6 +226,7 @@ impl BassRuntime {
         match operation {
             "bass_load" => self.load(args),
             "bass_load_fx" => self.load_fx(args),
+            "bass_load_fx_default" => self.load_fx_default(),
             "bass_unload" => self.unload(),
             "bass_status" => self.status(),
             "bass_devices" => self.devices(),
@@ -289,6 +291,7 @@ impl BassRuntime {
             "bass_effect_set_bypass" => self.effect_set_bypass(args),
             "bass_effect_reset" => self.effect_reset(args),
             "bass_raw_catalog" => Ok(raw_catalog()),
+            "bass_effect_catalog" => Ok(effect_catalog()),
             "bass_midi_load" => self.midi_load(args),
             "bass_midi_load_from_directory" => self.midi_load_from_directory(args),
             "bass_midi_set_max_polyphony" => self.midi_set_max_polyphony(args),
@@ -349,6 +352,19 @@ impl BassRuntime {
         self.engine("bass_load_fx")?
             .load_fx(path)
             .map_err(|error| bass_error("bass_load_fx", error))?;
+        Ok(self.status()?)
+    }
+
+    fn load_fx_default(&self) -> Result<Value, BridgeError> {
+        let path = self
+            .default_dirs
+            .iter()
+            .map(|directory| directory.join("bass_fx.dll"))
+            .find(|path| path.is_file())
+            .ok_or_else(|| bridge_error("bass_load_fx_default", "could not locate bass_fx.dll"))?;
+        self.engine("bass_load_fx_default")?
+            .load_fx(path)
+            .map_err(|error| bass_error("bass_load_fx_default", error))?;
         Ok(self.status()?)
     }
 
@@ -468,15 +484,60 @@ impl BassRuntime {
         Ok(json!({ "ok": true }))
     }
 
+    fn ensure_fx_for_playback(&self, operation: &str) -> Result<bool, BridgeError> {
+        if self.engine(operation)?.has_fx() {
+            return Ok(true);
+        }
+        let Some(path) = self
+            .default_dirs
+            .iter()
+            .map(|directory| directory.join("bass_fx.dll"))
+            .find(|path| path.is_file())
+        else {
+            return Ok(false);
+        };
+        self.engine(operation)?
+            .load_fx(path)
+            .map_err(|error| bass_error(operation, error))?;
+        Ok(true)
+    }
+
+    fn decoded_playback_channel(
+        &self,
+        source: Channel,
+        operation: &str,
+    ) -> Result<ChannelObject, BridgeError> {
+        // BASS_FX's official Reverse example uses this exact chain:
+        // decoded source -> ReverseCreate(DECODE) -> TempoCreate.
+        let reverse = source
+            .into_reverse(2.0, raw::BASS_STREAM_DECODE)
+            .map_err(|error| bass_error(operation, error))?;
+        let tempo = reverse
+            .into_tempo(0)
+            .map_err(|error| bass_error(operation, error))?;
+        tempo
+            .set_reverse_direction(1.0)
+            .map_err(|error| bass_error(operation, error))?;
+        Ok(ChannelObject::TempoReverse(tempo))
+    }
+
     fn load_file(&mut self, args: Value) -> Result<Value, BridgeError> {
         let path = required_string(&args, "path", "bass_load_file")?;
-        let options = source_options(args.get("options").cloned().unwrap_or_else(|| json!({})))?;
+        let use_fx = self.ensure_fx_for_playback("bass_load_file")?;
+        let mut options = source_options(args.get("options").cloned().unwrap_or_else(|| json!({})))?;
+        if use_fx {
+            options.decode_only = true;
+        }
         let channel = self
             .engine("bass_load_file")?
             .load_file(&path, options)
             .map_err(|error| bass_error("bass_load_file", error))?;
         let id = self.next_id();
-        let object = ChannelObject::Plain(channel);
+        let object = if use_fx {
+            self.decoded_playback_channel(channel, "bass_load_file")?
+        } else {
+            ChannelObject::Plain(channel)
+        };
         let result = channel_json(id, &object);
         self.channels.insert(id, object);
         Ok(result)
@@ -496,6 +557,7 @@ impl BassRuntime {
 
     fn load_url(&mut self, args: Value) -> Result<Value, BridgeError> {
         let url = required_string(&args, "url", "bass_load_url")?;
+        let use_fx = self.ensure_fx_for_playback("bass_load_url")?;
         let input: UrlInput = parse_args(
             normalize_object(args.get("options").cloned().unwrap_or_else(|| json!({}))),
             "bass_load_url",
@@ -519,14 +581,18 @@ impl BassRuntime {
         let options = UrlOptions {
             offset: input.offset,
             float: input.float,
-            flags: input.flags,
+            flags: input.flags | if use_fx { raw::BASS_STREAM_DECODE } else { 0 },
             callback: Some(callback),
         };
         let channel = self
             .engine("bass_load_url")?
             .load_url(&url, options)
             .map_err(|error| bass_error("bass_load_url", error))?;
-        let object = ChannelObject::Plain(channel);
+        let object = if use_fx {
+            self.decoded_playback_channel(channel, "bass_load_url")?
+        } else {
+            ChannelObject::Plain(channel)
+        };
         let response = channel_json(id, &object);
         self.channels.insert(id, object);
         Ok(response)
@@ -667,6 +733,27 @@ impl BassRuntime {
             .get("restart")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        if restart {
+            if let ChannelObject::TempoReverse(channel) = self.channel(id, "bass_channel_play")? {
+                let position = if channel
+                    .reverse_direction()
+                    .map(|direction| direction < 0.0)
+                    .unwrap_or(false)
+                {
+                    channel
+                        .length()
+                        .map_err(|error| bass_error("bass_channel_play", error))?
+                        .map(|length| length.saturating_sub(Duration::from_millis(10)))
+                } else {
+                    Some(Duration::ZERO)
+                };
+                if let Some(position) = position {
+                    channel
+                        .seek(position)
+                        .map_err(|error| bass_error("bass_channel_play", error))?;
+                }
+            }
+        }
         self.channel(id, "bass_channel_play")?
             .as_channel()
             .play(restart)
@@ -718,15 +805,15 @@ impl BassRuntime {
     }
 
     fn channel_set_volume(&self, args: Value) -> Result<Value, BridgeError> {
-        self.channel_attribute_shortcut(args, "volume", |channel, value| channel.set_volume(value))
+        self.channel_attribute_shortcut(args, "bass_channel_set_volume", "volume", |channel, value| channel.set_volume(value))
     }
 
     fn channel_set_pan(&self, args: Value) -> Result<Value, BridgeError> {
-        self.channel_attribute_shortcut(args, "pan", |channel, value| channel.set_pan(value))
+        self.channel_attribute_shortcut(args, "bass_channel_set_pan", "pan", |channel, value| channel.set_pan(value))
     }
 
     fn channel_set_frequency(&self, args: Value) -> Result<Value, BridgeError> {
-        self.channel_attribute_shortcut(args, "frequency", |channel, value| {
+        self.channel_attribute_shortcut(args, "bass_channel_set_frequency", "frequency", |channel, value| {
             channel.set_frequency(value)
         })
     }
@@ -734,19 +821,20 @@ impl BassRuntime {
     fn channel_attribute_shortcut<F>(
         &self,
         args: Value,
+        operation: &str,
         field: &str,
         call: F,
     ) -> Result<Value, BridgeError>
     where
         F: FnOnce(&Channel, f32) -> bass_library::Result<()>,
     {
-        let id = required_id(&args, "channelId", "bass_channel_set_attribute")?;
-        let value = required_f32(&args, field, "bass_channel_set_attribute")?;
+        let id = required_id(&args, "channelId", operation)?;
+        let value = required_f32(&args, field, operation)?;
         call(
-            self.channel(id, "bass_channel_set_attribute")?.as_channel(),
+            self.channel(id, operation)?.as_channel(),
             value,
         )
-        .map_err(|error| bass_error("bass_channel_set_attribute", error))?;
+        .map_err(|error| bass_error(operation, error))?;
         Ok(json!({ "channelId": id, field: value }))
     }
 
@@ -1018,9 +1106,13 @@ impl BassRuntime {
                 "only a plain channel can become tempo",
             ));
         };
-        let tempo = channel
-            .into_tempo(flags)
-            .map_err(|error| bass_error("bass_channel_to_tempo", error))?;
+        let tempo = match channel.try_into_tempo(flags) {
+            Ok(tempo) => tempo,
+            Err((error, channel)) => {
+                self.channels.insert(id, ChannelObject::Plain(channel));
+                return Err(bass_error("bass_channel_to_tempo", error));
+            }
+        };
         let object = ChannelObject::Tempo(tempo);
         let response = channel_json(id, &object);
         self.channels.insert(id, object);
@@ -1053,11 +1145,14 @@ impl BassRuntime {
 
     fn tempo_get(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "channelId", "bass_tempo_get")?;
-        let ChannelObject::Tempo(channel) = self.channel(id, "bass_tempo_get")? else {
-            return Err(bridge_error(
-                "bass_tempo_get",
-                "channel is not a tempo channel",
-            ));
+        let channel = match self.channel(id, "bass_tempo_get")? {
+            ChannelObject::Tempo(channel) | ChannelObject::TempoReverse(channel) => channel,
+            _ => {
+                return Err(bridge_error(
+                    "bass_tempo_get",
+                    "channel is not a tempo channel",
+                ))
+            }
         };
         Ok(
             json!({ "tempo": channel.tempo().map_err(|error| bass_error("bass_tempo_get", error))?, "pitch": channel.pitch().map_err(|error| bass_error("bass_tempo_get", error))?, "frequency": channel.tempo_frequency().map_err(|error| bass_error("bass_tempo_get", error))?, "rateRatio": channel.rate_ratio(), "sourceHandle": channel.source_handle() }),
@@ -1068,11 +1163,14 @@ impl BassRuntime {
         let id = required_id(&args, "channelId", "bass_tempo_set")?;
         let field = required_string(&args, "field", "bass_tempo_set")?;
         let value = required_f32(&args, "value", "bass_tempo_set")?;
-        let ChannelObject::Tempo(channel) = self.channel(id, "bass_tempo_set")? else {
-            return Err(bridge_error(
-                "bass_tempo_set",
-                "channel is not a tempo channel",
-            ));
+        let channel = match self.channel(id, "bass_tempo_set")? {
+            ChannelObject::Tempo(channel) | ChannelObject::TempoReverse(channel) => channel,
+            _ => {
+                return Err(bridge_error(
+                    "bass_tempo_set",
+                    "channel is not a tempo channel",
+                ))
+            }
         };
         match field.as_str() {
             "tempo" => channel.set_tempo(value),
@@ -1091,29 +1189,39 @@ impl BassRuntime {
 
     fn reverse_get(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "channelId", "bass_reverse_get")?;
-        let ChannelObject::Reverse(channel) = self.channel(id, "bass_reverse_get")? else {
-            return Err(bridge_error(
+        match self.channel(id, "bass_reverse_get")? {
+            ChannelObject::Reverse(channel) => Ok(json!({
+                "direction": channel.direction().map_err(|error| bass_error("bass_reverse_get", error))?,
+                "sourceHandle": channel.source_handle()
+            })),
+            ChannelObject::TempoReverse(channel) => Ok(json!({
+                "direction": channel.reverse_direction().map_err(|error| bass_error("bass_reverse_get", error))?,
+                "sourceHandle": channel.source_handle()
+            })),
+            _ => Err(bridge_error(
                 "bass_reverse_get",
                 "channel is not a reverse channel",
-            ));
-        };
-        Ok(
-            json!({ "direction": channel.direction().map_err(|error| bass_error("bass_reverse_get", error))?, "sourceHandle": channel.source_handle() }),
-        )
+            )),
+        }
     }
 
     fn reverse_set(&self, args: Value) -> Result<Value, BridgeError> {
         let id = required_id(&args, "channelId", "bass_reverse_set")?;
         let direction = required_f32(&args, "direction", "bass_reverse_set")?;
-        let ChannelObject::Reverse(channel) = self.channel(id, "bass_reverse_set")? else {
-            return Err(bridge_error(
-                "bass_reverse_set",
-                "channel is not a reverse channel",
-            ));
-        };
-        channel
-            .set_direction(direction)
-            .map_err(|error| bass_error("bass_reverse_set", error))?;
+        match self.channel(id, "bass_reverse_set")? {
+            ChannelObject::Reverse(channel) => channel
+                .set_direction(direction)
+                .map_err(|error| bass_error("bass_reverse_set", error))?,
+            ChannelObject::TempoReverse(channel) => channel
+                .set_reverse_direction(direction)
+                .map_err(|error| bass_error("bass_reverse_set", error))?,
+            _ => {
+                return Err(bridge_error(
+                    "bass_reverse_set",
+                    "channel is not a reverse channel",
+                ))
+            }
+        }
         Ok(json!({ "channelId": id, "direction": direction }))
     }
 
@@ -1311,6 +1419,7 @@ impl ChannelObject {
         match self {
             Self::Plain(channel) => channel,
             Self::Tempo(channel) => channel,
+            Self::TempoReverse(channel) => channel,
             Self::Reverse(channel) => channel,
         }
     }
@@ -2480,6 +2589,152 @@ fn raw_catalog() -> Value {
     })
 }
 
+fn effect_parameter(field: &str, is_array: bool) -> Value {
+    let is_nodes = field == "pNodes";
+    let is_bool = matches!(field, "bFollow" | "bStereo" | "lPanDelay");
+    let is_integer = field.starts_with('l') || field.starts_with('d') || is_bool;
+    let kind = if is_nodes {
+        "nodes"
+    } else if is_bool {
+        "boolean"
+    } else if is_array {
+        "array"
+    } else if is_integer {
+        "integer"
+    } else {
+        "number"
+    };
+    let default = if is_nodes {
+        json!([])
+    } else if is_array {
+        json!([-1])
+    } else if field == "lChannel" {
+        json!(-1)
+    } else if field == "lNodeCount" {
+        json!(0)
+    } else if field == "lFFTsize" {
+        json!(1024)
+    } else if field == "lOsamp" {
+        json!(4)
+    } else if is_bool {
+        json!(0)
+    } else {
+        Value::Null
+    };
+    let (min, max, step) = if is_array || is_nodes {
+        (Value::Null, Value::Null, Value::Null)
+    } else if is_bool {
+        (json!(0), json!(1), json!(1))
+    } else if field == "lFFTsize" {
+        (json!(64), json!(8192), json!(64))
+    } else if field == "lOsamp" {
+        (json!(1), json!(32), json!(1))
+    } else if field == "lNodeCount" {
+        (json!(0), json!(32), json!(1))
+    } else if field == "lBand" {
+        (json!(0), json!(9), json!(1))
+    } else if field == "dwRateHz" {
+        (json!(1), json!(1000), json!(1))
+    } else if matches!(field, "lRoom" | "lRoomHF" | "lReflections" | "lReverb") {
+        (json!(-10000), json!(0), json!(1))
+    } else if matches!(field, "fWetDryMix" | "fDepth" | "fFeedback" | "fEdge") {
+        (json!(0.0), json!(100.0), json!(0.1))
+    } else if matches!(field, "fDryMix" | "fWetMix" | "fRoomSize" | "fDamp" | "fWidth") {
+        (json!(0.0), json!(1.0), json!(0.01))
+    } else if matches!(field, "fFrequency" | "fRate" | "fSpeed") {
+        (json!(0.0), json!(20.0), json!(0.01))
+    } else if field == "fPredelay" {
+        (json!(0.0), json!(4.0), json!(0.01))
+    } else if matches!(field, "fPostEQBandwidth" | "fRange") {
+        (json!(0.0), json!(4.0), json!(0.01))
+    } else if matches!(field, "fFreq" | "fCenter" | "fCutOffFreq" | "fPostEQCenterFrequency" | "fPreLowpassCutoff" | "flHFReference") {
+        (json!(20.0), json!(20000.0), json!(1.0))
+    } else if matches!(field, "fDelay" | "fLeftDelay" | "fRightDelay" | "fTime" | "fMinSweep" | "fMaxSweep" | "flReflectionsDelay" | "flReverbDelay") {
+        (json!(0.0), json!(2000.0), json!(1.0))
+    } else if matches!(field, "fGain" | "fThreshold" | "fInGain" | "fReverbMix") {
+        (json!(-96.0), json!(30.0), json!(0.1))
+    } else if matches!(field, "fAttack" | "fRelease" | "fAttacktime" | "fReleasetime") {
+        (json!(0.0), json!(1000.0), json!(1.0))
+    } else if matches!(field, "fRatio" | "fQ") {
+        (json!(0.1), json!(20.0), json!(0.1))
+    } else if matches!(field, "fBandwidth" | "fS") {
+        (json!(0.01), json!(4.0), json!(0.01))
+    } else if field == "fDrive" {
+        (json!(0.0), json!(5.0), json!(0.01))
+    } else if matches!(field, "fPitchShift" | "fSemitones") {
+        (json!(-12.0), json!(12.0), json!(0.01))
+    } else if matches!(field, "flRoomRolloffFactor" | "flDecayHFRatio") {
+        (json!(0.0), json!(10.0), json!(0.01))
+    } else if field == "fHighFreqRTRatio" {
+        (json!(0.0), json!(1.0), json!(0.01))
+    } else if matches!(field, "flDecayTime" | "fReverbTime") {
+        (json!(0.0), json!(3000.0), json!(0.1))
+    } else if matches!(field, "flDiffusion" | "flDensity") {
+        (json!(0.0), json!(100.0), json!(0.1))
+    } else if matches!(field, "fLevel" | "fVolume" | "fTarget" | "fCurrent" | "fQuiet" | "fResonance") {
+        (json!(0.0), json!(1.0), json!(0.01))
+    } else if kind == "integer" {
+        (json!(-10000), json!(10000), json!(1))
+    } else {
+        (json!(-10000.0), json!(10000.0), json!(0.01))
+    };
+    json!({
+        "key": field,
+        "type": kind,
+        "default": default,
+        "min": min,
+        "max": max,
+        "step": step,
+    })
+}
+
+fn effect_catalog_entry(kind: &str, family: &str, fields: &[&str]) -> Value {
+    json!({
+        "kind": kind,
+        "family": family,
+        "parameters": fields.iter().map(|field| effect_parameter(field, kind == "bassFx.mix" && *field == "lChannel")).collect::<Vec<_>>(),
+    })
+}
+
+fn effect_catalog() -> Value {
+    let effects = vec![
+        effect_catalog_entry("dx8.chorus", "dx8", &["fWetDryMix", "fDepth", "fFeedback", "fFrequency", "lWaveform", "fDelay", "lPhase"]),
+        effect_catalog_entry("dx8.compressor", "dx8", &["fGain", "fAttack", "fRelease", "fThreshold", "fRatio", "fPredelay"]),
+        effect_catalog_entry("dx8.distortion", "dx8", &["fGain", "fEdge", "fPostEQCenterFrequency", "fPostEQBandwidth", "fPreLowpassCutoff"]),
+        effect_catalog_entry("dx8.echo", "dx8", &["fWetDryMix", "fFeedback", "fLeftDelay", "fRightDelay", "lPanDelay"]),
+        effect_catalog_entry("dx8.flanger", "dx8", &["fWetDryMix", "fDepth", "fFeedback", "fFrequency", "lWaveform", "fDelay", "lPhase"]),
+        effect_catalog_entry("dx8.gargle", "dx8", &["dwRateHz", "dwWaveShape"]),
+        effect_catalog_entry("dx8.i3dl2reverb", "dx8", &["lRoom", "lRoomHF", "flRoomRolloffFactor", "flDecayTime", "flDecayHFRatio", "lReflections", "flReflectionsDelay", "lReverb", "flReverbDelay", "flDiffusion", "flDensity", "flHFReference"]),
+        effect_catalog_entry("dx8.parameq", "dx8", &["fCenter", "fBandwidth", "fGain"]),
+        effect_catalog_entry("dx8.reverb", "dx8", &["fInGain", "fReverbMix", "fReverbTime", "fHighFreqRTRatio"]),
+        effect_catalog_entry("volume", "volume", &["fTarget", "fCurrent", "fTime", "lCurve"]),
+        effect_catalog_entry("bassFx.rotate", "bassFx", &["fRate", "lChannel"]),
+        effect_catalog_entry("bassFx.echo", "bassFx", &["fLevel", "lDelay"]),
+        effect_catalog_entry("bassFx.flanger", "bassFx", &["fWetDry", "fSpeed", "lChannel"]),
+        effect_catalog_entry("bassFx.volume", "bassFx", &["lChannel", "fVolume"]),
+        effect_catalog_entry("bassFx.peakeq", "bassFx", &["lBand", "fBandwidth", "fQ", "fCenter", "fGain", "lChannel"]),
+        effect_catalog_entry("bassFx.reverb", "bassFx", &["fLevel", "lDelay"]),
+        effect_catalog_entry("bassFx.lowpassfilter", "bassFx", &["fResonance", "fCutOffFreq", "lChannel"]),
+        effect_catalog_entry("bassFx.mix", "bassFx", &["lChannel"]),
+        effect_catalog_entry("bassFx.damp", "bassFx", &["fTarget", "fQuiet", "fRate", "fGain", "fDelay", "lChannel"]),
+        effect_catalog_entry("bassFx.autowah", "bassFx", &["fDryMix", "fWetMix", "fFeedback", "fRate", "fRange", "fFreq", "lChannel"]),
+        effect_catalog_entry("bassFx.echo2", "bassFx", &["fDryMix", "fWetMix", "fFeedback", "fDelay", "lChannel"]),
+        effect_catalog_entry("bassFx.phaser", "bassFx", &["fDryMix", "fWetMix", "fFeedback", "fRate", "fRange", "fFreq", "lChannel"]),
+        effect_catalog_entry("bassFx.echo3", "bassFx", &["fDryMix", "fWetMix", "fDelay", "lChannel"]),
+        effect_catalog_entry("bassFx.chorus", "bassFx", &["fDryMix", "fWetMix", "fFeedback", "fMinSweep", "fMaxSweep", "fRate", "lChannel"]),
+        effect_catalog_entry("bassFx.allpassfilter", "bassFx", &["fGain", "fDelay", "lChannel"]),
+        effect_catalog_entry("bassFx.compressor", "bassFx", &["fThreshold", "fAttacktime", "fReleasetime", "lChannel"]),
+        effect_catalog_entry("bassFx.distortion", "bassFx", &["fDrive", "fDryMix", "fWetMix", "fFeedback", "fVolume", "lChannel"]),
+        effect_catalog_entry("bassFx.compressor2", "bassFx", &["fGain", "fThreshold", "fRatio", "fAttack", "fRelease", "lChannel"]),
+        effect_catalog_entry("bassFx.volumeenvelope", "bassFx", &["lChannel", "lNodeCount", "pNodes", "bFollow"]),
+        effect_catalog_entry("bassFx.biquadfilter", "bassFx", &["lFilter", "fCenter", "fGain", "fBandwidth", "fQ", "fS", "lChannel"]),
+        effect_catalog_entry("bassFx.echo4", "bassFx", &["fDryMix", "fWetMix", "fFeedback", "fDelay", "bStereo", "lChannel"]),
+        effect_catalog_entry("bassFx.pitchshift", "bassFx", &["fPitchShift", "fSemitones", "lFFTsize", "lOsamp", "lChannel"]),
+        effect_catalog_entry("bassFx.freeverb", "bassFx", &["fDryMix", "fWetMix", "fRoomSize", "fDamp", "fWidth", "lMode", "lChannel"]),
+    ];
+    json!({ "count": effects.len(), "effects": effects })
+}
+
 fn set_effect_parameters(
     effect: &Effect,
     kind: EffectKind,
@@ -2595,14 +2850,31 @@ fn set_effect_parameters(
             lChannel: integer(value, "lChannel")?,
             fVolume: number(value, "fVolume")?,
         }),
-        EffectKind::BassFx(BassFxEffect::PeakEq) => effect.set_parameters(&raw::BASS_BFX_PEAKEQ {
-            lBand: integer(value, "lBand")?,
-            fBandwidth: number(value, "fBandwidth")?,
-            fQ: number(value, "fQ")?,
-            fCenter: number(value, "fCenter")?,
-            fGain: number(value, "fGain")?,
-            lChannel: integer(value, "lChannel")?,
-        }),
+        EffectKind::BassFx(BassFxEffect::PeakEq) => {
+            if let Some(bands) = value.get("bands").and_then(Value::as_array) {
+                for (index, band) in bands.iter().enumerate() {
+                    let parameters = raw::BASS_BFX_PEAKEQ {
+                        lBand: index as i32,
+                        fBandwidth: number(band, "bandwidth").unwrap_or(1.0).max(0.1),
+                        fQ: number(band, "q").unwrap_or(0.0),
+                        fCenter: number(band, "frequency")?.max(1.0),
+                        fGain: number(band, "gain")?.clamp(-15.0, 15.0),
+                        lChannel: integer(band, "channel").unwrap_or(raw::BASS_BFX_CHANALL),
+                    };
+                    effect.set_parameters(&parameters)?;
+                }
+                Ok(())
+            } else {
+                effect.set_parameters(&raw::BASS_BFX_PEAKEQ {
+                    lBand: integer(value, "lBand")?,
+                    fBandwidth: number(value, "fBandwidth")?,
+                    fQ: number(value, "fQ")?,
+                    fCenter: number(value, "fCenter")?,
+                    fGain: number(value, "fGain")?,
+                    lChannel: integer(value, "lChannel")?,
+                })
+            }
+        }
         EffectKind::BassFx(BassFxEffect::Reverb) => effect.set_parameters(&raw::BASS_BFX_REVERB {
             fLevel: number(value, "fLevel")?,
             lDelay: integer(value, "lDelay")?,
@@ -2841,8 +3113,8 @@ fn get_effect_parameters(effect: &Effect, kind: EffectKind) -> bass_library::Res
             )
         }
         EffectKind::BassFx(BassFxEffect::Mix) => {
-            let p = effect.get_parameters::<raw::BASS_BFX_MIX>()?;
-            Ok(json!({ "lChannelPointer": p.lChannel as usize }))
+            let _p = effect.get_parameters::<raw::BASS_BFX_MIX>()?;
+            Ok(json!({ "lChannel": Vec::<i32>::new() }))
         }
         EffectKind::BassFx(BassFxEffect::Damp) => {
             let p = effect.get_parameters::<raw::BASS_BFX_DAMP>()?;
@@ -3105,6 +3377,16 @@ mod tests {
         );
         assert_eq!(catalog["constantCount"], json!(283));
         assert!(catalog["constants"]["BASS_ATTRIB_VOL"].is_number());
+    }
+
+    #[test]
+    fn effect_catalog_contains_all_supported_effects() {
+        let catalog = effect_catalog();
+        assert_eq!(catalog["count"], json!(33));
+        assert_eq!(catalog["effects"].as_array().map(Vec::len), Some(33));
+        for effect in catalog["effects"].as_array().expect("effect list") {
+            assert!(parse_effect_kind(effect["kind"].as_str().expect("effect kind")).is_ok());
+        }
     }
 
     #[test]

@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { computed, reactive } from 'vue'
 import { frameRateLimits, setGlobalAnimationFrameRate } from '../utils/frameRateScheduler.js'
 
-const SETTINGS_VERSION = 4
+const SETTINGS_VERSION = 6
 const SAVE_DELAY_MS = 220
 const DEFAULT_THEME_MODE = 'system'
 const DEFAULT_AUTO_ALBUM_THEME = true
@@ -20,6 +20,7 @@ const DEFAULT_SHOW_SECONDARY_LYRICS = true
 const DEFAULT_ALBUM_SHAPE = 'circle'
 const DEFAULT_ALBUM_ROTATION = true
 const ALBUM_SHAPES = ['circle', 'rounded-rect']
+const DEFAULT_VOLUME = 75
 
 const state = reactive({
   version: SETTINGS_VERSION,
@@ -33,6 +34,14 @@ const state = reactive({
   showSecondaryLyrics: DEFAULT_SHOW_SECONDARY_LYRICS,
   albumShape: DEFAULT_ALBUM_SHAPE,
   albumRotation: DEFAULT_ALBUM_ROTATION,
+  volume: DEFAULT_VOLUME,
+  effects: {},
+  playback: {
+    speed: 0,
+    frequencyRatio: 1,
+    pan: 0,
+    reverse: false
+  },
   loading: false,
   saving: false,
   error: null
@@ -77,6 +86,30 @@ const normalizeLyricsFontSize = (value) => {
 const normalizeAlbumShape = (value) =>
   ALBUM_SHAPES.includes(value) ? value : DEFAULT_ALBUM_SHAPE
 
+const normalizeVolume = (value) => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return DEFAULT_VOLUME
+  return Math.max(0, Math.min(100, Math.round(numericValue * 100) / 100))
+}
+
+const normalizeEffects = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return JSON.parse(JSON.stringify(value))
+}
+
+const normalizePlayback = (value) => {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const speed = Number(source.speed)
+  const frequencyRatio = Number(source.frequencyRatio)
+  const pan = Number(source.pan)
+  return {
+    speed: Number.isFinite(speed) ? Math.max(-95, Math.min(1000, Math.round(speed * 100) / 100)) : 0,
+    frequencyRatio: Number.isFinite(frequencyRatio) ? Math.max(0.5, Math.min(2, Math.round(frequencyRatio * 1000) / 1000)) : 1,
+    pan: Number.isFinite(pan) ? Math.max(-1, Math.min(1, Math.round(pan * 100) / 100)) : 0,
+    reverse: source.reverse === true
+  }
+}
+
 const normalizeSettings = (settings = {}) => ({
   version: SETTINGS_VERSION,
   animationFrameRate: normalizeFrameRate(settings.animationFrameRate),
@@ -88,7 +121,10 @@ const normalizeSettings = (settings = {}) => ({
   lyricsFontSize: normalizeLyricsFontSize(settings.lyricsFontSize),
   showSecondaryLyrics: settings.showSecondaryLyrics !== false,
   albumShape: normalizeAlbumShape(settings.albumShape),
-  albumRotation: settings.albumRotation !== false
+  albumRotation: settings.albumRotation !== false,
+  volume: normalizeVolume(settings.volume),
+  effects: normalizeEffects(settings.effects),
+  playback: normalizePlayback(settings.playback)
 })
 
 const applySettings = (settings) => {
@@ -104,6 +140,9 @@ const applySettings = (settings) => {
   state.showSecondaryLyrics = normalized.showSecondaryLyrics
   state.albumShape = normalized.albumShape
   state.albumRotation = normalized.albumRotation
+  state.volume = normalized.volume
+  state.effects = normalized.effects
+  state.playback = normalized.playback
   setGlobalAnimationFrameRate(normalized.animationFrameRate)
   return normalized
 }
@@ -199,6 +238,21 @@ export function updateAlbumRotation(value) {
   scheduleSave()
 }
 
+export function updateVolume(value) {
+  state.volume = normalizeVolume(value)
+  scheduleSave()
+}
+
+export function updateEffects(value) {
+  state.effects = normalizeEffects(value)
+  scheduleSave()
+}
+
+export function updatePlayback(value) {
+  state.playback = normalizePlayback(value)
+  scheduleSave()
+}
+
 export function useAppSettingsStore() {
   return {
     state,
@@ -214,7 +268,10 @@ export function useAppSettingsStore() {
     updateLyricsFontSize,
     updateShowSecondaryLyrics,
     updateAlbumShape,
-    updateAlbumRotation
+    updateAlbumRotation,
+    updateVolume,
+    updateEffects,
+    updatePlayback
   }
 }
 
@@ -231,5 +288,6 @@ export {
   DEFAULT_LYRICS_FONT_SIZE,
   LYRICS_FONT_SIZE_MIN,
   LYRICS_FONT_SIZE_MAX,
-  ALBUM_SHAPES
+  ALBUM_SHAPES,
+  DEFAULT_VOLUME
 }

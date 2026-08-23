@@ -319,9 +319,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bass-library"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4b1249f87825cb988a459dfbc0a18392c656944cb791732663242b065424697"
+checksum = "2cf1f6ab2eb5ccfdb4fd80fa1859daa722510e54835a1a472657886c8ab74a9c"
 dependencies = [
  "libloading 0.8.9",
  "thiserror 2.0.12",

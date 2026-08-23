@@ -168,6 +168,24 @@
     "volume": "声量",
     "equalizer": "平衡之器",
     "equalizerHint": "增减特定频次，以求音律之和谐。",
+    "equalizerTitle": "十段均衡之器",
+    "equalizerDescription": "分别调节 31 Hz 至 16 kHz 各频段之增益，曲线示其当前音色趋向。",
+    "equalizerGraphicTitle": "频响之图",
+    "equalizerGraphicSubtitle": "BASS_FX 峰值均衡 · 十段",
+    "equalizerGainAxis": "增益",
+    "equalizerZeroDb": "0 dB 即不改原声",
+    "equalizerChartLabel": "均衡器频率响应曲线",
+    "equalizerDb": "dB",
+    "equalizerDragHint": "拖曳曲线上圆点以调其频段增益，亦可用方向键细调。",
+    "equalizerWikiIntro": "此乃十段峰值均衡之器。每一圆点代表固定中心频次，掌管其邻近频段之增益。",
+    "equalizerWikiGainTitle": "增益",
+    "equalizerWikiGain": "正值提升此频段，负值削减此频段，单位为 dB。",
+    "equalizerWikiZeroTitle": "0 dB",
+    "equalizerWikiZero": "即不改原声；诸圆点皆在 0 dB 时，均衡之器不作音色增益变化。",
+    "equalizerWikiBandsTitle": "频段",
+    "equalizerWikiBands": "范围自 31 Hz 低频至 16 kHz 高频，频次愈低愈厚，愈高愈明。",
+    "equalizerWikiUsageTitle": "使用之法",
+    "equalizerWikiUsage": "直接拖曳曲线上圆点。欲增低音则升左侧频段，欲缓刺耳高音则降右侧频段。",
     "enable": "开启",
     "phaser": "相位之术",
     "phaserHint": "造旋转之幻境，凭反馈与速率。",
@@ -183,7 +201,435 @@
     "echoHint": "生重复之延迟，凭回响与迟滞之时。",
     "delay": "迟滞",
     "preset": "既定之法",
-    "view": "览图"
+    "view": "览图",
+    "volumeHint": "施于每一新奏曲目的默认声量。",
+    "loading": "正取 BASS 调音目录…",
+    "empty": "暂无可用调音之术。",
+    "bypass": "旁路",
+    "collapse": "收起",
+    "reset": "复原",
+    "addNode": "添节点",
+    "on": "启",
+    "off": "闭",
+    "groupDx8": "DirectX 8",
+    "groupBassFx": "BASS_FX",
+    "groupVolume": "声量之术",
+    "wiki": "音效典籍",
+    "wikiResize": "调音效典籍之宽度",
+    "wikiGlossary": "术语速查",
+    "glossary": {
+      "dry": {
+        "title": "干声",
+        "description": "未经效果处理之原声。"
+      },
+      "wet": {
+        "title": "湿声",
+        "description": "经效果处理之后声。"
+      },
+      "wetDry": {
+        "title": "干湿之混",
+        "description": "原声与处理声之比例。"
+      },
+      "lfo": {
+        "title": "LFO",
+        "description": "使效果参数随时日周期变动之低频振荡器。"
+      },
+      "feedback": {
+        "title": "反馈",
+        "description": "将效果输出之一部复送入输入。"
+      },
+      "gain": {
+        "title": "增益",
+        "description": "通常以 dB 计之放大或衰减。"
+      },
+      "db": {
+        "title": "dB",
+        "description": "音频设备常用之对数电平单位。"
+      },
+      "hz": {
+        "title": "Hz",
+        "description": "频次单位，数低则声沉，数高则声明。"
+      },
+      "ms": {
+        "title": "ms",
+        "description": "毫秒，千毫秒为一秒。"
+      }
+    },
+    "wikiEntries": {
+      "dx8Compressor": {
+        "purpose": "自动压低峰值，使总体声量更稳。",
+        "quickStart": "先定阈值，再定压缩比，末以增益补回声量；攻击与释放用以保留节奏。"
+      },
+      "bassFxCompressor2": {
+        "purpose": "具较宽时域与声道选择之 BASS_FX 压缩器。",
+        "quickStart": "先调阈值与压缩比，再以攻击、释放决定保留之音头与尾音。"
+      },
+      "bassFxDamp": {
+        "purpose": "将过小之声自动提升至目标电平，并限制其上升之速。",
+        "quickStart": "Quiet 察小声，Target 定目标，Rate 定修正之快慢。"
+      },
+      "volume": {
+        "purpose": "用于淡入淡出及平滑电平变化之音量过渡效果。",
+        "quickStart": "设目标声量与过渡时日，线性不称意时再换曲线。"
+      },
+      "bassFxVolume": {
+        "purpose": "可针对指定声道施用之线性声量倍数。",
+        "quickStart": "1.0 不变，0.5 减半，大于 1 则放大。"
+      },
+      "volumeEnvelope": {
+        "purpose": "以时间轴节点自动绘制声量曲线。",
+        "quickStart": "首节点宜在 0 秒；三秒淡入可用 (0, 0) 与 (3, 1)。"
+      },
+      "dx8Reverb": {
+        "purpose": "基础空间混响，添反射与渐隐之尾音。",
+        "quickStart": "ReverbTime 定空间大小，ReverbMix 定尾音之显著。"
+      },
+      "dx8I3dl2Reverb": {
+        "purpose": "依 I3DL2 标准模拟房间声学之混响。",
+        "quickStart": "通常先调 Room、DecayTime 与混响电平，其余可守默认。"
+      },
+      "freeverb": {
+        "purpose": "适于实时处理且音色自然之 Freeverb 混响。",
+        "quickStart": "RoomSize 与 Damp 为要：房大则声场阔，阻尼高则尾音暗。"
+      },
+      "dx8Echo": {
+        "purpose": "可分别设左右迟滞时日之经典立体声回声。",
+        "quickStart": "先定迟滞，再升反馈以增重复；开 PanDelay 可成乒乓之效。"
+      },
+      "bassFxEcho": {
+        "purpose": "以电平与迟滞时日掌控之简约 BASS_FX 回声。",
+        "quickStart": "Level 定重复声强，Delay 定重复之间之隔。"
+      },
+      "bassFxEcho2": {
+        "purpose": "具干湿混、反馈与声道路由之 BASS_FX 回声。",
+        "quickStart": "先平衡 DryMix 与 WetMix，再添 Feedback 以生多重回声。"
+      },
+      "bassFxEcho3": {
+        "purpose": "具干湿混与声道路由之简约 BASS_FX 迟滞。",
+        "quickStart": "Delay 定重复间隔，WetMix 定重复声与原声之相和。"
+      },
+      "bassFxEcho4": {
+        "purpose": "具独立干湿电平与立体声交错之灵活迟滞。",
+        "quickStart": "Delay 以秒计，0.20 即二百毫秒；Feedback 约 0.5 可生多次回声。"
+      },
+      "dx8Chorus": {
+        "purpose": "叠些微失谐之迟滞副本，使声音厚而宽。",
+        "quickStart": "Depth 定起伏，Frequency 定速，Delay 宜短。"
+      },
+      "dx8Flanger": {
+        "purpose": "以极短调制迟滞与反馈造扫频掠空之声。",
+        "quickStart": "Delay 宜短；负反馈合慢 Frequency 可得典型空灵扫频。"
+      },
+      "bassFxFlanger": {
+        "purpose": "以干湿混、速度与声道路由施镶边之 BASS_FX 效果。",
+        "quickStart": "徐升 Speed，再以 WetDry 相和，免扫频过烈。"
+      },
+      "bassFxChorus": {
+        "purpose": "以线性数值、明确扫频范围及声道路由施合声之 BASS_FX 效果。",
+        "quickStart": "MinSweep 与 MaxSweep 之差定扫频宽，Rate 定移动速。"
+      },
+      "phaser": {
+        "purpose": "移动频谱陷波，造空间与迷幻之感。",
+        "quickStart": "增 Range 则扫频更广，Feedback 会强调共振峰。"
+      },
+      "autowah": {
+        "purpose": "扫动共振滤波器，造自动哇音。",
+        "quickStart": "Freq 定起点，Range 定跨度，Rate 定扫速。"
+      },
+      "gargle": {
+        "purpose": "以不同波形调制声量，可作颤音或硬门限之效。",
+        "quickStart": "低 Rate 易闻颤音，方波则开关感强。"
+      },
+      "rotate": {
+        "purpose": "令声音在左右声道间旋转，造旋动声像。",
+        "quickStart": "Rate 正负定方向，数小则声势柔和。"
+      },
+      "bassFxReverb": {
+        "purpose": "具电平与迟滞掌控之轻量 BASS_FX 混响。",
+        "quickStart": "升 Level 以增空间感，用 Delay 拉开早期响应与原声。"
+      },
+      "lowpassFilter": {
+        "purpose": "带共振之低通滤波，削弱截止频次以上之高频。",
+        "quickStart": "降 CutOffFreq 可使声暗，于截止处添 Resonance 可突出峰值。"
+      },
+      "allpassFilter": {
+        "purpose": "改相位与迟滞而不直删频段之全通滤波器。",
+        "quickStart": "小调 Gain 与 Delay 可作细微相位塑形，强调则显著变色。"
+      },
+      "bassFxCompressor": {
+        "purpose": "具阈值、攻击、释放与声道路由之基础 BASS_FX 压缩器。",
+        "quickStart": "降 Threshold 至始压，再依节奏调 Attack 与 Release。"
+      },
+      "dx8Distortion": {
+        "purpose": "重塑波形并滤其结果，以添谐波饱和。",
+        "quickStart": "Edge 定削波强弱，后级均衡与前级低通可抑刺耳。"
+      },
+      "bassFxDistortion": {
+        "purpose": "具驱动、干湿混、反馈与输出控制之饱和效果。",
+        "quickStart": "徐升 Drive，平衡干湿，末以 Volume 对齐旁路声量。"
+      },
+      "dx8Parameq": {
+        "purpose": "提升或削减所选频段，以平衡音色。",
+        "quickStart": "先择 Center，再以 Bandwidth 定范围，末慎调 Gain。"
+      },
+      "bassFxPeakeq": {
+        "purpose": "具频段编号及声道路由之多段峰值均衡。",
+        "quickStart": "先设 Center 与 Gain，再以 Bandwidth 或 Q 定影响范围。"
+      },
+      "biquadFilter": {
+        "purpose": "备低通、高通、搁架、峰值等双二阶滤波形态。",
+        "quickStart": "先择 Filter，再调 Center 与 Bandwidth 或 Q；Gain 仅部分模式有效。"
+      },
+      "pitchshift": {
+        "purpose": "以实时频谱之术改音高，而不改疾缓。",
+        "quickStart": "PitchShift 用倍率，Semitones 用半音；FFT 愈大音质佳而延迟增。"
+      },
+      "mix": {
+        "purpose": "将输入声道映射至输出声道，以作自定义混音与路由。",
+        "quickStart": "以声道映射择每一输出之输入；-1 表默认路由。"
+      }
+    },
+    "playbackWiki": "此诸项直施于 BASS 播放曲道。",
+    "volumeWiki": "输出声量为 0 至 100%；静音仅于今次会话有效。",
+    "speedWiki": "以百分比调其疾缓，零为原速，负值则放缓。",
+    "reverseWiki": "循原音时序之反向而奏。",
+    "frequencyWiki": "相对原始采样率之倍率；改频次亦或改音高。",
+    "panWiki": "自全左道至全右道之立体声位置。",
+    "parameterWikiFallback": "暂无说明。",
+    "categories": {
+      "chorus": "合声",
+      "compressor": "压缩",
+      "distortion": "失真",
+      "echo": "回声与迟滞",
+      "flanger": "镶边",
+      "reverb": "混响",
+      "equalizer": "均衡",
+      "filters": "滤波",
+      "volumeFx": "声量包络",
+      "pitchshift": "移调",
+      "modulation": "调制",
+      "channel": "声道路由",
+      "dynamics": "动态之术",
+      "other": "他类效果"
+    },
+    "categoryDescriptions": {
+      "chorus": "合声叠加些微失谐之短延迟副本，使声场更宽而有流动。",
+      "compressor": "压缩收窄动态范围，使微声更稳，并约束峰值。",
+      "distortion": "失真重塑波形以添谐波饱和之感，驱动宜徐徐加之。",
+      "echo": "回声与迟滞于指定时日后重奏原声，干湿混和定其比例。",
+      "flanger": "镶边将调制之极短迟滞与原声相混，成扫频梳状之效。",
+      "reverb": "混响摹拟空间反射，房间、衰减、阻尼与混和共定其质。",
+      "equalizer": "均衡器调节所选频段之增益，不使诸频同量而变。",
+      "filters": "滤波移除或重塑一段频率，截止、共振与滤波种类共定其果。",
+      "volumeFx": "声量之术可随时日自动变更电平，或只作用于指定声道。",
+      "pitchshift": "移调以实时频谱之术改音高，而不必更改疾缓。",
+      "modulation": "调制之术周期改动迟滞、相位或振幅，使声音生动而有纹理。",
+      "channel": "声道路由之术混合或重分左右声道。",
+      "dynamics": "动态之术重塑电平响应，亦含阻尼与包络之行止。",
+      "other": "暂无说明。"
+    },
+    "playbackTab": "演奏操控",
+    "playbackTitle": "演奏操控",
+    "playbackDescription": "此诸项施于当前曲目，并铭为下回奏曲之默认。",
+    "speedHint": "调其演奏疾缓，零为原速。",
+    "reverseHint": "令今曲倒向而奏。",
+    "frequencyHint": "依原始采样频次之倍率调节。",
+    "pan": "左右平衡",
+    "panHint": "置声于左、右二道之间。",
+    "left": "左",
+    "right": "右",
+    "center": "居中",
+    "dx8Education": "DX8 乃 Windows DirectX 8 之音效集，适宜原生系统效果；其算法与参数并不尽同于 BASS_FX。",
+    "bassFxEducation": "BASS_FX 乃 BASS 官方扩展，备有滤波、延迟、混响、压缩、移调等实时 DSP 之术。",
+    "names": {
+      "dx8.chorus": "合声",
+      "dx8.compressor": "压缩器",
+      "dx8.distortion": "失真",
+      "dx8.echo": "回声",
+      "dx8.flanger": "镶边",
+      "dx8.gargle": "咆哮",
+      "dx8.i3dl2reverb": "I3DL2 混响",
+      "dx8.parameq": "参数均衡",
+      "dx8.reverb": "混响",
+      "volume": "声量包络",
+      "bassFx.rotate": "旋转",
+      "bassFx.echo": "回声",
+      "bassFx.flanger": "镶边",
+      "bassFx.volume": "声量",
+      "bassFx.peakeq": "峰值均衡",
+      "bassFx.reverb": "混响",
+      "bassFx.lowpassfilter": "低通滤波",
+      "bassFx.mix": "声道混和",
+      "bassFx.damp": "阻尼",
+      "bassFx.autowah": "自动哇音",
+      "bassFx.echo2": "回声二",
+      "bassFx.phaser": "相位",
+      "bassFx.echo3": "回声三",
+      "bassFx.chorus": "合声",
+      "bassFx.allpassfilter": "全通滤波",
+      "bassFx.compressor": "压缩器",
+      "bassFx.distortion": "失真",
+      "bassFx.compressor2": "压缩器二",
+      "bassFx.volumeenvelope": "声量包络",
+      "bassFx.biquadfilter": "双二阶滤波",
+      "bassFx.echo4": "回声四",
+      "bassFx.pitchshift": "移调",
+      "bassFx.freeverb": "Freeverb 混响"
+    },
+    "parameterNames": {
+      "fWetDryMix": "干湿混和",
+      "fDepth": "深度",
+      "fFeedback": "反馈",
+      "fFrequency": "频次",
+      "lWaveform": "波形",
+      "fDelay": "迟滞",
+      "lPhase": "相位",
+      "fGain": "增益",
+      "fAttack": "启动时日",
+      "fRelease": "释放时日",
+      "fThreshold": "阈值",
+      "fRatio": "压缩比",
+      "fPredelay": "预迟滞",
+      "fEdge": "边缘",
+      "fPostEQCenterFrequency": "后级均衡中心",
+      "fPostEQBandwidth": "后级均衡带宽",
+      "fPreLowpassCutoff": "前级低通截止",
+      "fLeftDelay": "左道迟滞",
+      "fRightDelay": "右道迟滞",
+      "lPanDelay": "声像迟滞",
+      "dwRateHz": "速率（赫兹）",
+      "dwWaveShape": "波形",
+      "lRoom": "房间",
+      "lRoomHF": "房间高频",
+      "flRoomRolloffFactor": "房间衰减系数",
+      "flDecayTime": "衰减时日",
+      "flDecayHFRatio": "高频衰减比",
+      "lReflections": "反射",
+      "flReflectionsDelay": "反射迟滞",
+      "lReverb": "混响",
+      "flReverbDelay": "混响迟滞",
+      "flDiffusion": "扩散",
+      "flDensity": "密度",
+      "flHFReference": "高频参考",
+      "fCenter": "中心频次",
+      "fBandwidth": "带宽",
+      "fTarget": "目标",
+      "fCurrent": "当前值",
+      "fTime": "时日",
+      "lCurve": "曲线",
+      "fRate": "速率",
+      "lChannel": "声道",
+      "fLevel": "电平",
+      "lDelay": "迟滞",
+      "fWetDry": "干湿混和",
+      "fSpeed": "疾缓",
+      "lBand": "频段",
+      "fQ": "Q 值",
+      "fResonance": "共振",
+      "fCutOffFreq": "截止频次",
+      "fQuiet": "静音电平",
+      "fRange": "范围",
+      "fFreq": "频次",
+      "fDryMix": "干声",
+      "fWetMix": "湿声",
+      "fMinSweep": "最小扫频",
+      "fMaxSweep": "最大扫频",
+      "fAttacktime": "启动时日",
+      "fReleasetime": "释放时日",
+      "fDrive": "驱动",
+      "fVolume": "声量",
+      "lNodeCount": "节点数",
+      "pNodes": "包络节点",
+      "bFollow": "随动",
+      "lFilter": "滤波种类",
+      "fS": "采样率",
+      "bStereo": "立体声",
+      "fPitchShift": "音高偏移",
+      "fSemitones": "半音",
+      "lFFTsize": "FFT 大小",
+      "lOsamp": "过采样",
+      "fRoomSize": "房间大小",
+      "fDamp": "阻尼",
+      "fWidth": "宽度",
+      "lMode": "模式"
+    },
+    "parameterDescriptions": {
+      "fWetDryMix": "原声与效果声之混合比例。",
+      "fDepth": "调制起伏之强度。",
+      "fFeedback": "效果输出回送输入之比例。",
+      "fFrequency": "调制器或滤波器之频次。",
+      "lWaveform": "调制波形之形，定其变化平滑与否。",
+      "fDelay": "重复声或反射出现前之迟滞时日。",
+      "lPhase": "左右声道调制波形之间之相位差。",
+      "fGain": "输出或频段之增益，通常以 dB 计。",
+      "fAttack": "越阈值后效果完全生效所需之时日。",
+      "fRelease": "声变小后效果解除所需之时日。",
+      "fThreshold": "压缩开始作用之电平门槛。",
+      "fRatio": "越阈值后之压缩比例。",
+      "fPredelay": "处理前保留音头之额外等待。",
+      "fEdge": "失真削波之强度。",
+      "fPostEQCenterFrequency": "失真后谐波处理之中心频次。",
+      "fPostEQBandwidth": "失真后谐波处理之频带宽度。",
+      "fPreLowpassCutoff": "失真前低通之截止频次。",
+      "fLeftDelay": "左道回声之迟滞。",
+      "fRightDelay": "右道回声之迟滞。",
+      "lPanDelay": "回声是否于左右声道交替。",
+      "dwRateHz": "声量或调制起伏之速度。",
+      "dwWaveShape": "起伏波形。",
+      "lRoom": "房间混响之总体衰减电平。",
+      "lRoomHF": "房间高频之额外衰减。",
+      "flRoomRolloffFactor": "混响随距离衰减之速。",
+      "flDecayTime": "混响尾音消散之时日。",
+      "flDecayHFRatio": "高频相对低频之衰减比例。",
+      "lReflections": "早期反射之电平。",
+      "flReflectionsDelay": "直达声至首反射之时差。",
+      "lReverb": "晚期密集混响之电平。",
+      "flReverbDelay": "早期反射至晚期混响之间隔。",
+      "flDiffusion": "晚期混响之平滑与密集。",
+      "flDensity": "晚期混响之模态密度与颗粒感。",
+      "flHFReference": "视作高频之参考频次。",
+      "fCenter": "所作用频段之中心频次。",
+      "fBandwidth": "所作用频段之宽度。",
+      "fTarget": "自动声量之目标电平。",
+      "fCurrent": "当前电平，-1 常表沿用现值。",
+      "fTime": "当前值过渡至目标值之时日。",
+      "lCurve": "过渡曲线之形。",
+      "fRate": "调制、扫频或自动调整之速度。",
+      "lChannel": "目标声道，-1 常表全声道。",
+      "fLevel": "效果输出之线性电平。",
+      "lDelay": "效果反射或迟滞之时日。",
+      "fWetDry": "原声与处理声之线性混合。",
+      "fSpeed": "调制迟滞移动之速度。",
+      "lBand": "均衡器频段编号。",
+      "fQ": "品质因数，越高则频带越窄。",
+      "fResonance": "截止频次附近之共振增强。",
+      "fCutOffFreq": "滤波开始衰减之截止频次。",
+      "fQuiet": "触发增益之安静电平。",
+      "fRange": "扫频或调制所覆盖之频率范围。",
+      "fFreq": "扫频或自动滤波之起始频次。",
+      "fDryMix": "原始干声之混合量。",
+      "fWetMix": "处理湿声之混合量。",
+      "fMinSweep": "延迟扫动范围之下限。",
+      "fMaxSweep": "延迟扫动范围之上限。",
+      "fAttacktime": "动态效果起效之时日。",
+      "fReleasetime": "动态效果释放之时日。",
+      "fDrive": "失真或饱和之驱动。",
+      "fVolume": "处理后总体声量。",
+      "lNodeCount": "声量包络节点之数目。",
+      "pNodes": "含位置与电平之包络节点。",
+      "bFollow": "包络是否随当前播放位置而行。",
+      "lFilter": "双二阶滤波之种类。",
+      "fS": "搁架滤波之斜率参数。",
+      "bStereo": "是否分开处理左右声道。",
+      "fPitchShift": "音高倍率，1 为不变。",
+      "fSemitones": "以半音计之音高偏移。",
+      "lFFTsize": "频谱分析帧大小，越大则质佳而延迟增。",
+      "lOsamp": "过采样倍数，越大则质佳而耗算力增。",
+      "fRoomSize": "所拟空间之大小。",
+      "fDamp": "高频阻尼，越高则尾音越暗。",
+      "fWidth": "混响之立体声宽度。",
+      "lMode": "效果运行模式，如普通或冻结尾音。"
+    }
   },
   "settings": {
     "title": "阁中规矩",

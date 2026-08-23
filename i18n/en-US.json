@@ -168,6 +168,24 @@
     "volume": "Volume",
     "equalizer": "Equalizer",
     "equalizerHint": "Boost or cut specific frequencies for tonal balance.",
+    "equalizerTitle": "10-band equalizer",
+    "equalizerDescription": "Adjust the gain of each band from 31 Hz to 16 kHz. The curve shows the current tonal shape.",
+    "equalizerGraphicTitle": "Frequency response",
+    "equalizerGraphicSubtitle": "BASS_FX peak equalizer · 10 bands",
+    "equalizerGainAxis": "Gain",
+    "equalizerZeroDb": "0 dB is unchanged",
+    "equalizerChartLabel": "Equalizer frequency response curve",
+    "equalizerDb": "dB",
+    "equalizerDragHint": "Drag a point on the curve to adjust its band; use the arrow keys for fine control.",
+    "equalizerWikiIntro": "This is a 10-band peak equalizer. Each point represents a fixed center frequency and controls the gain around that band.",
+    "equalizerWikiGainTitle": "Gain",
+    "equalizerWikiGain": "Positive values boost the band; negative values cut it. The unit is dB.",
+    "equalizerWikiZeroTitle": "0 dB",
+    "equalizerWikiZero": "Leaves the original signal unchanged. When every point is at 0 dB, the equalizer applies no tonal gain change.",
+    "equalizerWikiBandsTitle": "Bands",
+    "equalizerWikiBands": "The range runs from 31 Hz bass to 16 kHz treble. Lower frequencies sound deeper; higher frequencies sound brighter.",
+    "equalizerWikiUsageTitle": "How to use it",
+    "equalizerWikiUsage": "Drag the points on the curve. Raise the left bands for more bass, or lower the right bands to soften harsh treble.",
     "enable": "Enable",
     "phaser": "Phaser",
     "phaserHint": "Create a spinning effect using feedback and rate.",
@@ -183,7 +201,436 @@
     "echoHint": "Generate repeated delays with feedback and delay time.",
     "delay": "Delay",
     "preset": "Preset",
-    "view": "View"
+    "view": "View",
+    "volumeHint": "Default volume applied to every new playback channel.",
+    "loading": "Loading the BASS effect catalog…",
+    "empty": "No effects are available.",
+    "bypass": "Bypass",
+    "parameters": "Parameters",
+    "collapse": "Collapse",
+    "reset": "Reset",
+    "addNode": "Add node",
+    "on": "On",
+    "off": "Off",
+    "groupDx8": "DirectX 8",
+    "groupBassFx": "BASS_FX",
+    "groupVolume": "Volume FX",
+    "wiki": "Wiki",
+    "wikiResize": "Resize the Wiki panel",
+    "wikiGlossary": "Quick glossary",
+    "glossary": {
+      "dry": {
+        "title": "Dry",
+        "description": "The original signal before processing."
+      },
+      "wet": {
+        "title": "Wet",
+        "description": "The signal after processing by an effect."
+      },
+      "wetDry": {
+        "title": "Wet/dry mix",
+        "description": "The balance between original and processed sound."
+      },
+      "lfo": {
+        "title": "LFO",
+        "description": "A slow oscillator that moves an effect parameter over time."
+      },
+      "feedback": {
+        "title": "Feedback",
+        "description": "Feeds part of the effect output back into its input."
+      },
+      "gain": {
+        "title": "Gain",
+        "description": "Level boost or attenuation, commonly measured in dB."
+      },
+      "db": {
+        "title": "dB",
+        "description": "A logarithmic level unit used by audio equipment."
+      },
+      "hz": {
+        "title": "Hz",
+        "description": "Frequency: lower values sound deeper and higher values sound brighter."
+      },
+      "ms": {
+        "title": "ms",
+        "description": "Milliseconds; 1000 ms equals one second."
+      }
+    },
+    "wikiEntries": {
+      "dx8Compressor": {
+        "purpose": "Automatically reduces peaks so the overall level becomes more consistent.",
+        "quickStart": "Start with Threshold, set Ratio for the amount of control, then use Gain to restore level. Adjust Attack and Release to preserve the groove."
+      },
+      "bassFxCompressor2": {
+        "purpose": "A BASS_FX compressor with a wider timing range and channel selection.",
+        "quickStart": "Use Threshold and Ratio first; use Attack and Release to decide how much of the transient and tail remain."
+      },
+      "bassFxDamp": {
+        "purpose": "Automatically lifts quiet material toward a target while limiting how quickly it rises.",
+        "quickStart": "Set Quiet to detect low passages, Target to the desired level, and Rate to control how fast the correction moves."
+      },
+      "volume": {
+        "purpose": "A volume transition effect intended for fades and smooth level changes.",
+        "quickStart": "Set Target and Time; choose a curve when a linear fade does not sound natural."
+      },
+      "bassFxVolume": {
+        "purpose": "A direct linear volume multiplier that can target a specific channel.",
+        "quickStart": "1.0 leaves the signal unchanged, 0.5 halves it, and values above 1 amplify it."
+      },
+      "volumeEnvelope": {
+        "purpose": "Automates volume along a timeline using editable control points.",
+        "quickStart": "Use a first node at position 0; for a three-second fade-in use (0, 0) and (3, 1)."
+      },
+      "dx8Reverb": {
+        "purpose": "A basic room-like reverb that adds reflections and a decaying tail.",
+        "quickStart": "ReverbTime controls room size; ReverbMix controls how prominent the tail is."
+      },
+      "dx8I3dl2Reverb": {
+        "purpose": "A detailed room model based on the Interactive 3D Audio Level 2 reverb standard.",
+        "quickStart": "Most users only need Room, DecayTime and the reverb level; leave the remaining acoustic controls at their defaults first."
+      },
+      "freeverb": {
+        "purpose": "An efficient, natural-sounding Freeverb algorithm for real-time room ambience.",
+        "quickStart": "RoomSize and Damp are the main controls: larger rooms sound wider, while more damping makes the tail darker."
+      },
+      "dx8Echo": {
+        "purpose": "A classic stereo echo with separate left and right delay times.",
+        "quickStart": "Set the delay first, then raise Feedback for more repeats. Enable PanDelay for a ping-pong movement."
+      },
+      "bassFxEcho": {
+        "purpose": "A compact BASS_FX echo controlled by level and delay time.",
+        "quickStart": "Use Level for the repeat strength and Delay for the spacing between repeats."
+      },
+      "bassFxEcho2": {
+        "purpose": "A dry/wet BASS_FX echo with feedback and channel routing.",
+        "quickStart": "Balance DryMix and WetMix first, then add Feedback for repeated echoes."
+      },
+      "bassFxEcho3": {
+        "purpose": "A simple BASS_FX delay with dry/wet mix and channel routing.",
+        "quickStart": "Use Delay to set the repeat spacing and WetMix to blend it into the source."
+      },
+      "bassFxEcho4": {
+        "purpose": "A flexible delay with independent dry/wet levels and optional stereo interleaving.",
+        "quickStart": "Delay is measured in seconds here: 0.20 means 200 ms. Feedback around 0.5 creates repeated echoes."
+      },
+      "dx8Chorus": {
+        "purpose": "Layers a slightly detuned delayed copy to make a sound thicker and wider.",
+        "quickStart": "Depth controls movement, Frequency controls its speed, and Delay should remain short."
+      },
+      "dx8Flanger": {
+        "purpose": "Uses a very short modulated delay and feedback for a sweeping jet-like sound.",
+        "quickStart": "Keep Delay short; negative Feedback and a slow Frequency create the classic hollow sweep."
+      },
+      "bassFxFlanger": {
+        "purpose": "A compact BASS_FX flanger with wet/dry blend, speed and channel routing.",
+        "quickStart": "Increase Speed slowly and blend the effect with WetDry to avoid an overpowering sweep."
+      },
+      "bassFxChorus": {
+        "purpose": "A linear-value BASS_FX chorus with explicit sweep limits and channel routing.",
+        "quickStart": "The distance between MinSweep and MaxSweep controls sweep width; Rate controls how quickly it moves."
+      },
+      "phaser": {
+        "purpose": "Moves spectral notches to create a spacious, psychedelic motion.",
+        "quickStart": "Raise Range for a wider sweep; Feedback emphasizes the resonant peaks."
+      },
+      "autowah": {
+        "purpose": "Sweeps a resonant filter to create an automatic wah-wah motion.",
+        "quickStart": "Freq sets the starting point, Range sets the span, and Rate sets the sweep speed."
+      },
+      "gargle": {
+        "purpose": "Modulates volume with a selectable waveform, from a smooth pulse to a hard gate.",
+        "quickStart": "Use a low Rate for audible tremolo; choose the square wave for a sharper on/off effect."
+      },
+      "rotate": {
+        "purpose": "Rotates the signal between channels to create a spinning stereo image.",
+        "quickStart": "The sign of Rate selects the rotation direction; reduce it for a slower, subtler movement."
+      },
+      "bassFxReverb": {
+        "purpose": "A lightweight BASS_FX reverb with level and delay controls.",
+        "quickStart": "Raise Level for more ambience and use Delay to separate the early response from the source."
+      },
+      "lowpassFilter": {
+        "purpose": "A resonant low-pass filter that removes high frequencies above its cutoff.",
+        "quickStart": "Lower CutOffFreq to darken the sound; add Resonance for a focused peak near the cutoff."
+      },
+      "allpassFilter": {
+        "purpose": "An all-pass filter that changes phase and delay without directly removing a frequency range.",
+        "quickStart": "Use small Gain and Delay changes for subtle phase shaping; stronger settings create coloration."
+      },
+      "bassFxCompressor": {
+        "purpose": "A simple BASS_FX compressor with threshold, attack, release and channel routing.",
+        "quickStart": "Lower Threshold until compression begins, then tune Attack and Release to match the rhythm."
+      },
+      "dx8Distortion": {
+        "purpose": "Adds harmonic saturation by shaping the waveform and filtering the result.",
+        "quickStart": "Edge controls clipping intensity; use the post-EQ and pre-low-pass controls to tame harshness."
+      },
+      "bassFxDistortion": {
+        "purpose": "A flexible saturator with drive, dry/wet mix, feedback and output level.",
+        "quickStart": "Increase Drive gradually, balance DryMix/WetMix, then use Volume to match the bypassed level."
+      },
+      "dx8Parameq": {
+        "purpose": "Boosts or cuts a selected frequency band for tonal balance.",
+        "quickStart": "Choose Center, set Bandwidth for the affected range, then adjust Gain sparingly."
+      },
+      "bassFxPeakeq": {
+        "purpose": "A multi-band peak equalizer with selectable band and channel routing.",
+        "quickStart": "Set Center and Gain; use either Bandwidth or Q to control how narrow the change is."
+      },
+      "biquadFilter": {
+        "purpose": "Provides low-pass, high-pass, shelving, peaking and other biquad filter shapes.",
+        "quickStart": "Choose Filter first, then tune Center and either Bandwidth or Q. Gain is used by selected EQ and shelf modes."
+      },
+      "pitchshift": {
+        "purpose": "Changes pitch independently from tempo using real-time spectral processing.",
+        "quickStart": "Use PitchShift for a ratio or Semitones for musical steps; larger FFT sizes improve quality at the cost of latency."
+      },
+      "mix": {
+        "purpose": "Maps input channels to output channels for custom routing and channel mixing.",
+        "quickStart": "Use the channel map to select which input feeds each output; -1 keeps the default routing."
+      }
+    },
+    "playbackWiki": "These controls are applied to the playback channel.",
+    "volumeWiki": "Output level from 0 to 100 percent. Mute remains a temporary session state.",
+    "speedWiki": "Tempo offset in percent. 0% is the original speed; negative values slow playback.",
+    "reverseWiki": "Plays the track in the opposite direction through the decoded audio stream.",
+    "frequencyWiki": "Playback sample-rate multiplier. It changes frequency and may also change pitch.",
+    "panWiki": "Stereo position from full left to full right.",
+    "parameterWikiFallback": "Unknown.",
+    "categories": {
+      "chorus": "Chorus",
+      "compressor": "Compression",
+      "distortion": "Distortion",
+      "echo": "Echo and delay",
+      "flanger": "Flanger",
+      "reverb": "Reverb",
+      "equalizer": "Equalizer",
+      "filters": "Filters",
+      "volumeFx": "Volume envelope",
+      "pitchshift": "Pitch shift",
+      "modulation": "Modulation",
+      "channel": "Channel routing",
+      "dynamics": "Dynamics",
+      "other": "Other effects"
+    },
+    "categoryDescriptions": {
+      "chorus": "Chorus layers short, slightly detuned copies of the signal to create width and movement.",
+      "compressor": "Compression reduces dynamic range: quiet parts become more consistent while peaks are controlled.",
+      "distortion": "Distortion adds harmonic saturation by reshaping the waveform. Increase drive carefully.",
+      "echo": "Echo and delay repeat the signal after a time interval. Dry/wet mix controls the balance with the original.",
+      "flanger": "Flanger mixes a very short modulated delay with the source to produce a sweeping comb-filter sound.",
+      "reverb": "Reverb simulates reflections in a space. Room, decay, damping and mix determine the character.",
+      "equalizer": "Equalizers adjust selected frequency bands without changing the rest of the signal equally.",
+      "filters": "Filters remove or reshape frequency ranges. Cutoff, resonance and filter type define the result.",
+      "volumeFx": "Volume effects automate level over time or route a channel-specific volume change.",
+      "pitchshift": "Pitch shifting changes pitch independently from the tempo by using a real-time spectral process.",
+      "modulation": "Modulation effects periodically change delay, phase or amplitude to create movement and texture.",
+      "channel": "Channel routing effects mix or redirect the left and right channels.",
+      "dynamics": "Dynamic effects reshape level response, including damping and envelope behavior.",
+      "other": "Unknown."
+    },
+    "playbackTab": "Playback",
+    "playbackTitle": "Playback controls",
+    "playbackDescription": "These controls affect the current playback channel and are saved as defaults for the next track.",
+    "speedHint": "Change playback speed; 0% is the original rate.",
+    "reverseHint": "Play the current track backwards.",
+    "frequencyHint": "Adjust playback frequency relative to the source sample rate.",
+    "pan": "Stereo balance",
+    "panHint": "Place the sound between the left and right channels.",
+    "left": "left",
+    "right": "right",
+    "center": "center",
+    "dx8Education": "DX8 is the Windows DirectX 8 audio effect family. It is useful for native system effects, but its algorithms and parameters are not identical to BASS_FX.",
+    "bassFxEducation": "BASS_FX is the official BASS extension library, providing real-time filters, delays, reverbs, compressors, pitch shifting and more.",
+    "names": {
+      "dx8.chorus": "Chorus",
+      "dx8.compressor": "Compressor",
+      "dx8.distortion": "Distortion",
+      "dx8.echo": "Echo",
+      "dx8.flanger": "Flanger",
+      "dx8.gargle": "Gargle",
+      "dx8.i3dl2reverb": "I3DL2 Reverb",
+      "dx8.parameq": "Parametric EQ",
+      "dx8.reverb": "Reverb",
+      "volume": "Volume Envelope",
+      "bassFx.rotate": "Rotate",
+      "bassFx.echo": "Echo",
+      "bassFx.flanger": "Flanger",
+      "bassFx.volume": "Volume",
+      "bassFx.peakeq": "Peak EQ",
+      "bassFx.reverb": "Reverb",
+      "bassFx.lowpassfilter": "Low-pass Filter",
+      "bassFx.mix": "Channel Mix",
+      "bassFx.damp": "Damp",
+      "bassFx.autowah": "Auto Wah",
+      "bassFx.echo2": "Echo 2",
+      "bassFx.phaser": "Phaser",
+      "bassFx.echo3": "Echo 3",
+      "bassFx.chorus": "Chorus",
+      "bassFx.allpassfilter": "All-pass Filter",
+      "bassFx.compressor": "Compressor",
+      "bassFx.distortion": "Distortion",
+      "bassFx.compressor2": "Compressor 2",
+      "bassFx.volumeenvelope": "Volume Envelope",
+      "bassFx.biquadfilter": "Biquad Filter",
+      "bassFx.echo4": "Echo 4",
+      "bassFx.pitchshift": "Pitch Shift",
+      "bassFx.freeverb": "Freeverb"
+    },
+    "parameterNames": {
+      "fWetDryMix": "Dry/wet mix",
+      "fDepth": "Depth",
+      "fFeedback": "Feedback",
+      "fFrequency": "Frequency",
+      "lWaveform": "Waveform",
+      "fDelay": "Delay",
+      "lPhase": "Phase",
+      "fGain": "Gain",
+      "fAttack": "Attack",
+      "fRelease": "Release",
+      "fThreshold": "Threshold",
+      "fRatio": "Ratio",
+      "fPredelay": "Pre-delay",
+      "fEdge": "Edge",
+      "fPostEQCenterFrequency": "Post-EQ center",
+      "fPostEQBandwidth": "Post-EQ bandwidth",
+      "fPreLowpassCutoff": "Pre-low-pass cutoff",
+      "fLeftDelay": "Left delay",
+      "fRightDelay": "Right delay",
+      "lPanDelay": "Pan delay",
+      "dwRateHz": "Rate (Hz)",
+      "dwWaveShape": "Wave shape",
+      "lRoom": "Room",
+      "lRoomHF": "Room high frequency",
+      "flRoomRolloffFactor": "Room rolloff",
+      "flDecayTime": "Decay time",
+      "flDecayHFRatio": "High-frequency decay ratio",
+      "lReflections": "Reflections",
+      "flReflectionsDelay": "Reflections delay",
+      "lReverb": "Reverb",
+      "flReverbDelay": "Reverb delay",
+      "flDiffusion": "Diffusion",
+      "flDensity": "Density",
+      "flHFReference": "High-frequency reference",
+      "fCenter": "Center frequency",
+      "fBandwidth": "Bandwidth",
+      "fTarget": "Target",
+      "fCurrent": "Current",
+      "fTime": "Time",
+      "lCurve": "Curve",
+      "fRate": "Rate",
+      "lChannel": "Channel",
+      "fLevel": "Level",
+      "lDelay": "Delay",
+      "fWetDry": "Dry/wet mix",
+      "fSpeed": "Speed",
+      "lBand": "Band",
+      "fQ": "Q",
+      "fResonance": "Resonance",
+      "fCutOffFreq": "Cutoff frequency",
+      "fQuiet": "Quiet level",
+      "fRange": "Range",
+      "fFreq": "Frequency",
+      "fDryMix": "Dry mix",
+      "fWetMix": "Wet mix",
+      "fMinSweep": "Minimum sweep",
+      "fMaxSweep": "Maximum sweep",
+      "fAttacktime": "Attack time",
+      "fReleasetime": "Release time",
+      "fDrive": "Drive",
+      "fVolume": "Volume",
+      "lNodeCount": "Node count",
+      "pNodes": "Envelope nodes",
+      "bFollow": "Follow",
+      "lFilter": "Filter type",
+      "fS": "Sample rate",
+      "bStereo": "Stereo",
+      "fPitchShift": "Pitch shift",
+      "fSemitones": "Semitones",
+      "lFFTsize": "FFT size",
+      "lOsamp": "Oversampling",
+      "fRoomSize": "Room size",
+      "fDamp": "Damping",
+      "fWidth": "Width",
+      "lMode": "Mode"
+    },
+    "parameterDescriptions": {
+      "fWetDryMix": "Balance between original and processed sound.",
+      "fDepth": "Strength of modulation movement.",
+      "fFeedback": "Amount of output fed back into the effect.",
+      "fFrequency": "Modulator or filter frequency.",
+      "lWaveform": "Modulation waveform shape.",
+      "fDelay": "Time before a repeat or reflection appears.",
+      "lPhase": "Phase offset between channel modulation waves.",
+      "fGain": "Output or band gain, usually in dB.",
+      "fAttack": "Time for the effect to fully respond to a peak.",
+      "fRelease": "Time for the effect to recover after a peak.",
+      "fThreshold": "Level at which compression starts.",
+      "fRatio": "Compression ratio above the threshold.",
+      "fPredelay": "Extra time used to preserve the transient before processing.",
+      "fEdge": "Distortion clipping intensity.",
+      "fPostEQCenterFrequency": "Center frequency of post-distortion harmonics.",
+      "fPostEQBandwidth": "Bandwidth of post-distortion harmonics.",
+      "fPreLowpassCutoff": "Pre-distortion low-pass cutoff.",
+      "fLeftDelay": "Left-channel echo delay.",
+      "fRightDelay": "Right-channel echo delay.",
+      "lPanDelay": "Whether echoes alternate between channels.",
+      "dwRateHz": "Speed of volume or modulation movement.",
+      "dwWaveShape": "Shape of the movement waveform.",
+      "lRoom": "Overall room reverb attenuation.",
+      "lRoomHF": "Additional room high-frequency attenuation.",
+      "flRoomRolloffFactor": "How reverb attenuates with distance.",
+      "flDecayTime": "Time for the reverb tail to decay.",
+      "flDecayHFRatio": "High-frequency decay relative to low frequency.",
+      "lReflections": "Early-reflection level.",
+      "flReflectionsDelay": "Time from direct sound to the first reflection.",
+      "lReverb": "Late dense-reverb level.",
+      "flReverbDelay": "Gap between early reflections and late reverb.",
+      "flDiffusion": "Smoothness and density of late reverb.",
+      "flDensity": "Modal density and grain of the reverb tail.",
+      "flHFReference": "Frequency used as the high-frequency reference.",
+      "fCenter": "Center frequency of the affected band.",
+      "fBandwidth": "Width of the affected frequency band.",
+      "fTarget": "Target level for automatic volume control.",
+      "fCurrent": "Current level; -1 commonly means keep the current value.",
+      "fTime": "Time to move from current to target level.",
+      "lCurve": "Transition curve shape.",
+      "fRate": "Modulation, sweep or automatic-adjustment speed.",
+      "lChannel": "Target channel; -1 commonly means all channels.",
+      "fLevel": "Linear effect output level.",
+      "lDelay": "Effect reflection or delay time.",
+      "fWetDry": "Linear blend between original and processed sound.",
+      "fSpeed": "Speed of modulated delay movement.",
+      "lBand": "Equalizer band number.",
+      "fQ": "Quality factor; higher values make a narrower band.",
+      "fResonance": "Resonance boost near the cutoff frequency.",
+      "fCutOffFreq": "Frequency at which the filter starts attenuating.",
+      "fQuiet": "Level considered quiet enough to trigger gain.",
+      "fRange": "Frequency span covered by a sweep or modulation.",
+      "fFreq": "Starting frequency for a sweep or auto-filter.",
+      "fDryMix": "Amount of original dry signal.",
+      "fWetMix": "Amount of processed wet signal.",
+      "fMinSweep": "Lower limit of delay sweep.",
+      "fMaxSweep": "Upper limit of delay sweep.",
+      "fAttacktime": "Time for a dynamics effect to engage.",
+      "fReleasetime": "Time for a dynamics effect to release.",
+      "fDrive": "Distortion or saturation drive.",
+      "fVolume": "Overall processed output volume.",
+      "lNodeCount": "Number of volume-envelope nodes.",
+      "pNodes": "Envelope nodes containing position and level.",
+      "bFollow": "Whether the envelope follows the current playback position.",
+      "lFilter": "Biquad filter type.",
+      "fS": "Shelf-filter slope parameter.",
+      "bStereo": "Whether left and right channels are processed independently.",
+      "fPitchShift": "Pitch multiplier; 1 leaves pitch unchanged.",
+      "fSemitones": "Pitch offset in semitones.",
+      "lFFTsize": "Spectral analysis frame size; larger means better resolution and more latency.",
+      "lOsamp": "Oversampling factor; higher values improve quality and CPU cost.",
+      "fRoomSize": "Simulated room size.",
+      "fDamp": "High-frequency damping; higher values darken the tail.",
+      "fWidth": "Stereo width of the reverb.",
+      "lMode": "Effect mode, such as normal or frozen tail."
+    }
   },
   "settings": {
     "title": "Settings",

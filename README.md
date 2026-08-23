@@ -24,7 +24,7 @@ Dropin 以开放的态度开发, 欢迎提交 PR 以及相关探索. 感谢支�
 
 > [!caution]
 >
-> **应用目前处于早期开发阶段, 存在运行不稳定、功能不可用等问题, 仅供测试使用!**
+> **应用目前处于早期开发阶段, 存在运行不稳定、功能不可用等问题, 数据格式可能随时变更并不兼容旧版, 仅供测试使用!**
 
 ## 🚀 功能
 
@@ -58,3 +58,22 @@ Dropin 以开放的态度开发, 欢迎提交 PR 以及相关探索. 感谢支�
 ![3](docs/assets/3.png)
 
 ![4](docs/assets/4.png)
+
+## 📚 引用与参考项目
+
+Dropin 的开发参考并使用了以下开源项目与库:
+
+| 项目 / 包 | 用途 |
+| --- | --- |
+| [Tauri](https://tauri.app/) | 跨平台桌面应用框架 |
+| [Vue 3](https://vuejs.org/) | 前端界面框架 |
+| [Vite](https://vitejs.dev/) | 前端构建工具 |
+| [BASS](https://www.un4seen.com/) ([bass-library](https://crates.io/crates/bass-library)) | 音频播放核心 |
+| [lofty](https://crates.io/crates/lofty) | 音频元数据读取与封面提取 |
+| [rusqlite](https://crates.io/crates/rusqlite) | 本地 SQLite 数据存储 |
+| [smtc-player](https://crates.io/crates/smtc-player) | Windows SMTC 媒体控制集成 |
+| [rfd](https://crates.io/crates/rfd) | 跨平台文件/文件夹选择对话框 |
+| [lrc](https://crates.io/crates/lrc) | LRC 歌词解析 |
+| [motion-v](https://motion.dev/) | Vue 动画库 |
+| [Lucide](https://lucide.dev/) (@lucide/vue) | 图标库 |
+| [pinyin-pro](https://github.com/hotoo/pinyin-pro) | 中文拼音转换 (字母排序) |

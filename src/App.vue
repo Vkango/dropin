@@ -18,6 +18,8 @@ import LoadingWithTip from './components/notification/LoadingWithTip.vue'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import { themeManager } from './utils/themeManager.js'
 import { bassCall, listenToBassEvents } from './services/bassApi.js'
+import { createBassEffectsRuntime } from './services/bassEffectsRuntime.js'
+import { createBassPlaybackRuntime } from './services/bassPlaybackRuntime.js'
 import { smtcApi, listenToSmtcEvents } from './services/smtcApi.js'
 import { useLibraryStore } from './stores/libraryStore.js'
 import { useAppSettingsStore } from './stores/appSettingsStore.js'
@@ -27,6 +29,8 @@ import { animateElement, APPLE_SPRING, INSTANT_MOTION, SOFT_SPRING } from './uti
 
 const libraryStore = useLibraryStore()
 const settingsStore = useAppSettingsStore()
+const effectsRuntime = createBassEffectsRuntime(settingsStore)
+const playbackRuntime = createBassPlaybackRuntime(settingsStore)
 const { t } = useI18n()
 
 // 当前页面状态
@@ -122,7 +126,7 @@ const totalTime = ref('00:00')
 const progress = ref(0)
 const activeChannelId = ref(null)
 const playbackQueue = ref(null)
-const volume = ref(75)
+const volume = computed(() => settingsStore.state.volume)
 const muted = ref(false)
 const playbackMode = ref('sequential')
 const listLoop = ref(false)
@@ -564,8 +568,12 @@ const refreshPlaybackSnapshot = async (forceRecord = false) => {
     syncSmtcTimeline(currentTimeMs.value, activeLengthSeconds.value * 1000)
     savePlaybackProgress(currentSong.value.id, currentTimeMs.value, forceRecord)
 
+    const reversePlayback = settingsStore.state.playback?.reverse === true
+    const reachedPlaybackEnd = reversePlayback
+      ? position <= 0.35
+      : position >= activeLengthSeconds.value - 0.35
     if (wasPlaying && snapshot.state === 'stopped' && activeLengthSeconds.value > 0
-      && position >= activeLengthSeconds.value - 0.35) {
+      && reachedPlaybackEnd) {
       void handlePlaybackCompleted()
     }
   } catch (error) {
@@ -580,7 +588,7 @@ const handleBassEvent = (eventName, payload) => {
   void refreshPlaybackSnapshot(true)
 }
 
-const releaseBassResources = () => {
+const releaseBassResources = async () => {
   if (snapshotTimer) {
     clearInterval(snapshotTimer)
     snapshotTimer = null
@@ -591,11 +599,13 @@ const releaseBassResources = () => {
   }
   pendingSeekSeconds = null
   seekCommitRequested = false
+  await effectsRuntime.closeHandles()
+  playbackRuntime.close()
   activeChannelId.value = null
   playbackQueue.value = null
   shufflePlayedIds.clear()
   completionInFlight = false
-    currentSong.value = idleSong()
+  currentSong.value = idleSong()
   isPlaying.value = false
   currentTimeMs.value = 0
   currentTime.value = '00:00'
@@ -645,6 +655,7 @@ const playSong = async (song, queue = null) => {
     pendingSeekSeconds = null
     seekCommitRequested = false
     if (activeChannelId.value) {
+      await effectsRuntime.closeHandles()
       await bassCall('bass_channel_stop', { channelId: activeChannelId.value }).catch(() => { })
       await bassCall('bass_channel_close', { channelId: activeChannelId.value }).catch(() => { })
       activeChannelId.value = null
@@ -658,11 +669,11 @@ const playSong = async (song, queue = null) => {
     currentSong.value = { ...song }
     activeChannelId.value = result?.channel?.channelId || null
     if (activeChannelId.value) {
+      await playbackRuntime.prepareChannel(activeChannelId.value)
+      await effectsRuntime.applyToChannel(activeChannelId.value)
       await bassCall('bass_channel_play', { channelId: activeChannelId.value, restart: true })
-      await bassCall('bass_channel_set_volume', {
-        channelId: activeChannelId.value,
-        value: muted.value ? 0 : volume.value / 100
-      }).catch((error) => console.debug('设置音量失败:', error))
+      await effectsRuntime.setVolume(activeChannelId.value, volume.value, muted.value)
+        .catch((error) => console.debug('设置音量失败:', error))
     }
     isPlaying.value = true
     currentTimeMs.value = 0
@@ -728,11 +739,6 @@ const handlePlaylistPlay = (playlist) => {
 
 const handleNavigate = (pageId) => {
   navigateToPage(pageId)
-}
-
-const handleEffectsChange = (effects) => {
-  console.log('音效设置更改:', effects)
-  // 这里可以实现实际的音频处理逻辑
 }
 
 // 从歌曲专辑封面更新主题
@@ -961,22 +967,18 @@ const handleListLoopChange = (enabled) => {
 }
 
 const handleVolumeChange = async (nextVolume) => {
-  volume.value = Math.max(0, Math.min(100, Number(nextVolume) || 0))
+  settingsStore.updateVolume(nextVolume)
   muted.value = false
   if (!activeChannelId.value) return
-  await bassCall('bass_channel_set_volume', {
-    channelId: activeChannelId.value,
-    value: volume.value / 100
-  }).catch((error) => console.error('音量变化失败:', error))
+  await effectsRuntime.setVolume(activeChannelId.value, volume.value, false)
+    .catch((error) => console.error('音量变化失败:', error))
 }
 
 const handleMuteChange = async (nextMuted) => {
   muted.value = Boolean(nextMuted)
   if (!activeChannelId.value) return
-  await bassCall('bass_channel_set_volume', {
-    channelId: activeChannelId.value,
-    value: muted.value ? 0 : volume.value / 100
-  }).catch((error) => console.error('静音切换失败:', error))
+  await effectsRuntime.setVolume(activeChannelId.value, volume.value, muted.value)
+    .catch((error) => console.error('静音切换失败:', error))
 }
 
 const handleMenu = () => {
@@ -1047,7 +1049,7 @@ const getPageProps = () => {
     case 'artists':
       return { artists: artistsData }
     case 'effects':
-      return {}
+      return { effectsRuntime, playbackRuntime }
     default:
       return {}
   }
@@ -1107,6 +1109,7 @@ onMounted(async () => {
   isAppDisposing = false
   // A webview refresh can leave the Rust BASS worker alive, so start from a clean native state.
   await releaseBassResources()
+  await effectsRuntime.loadCatalog()
   window.addEventListener('beforeunload', handleWindowExit)
   window.addEventListener('pagehide', handleWindowExit)
 
@@ -1213,7 +1216,7 @@ onBeforeUnmount(() => {
             @song-select="handleSongSelect" @song-play="handleSongPlay" @album-select="handleAlbumSelect"
             @album-play="handleAlbumPlay" @artist-select="handleArtistSelect" @artist-play="handleArtistPlay"
             @artist-follow="handleArtistFollow" @playlist-play="handlePlaylistPlay" @navigate="handleNavigate"
-            @header-control-click="handleHeaderControlClick" @effects-change="handleEffectsChange" />
+            @header-control-click="handleHeaderControlClick" />
         </KeepAlive>
       </Transition>
     </div>

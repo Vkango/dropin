@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-const SETTINGS_VERSION: u32 = 4;
+const SETTINGS_VERSION: u32 = 6;
+const DEFAULT_VOLUME: f32 = 75.0;
 const DEFAULT_FRAME_RATE: u32 = 60;
 const MIN_FRAME_RATE: u32 = 15;
 const MAX_FRAME_RATE: u32 = 120;
@@ -56,6 +58,23 @@ fn default_album_rotation() -> bool {
     DEFAULT_ALBUM_ROTATION
 }
 
+fn default_volume() -> f32 {
+    DEFAULT_VOLUME
+}
+
+fn default_effects() -> Value {
+    Value::Object(serde_json::Map::new())
+}
+
+fn default_playback() -> Value {
+    serde_json::json!({
+        "speed": 0.0,
+        "frequencyRatio": 1.0,
+        "pan": 0.0,
+        "reverse": false,
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct BootstrapSettings {
@@ -85,6 +104,12 @@ pub struct AppSettings {
     pub album_shape: String,
     #[serde(default = "default_album_rotation")]
     pub album_rotation: bool,
+    #[serde(default = "default_volume")]
+    pub volume: f32,
+    #[serde(default = "default_effects")]
+    pub effects: Value,
+    #[serde(default = "default_playback")]
+    pub playback: Value,
 }
 
 impl Default for AppSettings {
@@ -101,6 +126,9 @@ impl Default for AppSettings {
             show_secondary_lyrics: default_show_secondary_lyrics(),
             album_shape: default_album_shape(),
             album_rotation: default_album_rotation(),
+            volume: DEFAULT_VOLUME,
+            effects: default_effects(),
+            playback: default_playback(),
         }
     }
 }
@@ -150,6 +178,19 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
         "circle" | "rounded-rect" => settings.album_shape,
         _ => default_album_shape(),
     };
+    let volume = if settings.volume.is_finite() {
+        settings.volume.clamp(0.0, 100.0)
+    } else {
+        DEFAULT_VOLUME
+    };
+    let effects = match settings.effects {
+        Value::Object(value) => Value::Object(value),
+        _ => default_effects(),
+    };
+    let playback = match settings.playback {
+        Value::Object(value) => Value::Object(value),
+        _ => default_playback(),
+    };
 
     Ok(AppSettings {
         version: SETTINGS_VERSION,
@@ -163,6 +204,9 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
         show_secondary_lyrics: settings.show_secondary_lyrics,
         album_shape,
         album_rotation: settings.album_rotation,
+        volume,
+        effects,
+        playback,
     })
 }
 
@@ -259,4 +303,31 @@ pub fn data_dir_set(app: AppHandle, data_dir: Option<String>) -> Result<Option<S
     }
     write_bootstrap(&app, value.clone())?;
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn settings_defaults_include_audio_state() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.version, SETTINGS_VERSION);
+        assert_eq!(settings.volume, DEFAULT_VOLUME);
+        assert!(settings.effects.as_object().is_some());
+        assert_eq!(settings.playback["speed"], serde_json::json!(0.0));
+        assert_eq!(settings.playback["frequencyRatio"], serde_json::json!(1.0));
+        assert_eq!(settings.playback["pan"], serde_json::json!(0.0));
+    }
+
+    #[test]
+    fn settings_normalize_audio_state() {
+        let mut settings = AppSettings::default();
+        settings.volume = 180.0;
+        settings.effects = json!([]);
+        let normalized = normalize(settings).expect("normalized settings");
+        assert_eq!(normalized.volume, 100.0);
+        assert!(normalized.effects.as_object().is_some());
+    }
 }

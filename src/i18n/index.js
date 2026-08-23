@@ -13,9 +13,15 @@ const lookupKey = (messages, key) => {
   if (Object.prototype.hasOwnProperty.call(messages, key)) return messages[key]
   const segments = key.split('.')
   let node = messages
-  for (const segment of segments) {
-    if (!isPlainObject(node) || !Object.prototype.hasOwnProperty.call(node, segment)) return undefined
-    node = node[segment]
+  for (let index = 0; index < segments.length; index += 1) {
+    if (!isPlainObject(node)) return undefined
+    const segment = segments[index]
+    if (Object.prototype.hasOwnProperty.call(node, segment)) {
+      node = node[segment]
+      continue
+    }
+    const dottedSegment = segments.slice(index).join('.')
+    return Object.prototype.hasOwnProperty.call(node, dottedSegment) ? node[dottedSegment] : undefined
   }
   return node
 }

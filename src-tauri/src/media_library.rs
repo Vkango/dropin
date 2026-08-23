@@ -2289,16 +2289,12 @@ pub fn media_playback_open(
             )
             .map_err(|error| bridge_to_media_error("media_playback_open", error))?,
     };
-    let channel_id = bass_result
-        .get("channelId")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| media_error("media_playback_open", "BASS did not return a channel id"))?;
-    let _ = bass
-        .call_operation(
-            "bass_channel_play",
-            json!({ "channelId": channel_id, "restart": true }),
-        )
-        .map_err(|error| bridge_to_media_error("media_playback_open", error))?;
+    if bass_result.get("channelId").and_then(Value::as_u64).is_none() {
+        return Err(media_error(
+            "media_playback_open",
+            "BASS did not return a channel id",
+        ));
+    }
     let _ = media.call(
         "media_playback_record",
         json!({ "trackId": track_id, "positionMs": 0 }),
