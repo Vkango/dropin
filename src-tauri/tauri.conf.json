@@ -20,7 +20,8 @@
         "height": 400,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "decorations": false
+        "decorations": false,
+        "devtools": true
       }
     ],
     "security": {

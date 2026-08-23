@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-const SETTINGS_VERSION: u32 = 6;
+const SETTINGS_VERSION: u32 = 7;
 const DEFAULT_VOLUME: f32 = 75.0;
 const DEFAULT_FRAME_RATE: u32 = 60;
 const MIN_FRAME_RATE: u32 = 15;
@@ -21,6 +21,7 @@ const MAX_LYRICS_FONT_SIZE: u32 = 56;
 const DEFAULT_SHOW_SECONDARY_LYRICS: bool = true;
 const DEFAULT_ALBUM_SHAPE: &str = "circle";
 const DEFAULT_ALBUM_ROTATION: bool = true;
+const DEFAULT_GPU_MODE: &str = "auto";
 
 fn default_theme_mode() -> String {
     DEFAULT_THEME_MODE.to_string()
@@ -56,6 +57,10 @@ fn default_album_shape() -> String {
 
 fn default_album_rotation() -> bool {
     DEFAULT_ALBUM_ROTATION
+}
+
+fn default_gpu_mode() -> String {
+    DEFAULT_GPU_MODE.to_string()
 }
 
 fn default_volume() -> f32 {
@@ -110,6 +115,8 @@ pub struct AppSettings {
     pub effects: Value,
     #[serde(default = "default_playback")]
     pub playback: Value,
+    #[serde(default = "default_gpu_mode")]
+    pub gpu_mode: String,
 }
 
 impl Default for AppSettings {
@@ -129,6 +136,7 @@ impl Default for AppSettings {
             volume: DEFAULT_VOLUME,
             effects: default_effects(),
             playback: default_playback(),
+            gpu_mode: default_gpu_mode(),
         }
     }
 }
@@ -191,6 +199,10 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
         Value::Object(value) => Value::Object(value),
         _ => default_playback(),
     };
+    let gpu_mode = match settings.gpu_mode.as_str() {
+        "auto" | "high-performance" | "compatibility" => settings.gpu_mode,
+        _ => default_gpu_mode(),
+    };
 
     Ok(AppSettings {
         version: SETTINGS_VERSION,
@@ -207,6 +219,7 @@ fn normalize(settings: AppSettings) -> Result<AppSettings, String> {
         volume,
         effects,
         playback,
+        gpu_mode,
     })
 }
 

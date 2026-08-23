@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { computed, reactive } from 'vue'
 import { frameRateLimits, setGlobalAnimationFrameRate } from '../utils/frameRateScheduler.js'
 
-const SETTINGS_VERSION = 6
+const SETTINGS_VERSION = 7
 const SAVE_DELAY_MS = 220
 const DEFAULT_THEME_MODE = 'system'
 const DEFAULT_AUTO_ALBUM_THEME = true
@@ -21,6 +21,8 @@ const DEFAULT_ALBUM_SHAPE = 'circle'
 const DEFAULT_ALBUM_ROTATION = true
 const ALBUM_SHAPES = ['circle', 'rounded-rect']
 const DEFAULT_VOLUME = 75
+const DEFAULT_GPU_MODE = 'auto'
+const GPU_MODES = ['auto', 'high-performance', 'compatibility']
 
 const state = reactive({
   version: SETTINGS_VERSION,
@@ -35,6 +37,7 @@ const state = reactive({
   albumShape: DEFAULT_ALBUM_SHAPE,
   albumRotation: DEFAULT_ALBUM_ROTATION,
   volume: DEFAULT_VOLUME,
+  gpuMode: DEFAULT_GPU_MODE,
   effects: {},
   playback: {
     speed: 0,
@@ -92,6 +95,8 @@ const normalizeVolume = (value) => {
   return Math.max(0, Math.min(100, Math.round(numericValue * 100) / 100))
 }
 
+const normalizeGpuMode = (value) => GPU_MODES.includes(value) ? value : DEFAULT_GPU_MODE
+
 const normalizeEffects = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return JSON.parse(JSON.stringify(value))
@@ -123,6 +128,7 @@ const normalizeSettings = (settings = {}) => ({
   albumShape: normalizeAlbumShape(settings.albumShape),
   albumRotation: settings.albumRotation !== false,
   volume: normalizeVolume(settings.volume),
+  gpuMode: normalizeGpuMode(settings.gpuMode),
   effects: normalizeEffects(settings.effects),
   playback: normalizePlayback(settings.playback)
 })
@@ -141,6 +147,7 @@ const applySettings = (settings) => {
   state.albumShape = normalized.albumShape
   state.albumRotation = normalized.albumRotation
   state.volume = normalized.volume
+  state.gpuMode = normalized.gpuMode
   state.effects = normalized.effects
   state.playback = normalized.playback
   setGlobalAnimationFrameRate(normalized.animationFrameRate)
@@ -243,6 +250,11 @@ export function updateVolume(value) {
   scheduleSave()
 }
 
+export function updateGpuMode(value) {
+  state.gpuMode = normalizeGpuMode(value)
+  scheduleSave()
+}
+
 export function updateEffects(value) {
   state.effects = normalizeEffects(value)
   scheduleSave()
@@ -270,6 +282,7 @@ export function useAppSettingsStore() {
     updateAlbumShape,
     updateAlbumRotation,
     updateVolume,
+    updateGpuMode,
     updateEffects,
     updatePlayback
   }
@@ -289,5 +302,7 @@ export {
   LYRICS_FONT_SIZE_MIN,
   LYRICS_FONT_SIZE_MAX,
   ALBUM_SHAPES,
-  DEFAULT_VOLUME
+  DEFAULT_VOLUME,
+  DEFAULT_GPU_MODE,
+  GPU_MODES
 }

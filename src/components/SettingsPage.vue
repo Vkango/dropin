@@ -34,6 +34,7 @@
 
             </section>
 
+
             <section class="settings-row">
                 <div class="setting-copy">
                     <div>
@@ -139,31 +140,98 @@
                     </button>
                 </div>
             </section>
+
+
+            <section class="settings-row">
+                <div class="setting-copy">
+                    <div>
+                        <h2>{{ t('settings.gpuMode') }}</h2>
+                        <!-- <p>{{ t('settings.gpuModeHint') }}</p> -->
+                    </div>
+                    <strong class="status-pill">{{ gpuModeLabel }}</strong>
+                </div>
+                <div class="segmented-control" role="radiogroup" :aria-label="t('settings.gpuMode')">
+                    <button v-for="option in gpuModeOptions" :key="option.value" type="button" class="segment-button"
+                        :class="{ active: settingsStore.state.gpuMode === option.value }"
+                        :aria-pressed="settingsStore.state.gpuMode === option.value"
+                        @click="settingsStore.updateGpuMode(option.value)">
+                        {{ option.label }}
+                    </button>
+                </div>
+                <div class="settings-note">
+                    <Icon src="/assets/info.svg" size="sm" />
+                    <span>{{ t('settings.gpuModeRestartHint') }}</span>
+                </div>
+                <!-- </section>
+
+            <section class="settings-row">
+                <div class="setting-copy">
+                    <div>
+                        <h2>{{ t('settings.webglDiagnostics') }}</h2>
+                        <p>{{ t('settings.webglDiagnosticsHint') }}</p>
+                    </div>
+                    <strong class="status-pill">{{ webglStatusLabel }}</strong>
+                </div> -->
+                <div class="diagnostics-grid">
+                    <span>{{ t('settings.webglRenderer') }}</span><code>{{ webglDiagnostics.renderer || '—' }}</code>
+                    <span>{{ t('settings.webglVendor') }}</span><code>{{ webglDiagnostics.vendor || '—' }}</code>
+                    <span>{{ t('settings.webglVersion') }}</span><code>{{ webglDiagnostics.version || '—' }}</code>
+                    <span>{{ t('settings.webglContext') }}</span><code>{{ webglDiagnostics.context }}</code>
+                </div>
+                <div class="data-dir-control">
+                    <button type="button" class="data-dir-button" @click="openDevtools">
+                        {{ t('settings.openDevtools') }}
+                    </button>
+                </div>
+            </section>
         </div>
     </PageLayout>
 </template>
 
 <script setup>
 import { computed, inject, onMounted, ref, watch } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import { ZapIcon } from '@lucide/vue'
 import Icon from './Icon.vue'
 import MotionTransition from './MotionTransition.vue'
 import PageLayout from './PageLayout.vue'
 import RangeSlider from './RangeSlider.vue'
-import { frameRateLimits, useAppSettingsStore, THEME_MODES } from '../stores/appSettingsStore.js'
+import Tip from './notification/Tip.vue'
+import { frameRateLimits, useAppSettingsStore, THEME_MODES, GPU_MODES } from '../stores/appSettingsStore.js'
 import { LeafIcon } from '@lucide/vue'
 import { useI18n } from '../i18n/index.js'
 import { useLocaleList } from '../stores/i18nStore.js'
 import { mediaApi } from '../services/mediaApi.js'
+import { webglDiagnostics } from '../services/webglDiagnostics.js'
 
 const { t } = useI18n()
 const { available } = useLocaleList()
 
 const currentSong = inject('currentSong')
+const notificationRef = inject('notification')
 const settingsStore = useAppSettingsStore()
 const draftFrameRate = ref(settingsStore.state.animationFrameRate ?? frameRateLimits.default)
 const manualColorText = ref(settingsStore.state.manualThemeColor)
 const dataDir = ref(null)
+
+const gpuModeOptions = computed(() => [
+    { value: 'auto', label: t('settings.gpuAuto') },
+    { value: 'high-performance', label: t('settings.gpuHighPerformance') },
+    { value: 'compatibility', label: t('settings.gpuCompatibility') }
+].filter((option) => GPU_MODES.includes(option.value)))
+
+const gpuModeLabel = computed(() => gpuModeOptions.value.find((option) => option.value === settingsStore.state.gpuMode)?.label || settingsStore.state.gpuMode)
+const webglStatusLabel = computed(() => webglDiagnostics.status === 'ready'
+    ? t('settings.webglReady')
+    : webglDiagnostics.status === 'not-tested' ? t('settings.webglNotTested') : t('settings.webglFailed'))
+
+const openDevtools = async () => {
+    try {
+        await invoke('open_devtools')
+    } catch (error) {
+        console.error('打开开发者工具失败:', error)
+    }
+}
 
 onMounted(async () => {
     try {
@@ -175,13 +243,26 @@ onMounted(async () => {
 
 const dataDirLabel = computed(() => dataDir.value || t('settings.dataDirDefault'))
 
+const notifyDataDirChanged = async () => {
+    if (!notificationRef?.value?.addNotification) return
+    await notificationRef.value.addNotification(
+        t('settings.dataDir'),
+        t('notification.source'),
+        Tip,
+        null,
+        { Tip: t('settings.dataDirRestartNotice') },
+        6000
+    )
+}
+
 const handleChooseDataDir = async () => {
     try {
-        const selected = await open({ directory: true, multiple: false, title: t('settings.dataDirChoose') })
+        const result = await mediaApi.pickFolder()
+        const selected = typeof result?.path === 'string' ? result.path : ''
         if (!selected) return
         await mediaApi.dataDirSet(selected)
         dataDir.value = selected
-        alert(t('settings.dataDirRestartNotice'))
+        await notifyDataDirChanged()
     } catch (error) {
         console.error('设置数据目录失败:', error)
     }
@@ -191,7 +272,7 @@ const handleResetDataDir = async () => {
     try {
         await mediaApi.dataDirSet(null)
         dataDir.value = null
-        alert(t('settings.dataDirRestartNotice'))
+        await notifyDataDirChanged()
     } catch (error) {
         console.error('重置数据目录失败:', error)
     }
@@ -451,6 +532,24 @@ const commitManualColorInput = () => {
     background: transparent;
     font-size: 12px;
     line-height: 1.5;
+}
+
+.diagnostics-grid {
+    display: grid;
+    grid-template-columns: minmax(86px, auto) 1fr;
+    gap: 6px 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(var(--outline-color), 0.14);
+    border-radius: 5px;
+    color: rgba(var(--text-color), 0.58);
+    font-size: 11px;
+}
+
+.diagnostics-grid code {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: rgba(var(--text-color), 0.8);
+    font: inherit;
 }
 
 .data-dir-control {

@@ -154,6 +154,7 @@ let lyricsRequestId = 0
 
 // 通知系统
 const notificationRef = ref(null)
+provide('notification', notificationRef)
 let activeProgressNotifyId = null
 
 // 搜索查询

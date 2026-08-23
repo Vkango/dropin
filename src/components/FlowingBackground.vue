@@ -7,6 +7,8 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useAppSettingsStore } from '../stores/appSettingsStore.js'
+import { updateWebglDiagnostics } from '../services/webglDiagnostics.js'
 
 const props = defineProps({
     cover: {
@@ -18,6 +20,8 @@ const props = defineProps({
         default: () => ({ bass: 0, mid: 0, treble: 0, level: 0 })
     }
 })
+
+const settingsStore = useAppSettingsStore()
 
 const rootRef = ref(null)
 const canvasRef = ref(null)
@@ -49,6 +53,7 @@ let blobs = []
 let coverRequestId = 0
 let hasLoadedCoverPalette = false
 let reducedMotion = false
+let contextLostHandler = null
 const blobValues = new Float32Array(BLOB_N * 4)
 const currentPalette = DEFAULT_PALETTE.map((color) => [...color])
 const targetPalette = DEFAULT_PALETTE.map((color) => [...color])
@@ -314,14 +319,34 @@ function initWebgl() {
         depth: false,
         stencil: false,
         alpha: false,
-        powerPreference: 'low-power',
+        powerPreference: settingsStore.state.gpuMode === 'high-performance'
+            ? 'high-performance'
+            : settingsStore.state.gpuMode === 'compatibility' ? 'default' : 'low-power',
         preserveDrawingBuffer: false
     })
-    if (!gl) return false
+    if (!gl) {
+        updateWebglDiagnostics({ status: 'unavailable', error: 'WebGL context creation failed', contextLost: false })
+        return false
+    }
+
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info')
+    updateWebglDiagnostics({
+        status: 'ready',
+        renderer: debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER),
+        vendor: debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR),
+        version: gl.getParameter(gl.VERSION),
+        shadingLanguageVersion: gl.getParameter(gl.SHADING_LANGUAGE_VERSION),
+        context: 'webgl',
+        error: '',
+        contextLost: false
+    })
 
     const vertex = createShader(gl.VERTEX_SHADER, VERTEX_SHADER)
     const fragment = createShader(gl.FRAGMENT_SHADER, FRAGMENT_SHADER)
-    if (!vertex || !fragment) return false
+    if (!vertex || !fragment) {
+        updateWebglDiagnostics({ status: 'shader-failed', error: 'WebGL shader compilation failed' })
+        return false
+    }
 
     program = gl.createProgram()
     gl.attachShader(program, vertex)
@@ -329,6 +354,7 @@ function initWebgl() {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
         console.warn('流沙背景 shader 链接失败:', gl.getProgramInfoLog(program))
+        updateWebglDiagnostics({ status: 'shader-failed', error: gl.getProgramInfoLog(program) || 'WebGL shader linking failed' })
         return false
     }
     gl.useProgram(program)
@@ -351,7 +377,24 @@ function initWebgl() {
         colors: gl.getUniformLocation(program, 'uCol[0]'),
         blobs: gl.getUniformLocation(program, 'uBlob[0]')
     }
+    contextLostHandler = (event) => {
+        event.preventDefault()
+        stopAnimation()
+        updateWebglDiagnostics({ status: 'context-lost', error: 'WebGL context lost', contextLost: true })
+        showFallback()
+    }
+    canvas.addEventListener('webglcontextlost', contextLostHandler)
     return true
+}
+
+function releaseWebgl() {
+    stopAnimation()
+    if (contextLostHandler) canvas?.removeEventListener('webglcontextlost', contextLostHandler)
+    if (gl && program) gl.deleteProgram(program)
+    contextLostHandler = null
+    gl = null
+    program = null
+    uniforms = null
 }
 
 function mulberry32(seed) {
@@ -610,10 +653,7 @@ onBeforeUnmount(() => {
     resizeObserver?.disconnect()
     window.removeEventListener('resize', resize)
     document.removeEventListener('visibilitychange', handleVisibilityChange)
-    if (gl && program) gl.deleteProgram(program)
-    gl = null
-    program = null
-    uniforms = null
+    releaseWebgl()
 })
 </script>
 
