@@ -174,7 +174,10 @@ fn decode_text(bytes: &[u8]) -> Result<String, String> {
 }
 
 fn parse_lrc_text(text: &str) -> Result<ParsedLyrics, String> {
-    let lyrics = text.parse::<Lyrics>().map_err(|error| error.to_string())?;
+    let normalized = normalize_lrc_text(text);
+    let lyrics = normalized
+        .parse::<Lyrics>()
+        .map_err(|error| error.to_string())?;
     let timed = lyrics
         .get_timed_lines()
         .iter()
@@ -192,6 +195,116 @@ fn parse_lrc_text(text: &str) -> Result<ParsedLyrics, String> {
         .collect();
 
     Ok(ParsedLyrics { timed, plain })
+}
+
+fn normalize_lrc_text(text: &str) -> String {
+    let mut normalized = String::with_capacity(text.len());
+
+    for (line_index, raw_line) in text.split('\n').enumerate() {
+        if line_index > 0 {
+            normalized.push('\n');
+        }
+
+        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+        let tags = find_time_tags(line);
+
+        if tags.first().is_some_and(|(start, _, _)| *start == 0) {
+            let (_, mut last_end, first_tag) = tags[0].clone();
+            normalized.push_str(&first_tag);
+
+            for (start, end, tag) in tags.into_iter().skip(1) {
+                let between = &line[last_end..start];
+                normalized.push_str(between);
+                if !between.trim().is_empty() {
+                    normalized.push('\n');
+                }
+                normalized.push_str(&tag);
+                last_end = end;
+            }
+
+            normalized.push_str(&line[last_end..]);
+        } else {
+            let mut cursor = 0;
+            for (start, end, tag) in tags {
+                normalized.push_str(&line[cursor..start]);
+                normalized.push_str(&tag);
+                cursor = end;
+            }
+            normalized.push_str(&line[cursor..]);
+        }
+    }
+
+    normalized
+}
+
+fn find_time_tags(line: &str) -> Vec<(usize, usize, String)> {
+    let mut tags = Vec::new();
+    let mut cursor = 0;
+
+    while let Some(relative_start) = line[cursor..].find('[') {
+        let start = cursor + relative_start;
+        let Some(relative_end) = line[start..].find(']') else {
+            break;
+        };
+        let end = start + relative_end + 1;
+        if let Some(tag) = normalize_time_tag(&line[start..end]) {
+            tags.push((start, end, tag));
+        }
+        cursor = end;
+    }
+
+    tags
+}
+
+fn normalize_time_tag(tag: &str) -> Option<String> {
+    let value = tag.strip_prefix('[')?.strip_suffix(']')?.trim();
+    let (minute, second_and_fraction) = value.split_once(':')?;
+    if minute.is_empty() || !minute.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+
+    let (second, fraction) = second_and_fraction
+        .split_once('.')
+        .map_or((second_and_fraction, ""), |(second, fraction)| {
+            (second, fraction)
+        });
+    if second.is_empty()
+        || !second.bytes().all(|byte| byte.is_ascii_digit())
+        || fraction.len() > 3
+        || !fraction.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+
+    let minute_value = minute.parse::<u64>().ok()?;
+    let mut second_value = second.parse::<u64>().ok()?;
+    if second_value >= 60 {
+        return None;
+    }
+    let mut centisecond = match fraction.len() {
+        0 => 0,
+        1 => fraction.parse::<u64>().ok()? * 10,
+        2 => fraction.parse::<u64>().ok()?,
+        3 => {
+            let first_two = fraction[..2].parse::<u64>().ok()?;
+            first_two + u64::from(fraction.as_bytes()[2] >= b'5')
+        }
+        _ => return None,
+    };
+
+    if centisecond >= 100 {
+        centisecond = 0;
+        second_value += 1;
+    }
+    let mut minute_value = minute_value;
+    if second_value >= 60 {
+        second_value = 0;
+        minute_value += 1;
+    }
+
+    Some(format!(
+        "[{minute_value:02}:{second_value:02}.{centisecond:02}]"
+    ))
 }
 
 impl ParsedLyrics {
@@ -386,5 +499,20 @@ mod tests {
     #[test]
     fn rejects_invalid_lrc() {
         assert!(parse_lrc_text("[00:60.00]line").is_err());
+    }
+
+    #[test]
+    fn accepts_millisecond_precision_and_concatenated_tags() {
+        let parsed = parse_lrc_text("[00:00.438]第一句\n[03:11.27]Bye Bye[00:10.14]当我看到你")
+            .expect("compatible lrc");
+
+        assert_eq!(
+            parsed.timed,
+            vec![
+                (440, "第一句".into()),
+                (10_140, "当我看到你".into()),
+                (191_270, "Bye Bye".into()),
+            ]
+        );
     }
 }
