@@ -1,0 +1,12 @@
+[package]
+name = "dropin-sleep-timer-backend"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+dropin-wasm-sdk = { path = "../../../wasm/rust/dropin-wasm-sdk" }
+serde_json = "1"

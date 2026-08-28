@@ -6,6 +6,7 @@ pub const UI_PANEL: &str = "ui.panel";
 pub const PLAYER_READ: &str = "player.read";
 pub const PLAYER_CONTROL: &str = "player.control";
 pub const LIBRARY_READ: &str = "library.read";
+pub const NOTIFICATION_SHOW: &str = "notification.show";
 pub const STORAGE_PLUGIN: &str = "storage.plugin";
 
 pub const ALLOWED_PERMISSIONS: &[&str] = &[
@@ -13,6 +14,7 @@ pub const ALLOWED_PERMISSIONS: &[&str] = &[
     PLAYER_READ,
     PLAYER_CONTROL,
     LIBRARY_READ,
+    NOTIFICATION_SHOW,
     STORAGE_PLUGIN,
 ];
 

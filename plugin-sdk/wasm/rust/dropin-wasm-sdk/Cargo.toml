@@ -1,0 +1,13 @@
+[package]
+name = "dropin-wasm-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "Small SDK for Dropin WASM plugin backends."
+publish = false
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

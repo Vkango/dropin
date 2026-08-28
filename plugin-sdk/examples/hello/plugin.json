@@ -10,5 +10,5 @@
   "backend": "backend.wasm",
   "ui": "ui/index.html",
   "icon": "icon.svg",
-  "permissions": ["ui.panel", "storage.plugin"]
+  "permissions": ["ui.panel", "notification.show", "storage.plugin"]
 }

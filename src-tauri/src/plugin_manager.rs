@@ -1,14 +1,15 @@
 use crate::{
     bass_bridge::BassService,
+    media_library::MediaService,
     paths::AppPaths,
     plugin_manifest::PluginManifest,
     plugin_permissions::{
-        PermissionState, API_VERSION, LIBRARY_READ, PLAYER_CONTROL, PLAYER_READ, STORAGE_PLUGIN,
-        UI_PANEL,
+        PermissionState, API_VERSION, LIBRARY_READ, NOTIFICATION_SHOW, PLAYER_CONTROL,
+        PLAYER_READ, STORAGE_PLUGIN, UI_PANEL,
     },
 };
-use rfd::FileDialog;
 use base64::Engine as _;
+use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
@@ -17,9 +18,12 @@ use std::{
     io::{Read, Seek},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, RwLock},
+    time::{SystemTime, UNIX_EPOCH},
 };
-use tauri::State;
-use wasmtime::{Config, Engine, Instance, Module, Store, StoreLimits, StoreLimitsBuilder};
+use tauri::{AppHandle, Emitter, State};
+use wasmtime::{
+    Caller, Config, Engine, Instance, Linker, Module, Store, StoreLimits, StoreLimitsBuilder,
+};
 use zip::ZipArchive;
 
 const MAX_FILES: usize = 256;
@@ -29,6 +33,7 @@ const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const WASM_MEMORY_BYTES: usize = 32 * 1024 * 1024;
 const WASM_FUEL: u64 = 2_000_000;
 const STATE_VERSION: u32 = 2;
+const EVENT_PLUGIN_NOTIFICATION: &str = "plugin/notification";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -63,8 +68,47 @@ pub struct PluginInfo {
     pub last_error: Option<String>,
 }
 
+#[derive(Clone)]
+struct PluginAccess {
+    id: String,
+    name: String,
+    declared_permissions: Vec<String>,
+    granted_permissions: Vec<String>,
+}
+
+impl PluginAccess {
+    fn from_plugin(plugin: &InstalledPlugin) -> Self {
+        Self {
+            id: plugin.manifest.id.clone(),
+            name: plugin.manifest.name.clone(),
+            declared_permissions: plugin.manifest.permissions.clone(),
+            granted_permissions: plugin.state.granted_permissions.clone(),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct HostApiContext {
+    paths: AppPaths,
+    host_state: Arc<RwLock<Value>>,
+    bass: BassService,
+    media: MediaService,
+    app: AppHandle,
+}
+
+#[derive(Clone)]
+struct WasmHostContext {
+    access: PluginAccess,
+    host: HostApiContext,
+}
+
+struct WasmStoreData {
+    limits: StoreLimits,
+    host_context: Option<WasmHostContext>,
+}
+
 struct WasmPlugin {
-    store: Store<StoreLimits>,
+    store: Store<WasmStoreData>,
     instance: Instance,
 }
 
@@ -73,6 +117,7 @@ struct InstalledPlugin {
     root: PathBuf,
     state: PersistedPlugin,
     wasm: Option<WasmPlugin>,
+    last_background_tick_ms: u64,
 }
 
 struct Runtime {
@@ -136,6 +181,7 @@ impl PluginManager {
                 root,
                 state: PersistedPlugin { enabled, ..state },
                 wasm: None,
+                last_background_tick_ms: 0,
             };
             if enabled {
                 if let Err(error) = start_wasm(&runtime.engine, &mut plugin) {
@@ -223,6 +269,7 @@ impl PluginManager {
                     root: destination.join("current"),
                     state,
                     wasm: None,
+                    last_background_tick_ms: 0,
                 },
             );
             persist_states(&self.paths.plugins_file, &runtime.plugins)?;
@@ -334,6 +381,8 @@ impl PluginManager {
         method: String,
         args: Value,
         bass: &BassService,
+        media: &MediaService,
+        app: &AppHandle,
     ) -> Result<Value, String> {
         if serde_json::to_vec(&args)
             .map_err(|error| error.to_string())?
@@ -342,12 +391,17 @@ impl PluginManager {
         {
             return Err("plugin request exceeds 1 MiB".into());
         }
+        let host = HostApiContext {
+            paths: self.paths.clone(),
+            host_state: self.host_state.clone(),
+            bass: bass.clone(),
+            media: media.clone(),
+            app: app.clone(),
+        };
         let mut runtime = self
             .runtime
             .lock()
             .map_err(|_| "plugin runtime poisoned".to_string())?;
-        let engine = runtime.engine.clone();
-        let paths = self.paths.clone();
         let plugin = runtime
             .plugins
             .get_mut(&id)
@@ -355,40 +409,16 @@ impl PluginManager {
         if !plugin.state.enabled || plugin.state.faulted {
             return Err("plugin is not enabled".into());
         }
-        let required = required_permission(&method)
-            .ok_or_else(|| format!("unsupported plugin method: {method}"))?;
-        if !plugin_permission(plugin, required) {
-            return permission_error(required);
+        let access = PluginAccess::from_plugin(plugin);
+        if !method.starts_with("backend.") {
+            return dispatch_host_api(&access, &method, args, &host);
         }
-        if method.starts_with("storage.") {
-            return storage_call(&paths, plugin, &method, args);
-        }
-        if method == "player.getState" {
-            return self
-                .host_state
-                .read()
-                .map(|state| state.clone())
-                .map_err(|_| "plugin host state poisoned".to_string());
-        }
-        if method == "player.play" || method == "player.pause" {
-            let channel_id = args
-                .get("channelId")
-                .and_then(Value::as_u64)
-                .ok_or_else(|| "channelId is required".to_string())?;
-            let operation = if method == "player.play" {
-                "bass_channel_play"
-            } else {
-                "bass_channel_pause"
-            };
-            return bass
-                .call_operation(operation, json!({ "channelId": channel_id }))
-                .map_err(|error| error.to_string());
-        }
-        if method.starts_with("player.") || method.starts_with("library.") {
-            return Ok(json!({ "method": method, "args": args, "available": false }));
+        if !access_permission(&access, UI_PANEL) {
+            return permission_error(UI_PANEL);
         }
         let request = json!({ "method": method, "args": args }).to_string();
-        match call_wasm(&engine, plugin, request.as_bytes()) {
+        let wasm_context = WasmHostContext { access, host };
+        match call_wasm(plugin, request.as_bytes(), wasm_context) {
             Ok(value) => Ok(value),
             Err(error) => {
                 stop_wasm(plugin);
@@ -399,6 +429,65 @@ impl PluginManager {
                 Err(error)
             }
         }
+    }
+
+    pub fn tick_background(
+        &self,
+        bass: &BassService,
+        media: &MediaService,
+        app: &AppHandle,
+    ) -> Result<(), String> {
+        let now_ms = unix_time_ms();
+        let host = HostApiContext {
+            paths: self.paths.clone(),
+            host_state: self.host_state.clone(),
+            bass: bass.clone(),
+            media: media.clone(),
+            app: app.clone(),
+        };
+        let mut runtime = self
+            .runtime
+            .lock()
+            .map_err(|_| "plugin runtime poisoned".to_string())?;
+        let mut persist_needed = false;
+        for plugin in runtime.plugins.values_mut() {
+            let Some(interval_ms) = plugin.manifest.background.tick_interval_ms else {
+                continue;
+            };
+            if !plugin.state.enabled || plugin.state.faulted {
+                continue;
+            }
+            if plugin.last_background_tick_ms != 0
+                && now_ms.saturating_sub(plugin.last_background_tick_ms) < interval_ms
+            {
+                continue;
+            }
+            plugin.last_background_tick_ms = now_ms;
+            let access = PluginAccess::from_plugin(plugin);
+            if !access_permission(&access, UI_PANEL) {
+                continue;
+            }
+            let request = json!({
+                "method": "backend.tick",
+                "args": { "nowMs": now_ms }
+            })
+            .to_string();
+            let wasm_context = WasmHostContext {
+                access,
+                host: host.clone(),
+            };
+            if let Err(error) = call_wasm(plugin, request.as_bytes(), wasm_context) {
+                stop_wasm(plugin);
+                plugin.state.enabled = false;
+                plugin.state.faulted = true;
+                plugin.state.last_error = Some(error);
+                persist_needed = true;
+            }
+        }
+        if persist_needed {
+            persist_states(&self.paths.plugins_file, &runtime.plugins)?;
+        }
+        Ok(())
     }
 
     pub fn ui_url(&self, id: String) -> Result<String, String> {
@@ -467,12 +556,30 @@ fn start_wasm(engine: &Engine, plugin: &mut InstalledPlugin) -> Result<(), Strin
         .tables(8)
         .memories(1)
         .build();
-    let mut store = Store::new(engine, limits);
-    store.limiter(|limits| limits);
+    let mut store = Store::new(
+        engine,
+        WasmStoreData {
+            limits,
+            host_context: None,
+        },
+    );
+    store.limiter(|data| &mut data.limits);
     store
         .set_fuel(WASM_FUEL)
         .map_err(|error| error.to_string())?;
-    let instance = Instance::new(&mut store, &module, &[]).map_err(|error| error.to_string())?;
+    let mut linker = Linker::<WasmStoreData>::new(engine);
+    linker
+        .func_wrap(
+            "dropin",
+            "host_call",
+            |caller: Caller<'_, WasmStoreData>, ptr: i32, len: i32| -> i64 {
+                wasm_host_call(caller, ptr, len)
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    let instance = linker
+        .instantiate(&mut store, &module)
+        .map_err(|error| error.to_string())?;
     let init = instance
         .get_typed_func::<i32, i32>(&mut store, "plugin_init")
         .map_err(|error| error.to_string())?;
@@ -500,6 +607,7 @@ fn start_wasm(engine: &Engine, plugin: &mut InstalledPlugin) -> Result<(), Strin
 
 fn stop_wasm(plugin: &mut InstalledPlugin) {
     if let Some(mut wasm) = plugin.wasm.take() {
+        let _ = wasm.store.set_fuel(WASM_FUEL);
         if let Some(shutdown) = wasm.instance.get_func(&mut wasm.store, "plugin_shutdown") {
             if let Ok(shutdown) = shutdown.typed::<(), ()>(&wasm.store) {
                 let _ = shutdown.call(&mut wasm.store, ());
@@ -509,63 +617,264 @@ fn stop_wasm(plugin: &mut InstalledPlugin) {
 }
 
 fn call_wasm(
-    _engine: &Engine,
     plugin: &mut InstalledPlugin,
     request: &[u8],
+    host_context: WasmHostContext,
 ) -> Result<Value, String> {
     let wasm = plugin
         .wasm
         .as_mut()
         .ok_or_else(|| "plugin backend is not running".to_string())?;
-    let memory = wasm
-        .instance
-        .get_memory(&mut wasm.store, "memory")
-        .ok_or_else(|| "WASM memory export is missing".to_string())?;
-    let alloc = wasm
-        .instance
-        .get_typed_func::<i32, i32>(&mut wasm.store, "plugin_alloc")
+    wasm.store
+        .set_fuel(WASM_FUEL)
         .map_err(|error| error.to_string())?;
-    let dealloc = wasm
-        .instance
-        .get_typed_func::<(i32, i32), ()>(&mut wasm.store, "plugin_dealloc")
+    wasm.store.data_mut().host_context = Some(host_context);
+
+    let result = (|| {
+        let memory = wasm
+            .instance
+            .get_memory(&mut wasm.store, "memory")
+            .ok_or_else(|| "WASM memory export is missing".to_string())?;
+        let alloc = wasm
+            .instance
+            .get_typed_func::<i32, i32>(&mut wasm.store, "plugin_alloc")
+            .map_err(|error| error.to_string())?;
+        let dealloc = wasm
+            .instance
+            .get_typed_func::<(i32, i32), ()>(&mut wasm.store, "plugin_dealloc")
+            .map_err(|error| error.to_string())?;
+        let call = wasm
+            .instance
+            .get_typed_func::<(i32, i32), i64>(&mut wasm.store, "plugin_call")
+            .map_err(|error| error.to_string())?;
+        let ptr = alloc
+            .call(&mut wasm.store, request.len() as i32)
+            .map_err(|error| error.to_string())?;
+        if ptr < 0 {
+            return Err("WASM allocation failed".into());
+        }
+        memory
+            .write(&mut wasm.store, ptr as usize, request)
+            .map_err(|error| error.to_string())?;
+        let packed = call
+            .call(&mut wasm.store, (ptr, request.len() as i32))
+            .map_err(|error| error.to_string())?;
+        let _ = dealloc.call(&mut wasm.store, (ptr, request.len() as i32));
+        let response_ptr = (packed >> 32) as i32;
+        let response_len = (packed & 0xffff_ffff) as i32;
+        if response_ptr < 0 || response_len < 0 || response_len as usize > MAX_REQUEST_BYTES {
+            return Err("invalid WASM response".into());
+        }
+        let mut bytes = vec![0u8; response_len as usize];
+        memory
+            .read(&mut wasm.store, response_ptr as usize, &mut bytes)
+            .map_err(|error| error.to_string())?;
+        if let Some(free) = wasm
+            .instance
+            .get_func(&mut wasm.store, "plugin_free_response")
+        {
+            let free = free
+                .typed::<(i32, i32), ()>(&wasm.store)
+                .map_err(|error| error.to_string())?;
+            free.call(&mut wasm.store, (response_ptr, response_len))
+                .map_err(|error| error.to_string())?;
+        }
+        serde_json::from_slice(&bytes)
+            .map_err(|error| format!("invalid WASM JSON response: {error}"))
+    })();
+
+    wasm.store.data_mut().host_context = None;
+    result
+}
+
+fn wasm_host_call(mut caller: Caller<'_, WasmStoreData>, ptr: i32, len: i32) -> i64 {
+    let payload = match wasm_host_call_inner(&mut caller, ptr, len) {
+        Ok(result) => json!({ "ok": true, "result": result }),
+        Err(error) => json!({ "ok": false, "error": error }),
+    };
+    let bytes = serde_json::to_vec(&payload).unwrap_or_else(|_| {
+        b"{\"ok\":false,\"error\":\"host response serialization failed\"}".to_vec()
+    });
+    write_wasm_response(&mut caller, &bytes).unwrap_or(0)
+}
+
+fn wasm_host_call_inner(
+    caller: &mut Caller<'_, WasmStoreData>,
+    ptr: i32,
+    len: i32,
+) -> Result<Value, String> {
+    if ptr < 0 || len < 0 || len as usize > MAX_REQUEST_BYTES {
+        return Err("invalid host_call request range".into());
+    }
+    let memory = wasm_memory(caller)?;
+    let mut bytes = vec![0u8; len as usize];
+    memory
+        .read(&mut *caller, ptr as usize, &mut bytes)
         .map_err(|error| error.to_string())?;
-    let call = wasm
-        .instance
-        .get_typed_func::<(i32, i32), i64>(&mut wasm.store, "plugin_call")
+    let request: Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("invalid host_call JSON request: {error}"))?;
+    let method = request
+        .get("method")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "host_call method is required".to_string())?;
+    let args = request.get("args").cloned().unwrap_or_else(|| json!({}));
+    let context = caller
+        .data()
+        .host_context
+        .clone()
+        .ok_or_else(|| "host_call is only available during plugin_call".to_string())?;
+    dispatch_host_api(&context.access, method, args, &context.host)
+}
+
+fn write_wasm_response(
+    caller: &mut Caller<'_, WasmStoreData>,
+    response: &[u8],
+) -> Result<i64, String> {
+    if response.len() > MAX_REQUEST_BYTES {
+        return Err("host_call response exceeds 1 MiB".into());
+    }
+    let memory = wasm_memory(caller)?;
+    let alloc = caller
+        .get_export("plugin_alloc")
+        .and_then(|item| item.into_func())
+        .ok_or_else(|| "WASM export is missing: plugin_alloc".to_string())?
+        .typed::<i32, i32>(&mut *caller)
         .map_err(|error| error.to_string())?;
     let ptr = alloc
-        .call(&mut wasm.store, request.len() as i32)
+        .call(&mut *caller, response.len() as i32)
         .map_err(|error| error.to_string())?;
     if ptr < 0 {
         return Err("WASM allocation failed".into());
     }
     memory
-        .write(&mut wasm.store, ptr as usize, request)
+        .write(&mut *caller, ptr as usize, response)
         .map_err(|error| error.to_string())?;
-    let packed = call
-        .call(&mut wasm.store, (ptr, request.len() as i32))
-        .map_err(|error| error.to_string())?;
-    let _ = dealloc.call(&mut wasm.store, (ptr, request.len() as i32));
-    let response_ptr = (packed >> 32) as i32;
-    let response_len = (packed & 0xffff_ffff) as i32;
-    if response_ptr < 0 || response_len < 0 || response_len as usize > MAX_REQUEST_BYTES {
-        return Err("invalid WASM response".into());
+    Ok(pack_response(ptr, response.len()))
+}
+
+fn wasm_memory(caller: &mut Caller<'_, WasmStoreData>) -> Result<wasmtime::Memory, String> {
+    caller
+        .get_export("memory")
+        .and_then(|item| item.into_memory())
+        .ok_or_else(|| "WASM memory export is missing".to_string())
+}
+
+fn pack_response(ptr: i32, len: usize) -> i64 {
+    ((ptr as i64) << 32) | (len as i64 & 0xffff_ffff)
+}
+
+fn unix_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64)
+        .unwrap_or(0)
+}
+
+fn dispatch_host_api(
+    access: &PluginAccess,
+    method: &str,
+    args: Value,
+    host: &HostApiContext,
+) -> Result<Value, String> {
+    let required = required_permission(method)
+        .ok_or_else(|| format!("unsupported plugin method: {method}"))?;
+    if !access_permission(access, required) {
+        return permission_error(required);
     }
-    let mut bytes = vec![0u8; response_len as usize];
-    memory
-        .read(&mut wasm.store, response_ptr as usize, &mut bytes)
-        .map_err(|error| error.to_string())?;
-    if let Some(free) = wasm
-        .instance
-        .get_func(&mut wasm.store, "plugin_free_response")
-    {
-        let free = free
-            .typed::<(i32, i32), ()>(&wasm.store)
-            .map_err(|error| error.to_string())?;
-        free.call(&mut wasm.store, (response_ptr, response_len))
-            .map_err(|error| error.to_string())?;
+
+    match method {
+        "player.getState" => host
+            .host_state
+            .read()
+            .map(|state| state.clone())
+            .map_err(|_| "plugin host state poisoned".to_string()),
+        "player.play" | "player.pause" => player_control_call(method, args, host),
+        "library.list" => host
+            .media
+            .call("media_library_tracks", args)
+            .map_err(|error| error.to_string()),
+        "notification.show" => notification_show(access, args, &host.app),
+        "storage.get" | "storage.set" | "storage.remove" => {
+            storage_call(&host.paths, &access.id, method, args)
+        }
+        _ => Err(format!("unsupported plugin method: {method}")),
     }
-    serde_json::from_slice(&bytes).map_err(|error| format!("invalid WASM JSON response: {error}"))
+}
+
+fn player_control_call(
+    method: &str,
+    args: Value,
+    host: &HostApiContext,
+) -> Result<Value, String> {
+    let state_channel_id = || -> Result<Option<u64>, String> {
+        let state = host
+            .host_state
+            .read()
+            .map_err(|_| "plugin host state poisoned".to_string())?;
+        Ok(state.get("channelId").and_then(Value::as_u64))
+    };
+    let channel_id = args
+        .get("channelId")
+        .and_then(Value::as_u64)
+        .or(state_channel_id()?)
+        .ok_or_else(|| "no active player channel".to_string())?;
+    let operation = if method == "player.play" {
+        "bass_channel_play"
+    } else {
+        "bass_channel_pause"
+    };
+    let mut payload = json!({ "channelId": channel_id });
+    if let Some(restart) = args.get("restart").and_then(Value::as_bool) {
+        payload["restart"] = Value::Bool(restart);
+    }
+    host.bass
+        .call_operation(operation, payload)
+        .map_err(|error| error.to_string())
+}
+
+fn notification_show(
+    access: &PluginAccess,
+    args: Value,
+    app: &AppHandle,
+) -> Result<Value, String> {
+    let title = args
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("Plugin notification");
+    let body = args
+        .get("body")
+        .or_else(|| args.get("message"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if title.len() > 200 || body.len() > 4096 {
+        return Err("notification payload is too large".into());
+    }
+    let duration = args
+        .get("duration")
+        .or_else(|| args.get("durationMs"))
+        .and_then(Value::as_i64)
+        .unwrap_or(5000)
+        .clamp(0, 600_000);
+    let source = if access.name.trim().is_empty() {
+        access.id.as_str()
+    } else {
+        access.name.as_str()
+    };
+    app.emit(
+        EVENT_PLUGIN_NOTIFICATION,
+        json!({
+            "pluginId": access.id,
+            "pluginName": access.name,
+            "source": source,
+            "title": title,
+            "body": body,
+            "duration": duration,
+        }),
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(json!({ "shown": true }))
 }
 
 fn required_permission(method: &str) -> Option<&'static str> {
@@ -577,26 +886,33 @@ fn required_permission(method: &str) -> Option<&'static str> {
         Some(PLAYER_CONTROL)
     } else if method.starts_with("library.") {
         Some(LIBRARY_READ)
+    } else if method == "notification.show" {
+        Some(NOTIFICATION_SHOW)
     } else if method.starts_with("storage.") {
         Some(STORAGE_PLUGIN)
-    } else if method.starts_with("backend.") {
-        Some(UI_PANEL)
     } else {
         None
     }
 }
 
+fn access_permission(access: &PluginAccess, permission: &str) -> bool {
+    has_permission(
+        &access.declared_permissions,
+        &access.granted_permissions,
+        permission,
+    )
+}
+
 fn plugin_permission(plugin: &InstalledPlugin, permission: &str) -> bool {
-    plugin
-        .manifest
-        .permissions
-        .iter()
-        .any(|item| item == permission)
-        && plugin
-            .state
-            .granted_permissions
-            .iter()
-            .any(|item| item == permission)
+    has_permission(
+        &plugin.manifest.permissions,
+        &plugin.state.granted_permissions,
+        permission,
+    )
+}
+
+fn has_permission(declared: &[String], granted: &[String], permission: &str) -> bool {
+    declared.iter().any(|item| item == permission) && granted.iter().any(|item| item == permission)
 }
 
 fn permission_error(permission: &str) -> Result<Value, String> {
@@ -605,11 +921,11 @@ fn permission_error(permission: &str) -> Result<Value, String> {
 
 fn storage_call(
     paths: &AppPaths,
-    plugin: &InstalledPlugin,
+    plugin_id: &str,
     method: &str,
     args: Value,
 ) -> Result<Value, String> {
-    let dir = paths.plugin_data_dir.join(&plugin.manifest.id);
+    let dir = paths.plugin_data_dir.join(plugin_id);
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let file = dir.join("storage.json");
     let mut data = if file.exists() {
@@ -628,7 +944,7 @@ fn storage_call(
         return Err("invalid storage key".into());
     }
     match method {
-        "storage.get" => Ok(data.remove(key).unwrap_or(Value::Null)),
+        "storage.get" => Ok(data.get(key).cloned().unwrap_or(Value::Null)),
         "storage.set" => {
             data.insert(
                 key.into(),
@@ -841,11 +1157,13 @@ pub fn plugin_set_permissions(
 pub fn plugin_call(
     manager: State<'_, PluginManager>,
     bass: State<'_, BassService>,
+    media: State<'_, MediaService>,
+    app: AppHandle,
     id: String,
     method: String,
     args: Value,
 ) -> Result<Value, String> {
-    manager.call(id, method, args, &bass)
+    manager.call(id, method, args, &bass, &media, &app)
 }
 
 #[tauri::command]

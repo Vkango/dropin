@@ -1,0 +1,232 @@
+:root {
+  --plugin-primary: var(--dropin-primary, rgb(82, 122, 255));
+  --plugin-bg: var(--dropin-background, transparent);
+  --plugin-surface: var(--dropin-surface, rgba(255, 255, 255, .72));
+  --plugin-text: var(--dropin-text, rgb(32, 35, 42));
+  --plugin-muted: color-mix(in srgb, var(--plugin-text) 58%, transparent);
+  --plugin-line: color-mix(in srgb, var(--plugin-text) 16%, transparent);
+  --plugin-line-strong: color-mix(in srgb, var(--plugin-text) 28%, transparent);
+  --plugin-hover: color-mix(in srgb, var(--plugin-primary) 14%, transparent);
+  color: var(--plugin-text);
+  background: transparent;
+  font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+}
+
+:root[data-dropin-theme='dark'] {
+  --plugin-muted: color-mix(in srgb, var(--plugin-text) 62%, transparent);
+  --plugin-line: color-mix(in srgb, var(--plugin-text) 18%, transparent);
+  --plugin-line-strong: color-mix(in srgb, var(--plugin-text) 34%, transparent);
+  --plugin-hover: color-mix(in srgb, var(--plugin-primary) 20%, transparent);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.sleep-panel {
+  display: grid;
+  gap: 0;
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: clamp(18px, 4vw, 34px);
+}
+
+.sleep-header {
+  padding: 2px 0 22px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  margin-bottom: 9px;
+  color: var(--plugin-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0 0 8px;
+  color: var(--plugin-text);
+  font-size: clamp(26px, 6vw, 42px);
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -.04em;
+}
+
+p {
+  max-width: 560px;
+  margin: 0;
+  color: var(--plugin-muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.timer-panel {
+  display: grid;
+  gap: 15px;
+  padding: 0;
+  border-top: 1px solid var(--plugin-line);
+  border-bottom: 1px solid var(--plugin-line);
+}
+
+.timer-summary {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 0 8px;
+}
+
+.summary-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--plugin-muted);
+  font-size: 11px;
+}
+
+#remaining {
+  display: block;
+  color: var(--plugin-text);
+  font-size: clamp(44px, 12vw, 78px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 520;
+  letter-spacing: -.06em;
+  line-height: .92;
+}
+
+#state {
+  flex: 0 0 auto;
+  padding-bottom: 6px;
+  color: var(--plugin-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.progress-track {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  background: var(--plugin-line);
+}
+
+.progress-track span {
+  position: absolute;
+  inset: 0;
+  background: var(--plugin-primary);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 240ms ease;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding-top: 4px;
+  color: var(--plugin-muted);
+  font-size: 12px;
+}
+
+input {
+  width: 100%;
+  height: 34px;
+  padding: 0 4px;
+  border: 0;
+  border-bottom: 1px solid var(--plugin-line-strong);
+  border-radius: 0;
+  color: var(--plugin-text);
+  background: transparent;
+  outline: 0;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+input:focus {
+  border-color: var(--plugin-primary);
+  background: var(--plugin-hover);
+}
+
+.presets,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+button {
+  min-width: 62px;
+  border: 1px solid var(--plugin-line-strong);
+  border-radius: 5px;
+  padding: 7px 12px;
+  color: var(--plugin-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+button:hover:not(:disabled) {
+  color: var(--plugin-text);
+  border-color: var(--plugin-primary);
+  background: var(--plugin-hover);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+.primary {
+  color: var(--plugin-text);
+  border-color: color-mix(in srgb, var(--plugin-primary) 45%, var(--plugin-line-strong));
+  background: var(--plugin-hover);
+}
+
+.actions {
+  padding-bottom: 18px;
+}
+
+#message {
+  min-height: 20px;
+  padding-bottom: 18px;
+  color: var(--plugin-muted);
+  font-size: 12px;
+}
+
+body[data-active='true'] #state,
+body[data-active='true'] #message {
+  color: var(--plugin-primary);
+}
+
+@media (max-width: 560px) {
+  .sleep-panel {
+    padding: 18px;
+  }
+
+  .timer-summary {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  #state {
+    padding-bottom: 0;
+    text-align: left;
+  }
+
+  .field {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}

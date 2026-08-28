@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "com.dropin.sleep-timer",
+  "name": "Sleep Timer",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "author": "dropin",
+  "description": "Pause playback after a countdown and show a notification.",
+  "categories": ["utility", "playback"],
+  "backend": "backend.wasm",
+  "ui": "ui/index.html",
+  "icon": "icon.svg",
+  "permissions": ["ui.panel", "player.control", "notification.show"],
+  "background": { "tickIntervalMs": 1000 }
+}

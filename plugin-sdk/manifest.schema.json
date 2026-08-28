@@ -17,7 +17,13 @@
     "permissions": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "enum": ["ui.panel", "player.read", "player.control", "library.read", "storage.plugin"] }
+      "items": { "enum": ["ui.panel", "player.read", "player.control", "library.read", "notification.show", "storage.plugin"] }
+    },
+    "background": {
+      "type": "object",
+      "properties": {
+        "tickIntervalMs": { "type": "integer", "minimum": 1000, "maximum": 60000 }
+      }
     }
   }
 }

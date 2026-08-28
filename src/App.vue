@@ -16,12 +16,13 @@ import Drawer from './components/Drawer.vue'
 import Playlist from './components/Playlist.vue'
 import Notification from './components/notification/Notification.vue'
 import LoadingWithTip from './components/notification/LoadingWithTip.vue'
+import Tip from './components/notification/Tip.vue'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import { themeManager } from './utils/themeManager.js'
 import { bassCall, listenToBassEvents } from './services/bassApi.js'
 import { createBassEffectsRuntime } from './services/bassEffectsRuntime.js'
 import { createBassPlaybackRuntime } from './services/bassPlaybackRuntime.js'
-import { pluginApi } from './services/pluginApi.js'
+import { listenToPluginEvents, pluginApi } from './services/pluginApi.js'
 import { createPluginRuntime } from './services/pluginRuntime.js'
 import { cloneForBridge } from './utils/cloneForBridge.js'
 import { smtcApi, listenToSmtcEvents } from './services/smtcApi.js'
@@ -151,6 +152,7 @@ let bassReleaseInFlight = null
 let isAppDisposing = false
 let unlistenBassEvents = () => { }
 let unlistenSmtcEvents = () => { }
+let unlistenPluginEvents = () => { }
 let snapshotInFlight = false
 let lastRecordedTrackId = null
 let lastRecordedPositionMs = -1
@@ -490,6 +492,22 @@ const handleScanNotify = (name, payload) => {
       duration: 8000
     })
   }
+}
+
+const handlePluginEvent = (name, payload) => {
+  if (name !== 'plugin/notification' || !notificationRef.value) return
+  const title = typeof payload?.title === 'string' && payload.title.trim()
+    ? payload.title.trim()
+    : 'Plugin notification'
+  const source = typeof payload?.source === 'string' && payload.source.trim()
+    ? payload.source.trim()
+    : payload?.pluginName || payload?.pluginId || 'Plugin'
+  const body = typeof payload?.body === 'string' ? payload.body : ''
+  const durationValue = Number(payload?.duration ?? 5000)
+  const duration = Number.isFinite(durationValue)
+    ? Math.max(0, Math.min(600000, durationValue))
+    : 5000
+  void notificationRef.value.addNotification(title, source, Tip, null, { Tip: body }, duration)
 }
 
 const handleHeaderControlClick = async (control) => {
@@ -1203,6 +1221,7 @@ onMounted(async () => {
 
   unlistenBassEvents = await listenToBassEvents(handleBassEvent)
   unlistenSmtcEvents = await listenToSmtcEvents(handleSmtcEvent)
+  unlistenPluginEvents = await listenToPluginEvents(handlePluginEvent)
 
   // 监听主题变化
   themeManager.addObserver(handleThemeChange)
@@ -1239,6 +1258,7 @@ onBeforeUnmount(() => {
   void releaseBassResources()
   unlistenBassEvents()
   unlistenSmtcEvents()
+  unlistenPluginEvents()
   themeManager.removeObserver(handleThemeChange)
   unbindScrollSources()
   libraryStore.dispose()

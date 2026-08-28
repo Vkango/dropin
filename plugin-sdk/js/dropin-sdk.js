@@ -31,8 +31,25 @@ export function createDropinPluginClient(target = window.parent) {
   const call = (method, args = {}) => new Promise((resolve, reject) => {
     const requestId = `dropin-${++sequence}`
     pending.set(requestId, { resolve, reject })
-    target.postMessage({ type: 'dropin:request', requestId, method, args }, '*')
+    try {
+      target.postMessage({ type: 'dropin:request', requestId, method, args }, '*')
+    } catch (cause) {
+      pending.delete(requestId)
+      reject(cause)
+    }
   })
+
+  const unwrapBackendResponse = (value) => {
+    if (!value || typeof value !== 'object' || typeof value.ok !== 'boolean') return value
+    if (!('result' in value) && !('error' in value)) return value
+    if (value.ok) return value.result
+    throw new Error(value.error || 'plugin backend call failed')
+  }
+  const backendCall = (method, args = {}) => call(method.startsWith('backend.') ? method : `backend.${method}`, args).then(unwrapBackendResponse)
+  const showNotification = (options = {}) => {
+    const payload = typeof options === 'string' ? { body: options } : (options || {})
+    return call('notification.show', payload)
+  }
 
   const subscribe = (eventName, handler) => {
     const handlers = listeners.get(eventName) || new Set()
@@ -43,10 +60,20 @@ export function createDropinPluginClient(target = window.parent) {
 
   return {
     apiVersion: 1,
-    player: { getState: () => call('player.getState'), play: () => call('player.play'), pause: () => call('player.pause') },
-    library: { list: (args) => call('library.list', args) },
-    storage: { get: (key) => call('storage.get', { key }), set: (key, value) => call('storage.set', { key, value }), remove: (key) => call('storage.remove', { key }) },
-    backend: { call: (method, args) => call('backend.' + method, args) },
+    host: { call },
+    player: {
+      getState: () => call('player.getState'),
+      play: (args = {}) => call('player.play', args),
+      pause: (args = {}) => call('player.pause', args)
+    },
+    library: { list: (args = {}) => call('library.list', args) },
+    notification: { show: showNotification },
+    storage: {
+      get: (key) => call('storage.get', { key }),
+      set: (key, value) => call('storage.set', { key, value }),
+      remove: (key) => call('storage.remove', { key })
+    },
+    backend: { call: backendCall },
     events: { on: subscribe },
     dispose: () => { window.removeEventListener('message', onMessage); window.removeEventListener('message', onTheme); pending.forEach(({ reject }) => reject(new Error('plugin client disposed'))); pending.clear() }
   }

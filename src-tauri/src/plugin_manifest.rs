@@ -4,6 +4,15 @@ use serde::{Deserialize, Serialize};
 use std::path::{Component, Path, PathBuf};
 
 const ID_MAX_LENGTH: usize = 128;
+const MIN_BACKGROUND_TICK_MS: u64 = 1_000;
+const MAX_BACKGROUND_TICK_MS: u64 = 60_000;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginBackground {
+    #[serde(default)]
+    pub tick_interval_ms: Option<u64>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +34,8 @@ pub struct PluginManifest {
     pub icon: Option<String>,
     #[serde(default)]
     pub permissions: Vec<String>,
+    #[serde(default)]
+    pub background: PluginBackground,
 }
 
 impl PluginManifest {
@@ -54,6 +65,13 @@ impl PluginManifest {
         validate_relative_file(&self.ui, "ui")?;
         if let Some(icon) = &self.icon {
             validate_relative_file(icon, "icon")?;
+        }
+        if let Some(interval) = self.background.tick_interval_ms {
+            if !(MIN_BACKGROUND_TICK_MS..=MAX_BACKGROUND_TICK_MS).contains(&interval) {
+                return Err(format!(
+                    "plugin background.tickIntervalMs must be between {MIN_BACKGROUND_TICK_MS} and {MAX_BACKGROUND_TICK_MS}"
+                ));
+            }
         }
         validate_permissions(&self.permissions)
     }
@@ -113,6 +131,7 @@ mod tests {
             ui: "ui/index.html".into(),
             icon: None,
             permissions: vec!["ui.panel".into()],
+            background: PluginBackground::default(),
         }
     }
 

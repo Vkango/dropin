@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>定时关闭</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+  <main class="sleep-panel">
+    <section class="sleep-header">
+      <h1>定时关闭</h1>
+    </section>
+
+    <section class="timer-panel">
+      <div class="timer-summary" aria-live="polite">
+        <div>
+          <span class="summary-label">剩余时间</span>
+          <strong id="remaining">--:--</strong>
+        </div>
+        <small id="state">未开始</small>
+      </div>
+
+      <div class="progress-track" aria-hidden="true">
+        <span id="progress"></span>
+      </div>
+
+      <label class="field">
+        <span>分钟</span>
+        <input id="minutes" type="number" min="0.1" max="1440" step="0.5" value="30">
+      </label>
+
+      <div class="presets" aria-label="定时预设">
+        <button data-minutes="5">5m</button>
+        <button data-minutes="15">15m</button>
+        <button data-minutes="30">30m</button>
+        <button data-minutes="60">60m</button>
+      </div>
+
+      <div class="actions">
+        <button id="start" class="primary">开始计时</button>
+        <button id="cancel">取消</button>
+      </div>
+
+      <output id="message"></output>
+    </section>
+  </main>
+
+  <script type="module" src="./main.js"></script>
+</body>
+
+</html>

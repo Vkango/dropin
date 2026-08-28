@@ -164,6 +164,7 @@ struct MediaRequest {
     reply: Sender<Result<Value, MediaError>>,
 }
 
+#[derive(Clone)]
 pub struct MediaService {
     sender: Sender<MediaRequest>,
 }
@@ -185,7 +186,7 @@ impl MediaService {
         Self { sender }
     }
 
-    fn call(&self, operation: &str, args: Value) -> Result<Value, MediaError> {
+    pub(crate) fn call(&self, operation: &str, args: Value) -> Result<Value, MediaError> {
         let (reply, receiver) = mpsc::channel();
         self.sender
             .send(MediaRequest {

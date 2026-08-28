@@ -10,7 +10,13 @@ mod settings;
 mod smtc_bridge;
 
 use serde_json::json;
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
+};
 use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
 
@@ -79,30 +85,51 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             main_window.set_traffic_lights_inset(16.0, 20.0).unwrap();
 
+            let plugin_worker_shutdown = Arc::new(AtomicBool::new(false));
             let bass_service = bass_bridge::BassService::new(app.handle().clone());
             let bass_cleanup_service = bass_service.clone();
-            app.manage(bass_service);
+            app.manage(bass_service.clone());
             let smtc_service = smtc_bridge::SmtcService::new(app.handle().clone());
             let smtc_cleanup_service = smtc_service.clone();
+            let plugin_worker_shutdown_for_event = plugin_worker_shutdown.clone();
             app.manage(smtc_service);
             main_window.on_window_event(move |event| {
                 if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                    plugin_worker_shutdown_for_event.store(true, Ordering::Relaxed);
                     let _ = bass_cleanup_service.call_operation("bass_unload", json!({}));
                     let _ = smtc_cleanup_service.call_operation("smtc_close", json!({}));
                 }
             });
             let app_paths = paths::app_paths_from_app(app.handle());
             let _ = app_paths.prepare();
+            let media_service = media_library::MediaService::new(
+                app.handle().clone(),
+                paths::app_paths_from_app(app.handle()),
+            );
             let plugin_manager = plugin_manager::PluginManager::new(app_paths.clone());
             if let Ok(mut slot) = protocol_manager.lock() {
                 *slot = Some(plugin_manager.clone());
             }
+            let plugin_worker_manager = plugin_manager.clone();
+            let plugin_worker_bass = bass_service.clone();
+            let plugin_worker_media = media_service.clone();
+            let plugin_worker_app = app.handle().clone();
+            std::thread::spawn(move || {
+                while !plugin_worker_shutdown.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(1_000));
+                    if plugin_worker_shutdown.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let _ = plugin_worker_manager.tick_background(
+                        &plugin_worker_bass,
+                        &plugin_worker_media,
+                        &plugin_worker_app,
+                    );
+                }
+            });
             app.manage(plugin_manager);
             app.manage(app_paths);
-            app.manage(media_library::MediaService::new(
-                app.handle().clone(),
-                paths::app_paths_from_app(app.handle()),
-            ));
+            app.manage(media_service);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
