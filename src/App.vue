@@ -13,6 +13,7 @@ import DetailPanel from './components/DetailPanel.vue'
 import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
 import Drawer from './components/Drawer.vue'
+import GlobalDialog from './components/GlobalDialog.vue'
 import Playlist from './components/Playlist.vue'
 import Notification from './components/notification/Notification.vue'
 import LoadingWithTip from './components/notification/LoadingWithTip.vue'
@@ -31,6 +32,7 @@ import { useAppSettingsStore } from './stores/appSettingsStore.js'
 import { useI18n } from './i18n/index.js'
 import { activateLocale } from './stores/i18nStore.js'
 import { animateElement, APPLE_SPRING, INSTANT_MOTION, SOFT_SPRING } from './utils/motion.js'
+import { promptDialog } from './services/dialogService.js'
 
 const libraryStore = useLibraryStore()
 const settingsStore = useAppSettingsStore()
@@ -995,7 +997,14 @@ const handleProgressCommit = (percent) => {
 }
 
 const handleAddTag = async () => {
-  const label = prompt('新标签名称（如：BPM 128、轻柔）')
+  const label = await promptDialog({
+    eyebrow: t('sidebar.myTags'),
+    title: t('dialog.tag.createTitle'),
+    message: t('dialog.tag.createMessage'),
+    inputPlaceholder: t('dialog.tag.createPlaceholder'),
+    confirmLabel: t('dialog.tag.createConfirm'),
+    required: true
+  })
   if (!label || !label.trim()) return
   try {
     await libraryStore.createTag(label.trim())
@@ -1005,7 +1014,14 @@ const handleAddTag = async () => {
 }
 
 const handleAddPlaylist = async () => {
-  const name = prompt('新播放列表名称')
+  const name = await promptDialog({
+    eyebrow: t('sidebar.playlists'),
+    title: t('dialog.playlist.createTitle'),
+    message: t('dialog.playlist.createMessage'),
+    inputPlaceholder: t('dialog.playlist.createPlaceholder'),
+    confirmLabel: t('dialog.playlist.createConfirm'),
+    required: true
+  })
   if (!name || !name.trim()) return
   try {
     await libraryStore.createPlaylist(name.trim())
@@ -1351,6 +1367,7 @@ onBeforeUnmount(() => {
         @song-select="handleQueueSongSelect" />
     </Drawer>
 
+    <GlobalDialog />
     <Notification ref="notificationRef" class="app-notification-layer" />
   </div>
 </template>

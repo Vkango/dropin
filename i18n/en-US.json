@@ -3,6 +3,30 @@
   "app": {
     "name": "DROPIN MUSIC PLAYER"
   },
+  "dialog": {
+    "variants": {
+      "prompt": "Input",
+      "confirm": "Confirm",
+      "alert": "Notice"
+    },
+    "actions": {
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "ok": "Got it"
+    },
+    "playlist": {
+      "createTitle": "New playlist",
+      "createMessage": "Give this set of music a name. You can keep adding songs later.",
+      "createPlaceholder": "Try Night Run, Commute, Weekend Loop",
+      "createConfirm": "Create"
+    },
+    "tag": {
+      "createTitle": "New tag",
+      "createMessage": "Use a tag to mark music in your own way.",
+      "createPlaceholder": "Try BPM 128, Soft, Sample-heavy",
+      "createConfirm": "Add"
+    }
+  },
   "sidebar": {
     "home": "Home",
     "library": "Library",
@@ -153,6 +177,7 @@
     "permissions": "Permissions",
     "grantPermission": "Grant this permission?",
     "permissionHint": "Grant only the capabilities you trust and need.",
+    "noPermissions": "This plugin does not declare extra permissions.",
     "cancel": "Cancel",
     "savePermissions": "Save permissions",
     "confirmUninstallTitle": "Uninstall plugin",
@@ -166,6 +191,42 @@
     "statusEnabled": "Enabled",
     "statusFaulted": "Faulted",
     "empty": "No plugins found"
+  },
+  "pluginPermissions": {
+    "ui": {
+      "panel": {
+        "label": "Show plugin panel",
+        "description": "Allow the plugin to open its own panel in Dropin."
+      }
+    },
+    "player": {
+      "read": {
+        "label": "Read playback state",
+        "description": "Read the current song, progress, volume, and playback state."
+      },
+      "control": {
+        "label": "Control playback",
+        "description": "Play, pause, skip tracks, or change playback progress."
+      }
+    },
+    "library": {
+      "read": {
+        "label": "Read music library",
+        "description": "View songs, albums, artists, and playlist data."
+      }
+    },
+    "notification": {
+      "show": {
+        "label": "Show notifications",
+        "description": "Display in-app notifications from this plugin."
+      }
+    },
+    "storage": {
+      "plugin": {
+        "label": "Private plugin storage",
+        "description": "Read and write local data owned by this plugin."
+      }
+    }
   },
   "effects": {
     "title": "Sound Effects",

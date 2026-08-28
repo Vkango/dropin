@@ -3,6 +3,30 @@
   "app": {
     "name": "DROPIN MUSIC PLAYER"
   },
+  "dialog": {
+    "variants": {
+      "prompt": "输入",
+      "confirm": "确认",
+      "alert": "提示"
+    },
+    "actions": {
+      "confirm": "确认",
+      "cancel": "取消",
+      "ok": "知道了"
+    },
+    "playlist": {
+      "createTitle": "新建播放列表",
+      "createMessage": "给这组音乐取一个名字，之后可以慢慢往里丢歌。",
+      "createPlaceholder": "例如：夜跑、通勤、周末循环",
+      "createConfirm": "创建"
+    },
+    "tag": {
+      "createTitle": "新建标签",
+      "createMessage": "用标签给音乐做一点私人标记。",
+      "createPlaceholder": "例如：BPM 128、轻柔、采样感",
+      "createConfirm": "添加"
+    }
+  },
   "sidebar": {
     "home": "首页",
     "library": "库",
@@ -153,6 +177,7 @@
     "permissions": "权限",
     "grantPermission": "是否授予此权限？",
     "permissionHint": "请授予你信任且确实需要的权限。",
+    "noPermissions": "这个插件没有声明额外权限。",
     "cancel": "取消",
     "savePermissions": "保存权限",
     "confirmUninstallTitle": "卸载插件",
@@ -166,6 +191,42 @@
     "statusEnabled": "已启用",
     "statusFaulted": "运行错误",
     "empty": "没有找到插件"
+  },
+  "pluginPermissions": {
+    "ui": {
+      "panel": {
+        "label": "显示插件界面",
+        "description": "允许插件在 Dropin 中打开自己的面板。"
+      }
+    },
+    "player": {
+      "read": {
+        "label": "读取播放状态",
+        "description": "读取当前歌曲、进度、音量和播放状态。"
+      },
+      "control": {
+        "label": "控制播放器",
+        "description": "播放、暂停、切歌或调整播放进度。"
+      }
+    },
+    "library": {
+      "read": {
+        "label": "读取音乐库",
+        "description": "查看曲库、专辑、艺术家和播放列表数据。"
+      }
+    },
+    "notification": {
+      "show": {
+        "label": "发送通知",
+        "description": "在应用内显示来自插件的通知。"
+      }
+    },
+    "storage": {
+      "plugin": {
+        "label": "插件私有存储",
+        "description": "读写这个插件自己的本地数据。"
+      }
+    }
   },
   "effects": {
     "title": "声音效果",

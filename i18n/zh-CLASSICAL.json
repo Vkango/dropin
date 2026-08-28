@@ -3,6 +3,30 @@
   "app": {
     "name": "落音阁·乐坊"
   },
+  "dialog": {
+    "variants": {
+      "prompt": "请书",
+      "confirm": "请决",
+      "alert": "告示"
+    },
+    "actions": {
+      "confirm": "允之",
+      "cancel": "罢了",
+      "ok": "知矣"
+    },
+    "playlist": {
+      "createTitle": "新立待奏名录",
+      "createMessage": "为此诸曲赐一雅名，日后可徐徐添入。",
+      "createPlaceholder": "如：夜行、通勤、周末复奏",
+      "createConfirm": "立名录"
+    },
+    "tag": {
+      "createTitle": "新添印记",
+      "createMessage": "以一印记，记此曲之性情。",
+      "createPlaceholder": "如：BPM 128、柔和、采样之趣",
+      "createConfirm": "添之"
+    }
+  },
   "sidebar": {
     "home": "正堂",
     "library": "藏经阁",
@@ -153,6 +177,7 @@
   "permissions": "权限",
   "grantPermission": "可授此权限乎？",
   "permissionHint": "诸权限皆默认禁用，仅授予可信且确有所需之能。",
+  "noPermissions": "此插件未陈额外权限。",
   "cancel": "罢",
   "savePermissions": "存此权限",
   "confirmUninstallTitle": "拆除插件",
@@ -166,6 +191,42 @@
   "statusEnabled": "已启用",
   "statusFaulted": "运行有误",
     "empty": "遍寻不得，空空如也"
+  },
+  "pluginPermissions": {
+    "ui": {
+      "panel": {
+        "label": "显其面板",
+        "description": "许插件于阁中展开自家面板。"
+      }
+    },
+    "player": {
+      "read": {
+        "label": "读取奏乐之况",
+        "description": "可阅当前曲目、进度、音量与奏止之态。"
+      },
+      "control": {
+        "label": "执掌奏乐",
+        "description": "可奏、可止、可换曲，亦可移其进度。"
+      }
+    },
+    "library": {
+      "read": {
+        "label": "阅览乐库",
+        "description": "可观曲目、曲谱、乐师与待奏名录。"
+      }
+    },
+    "notification": {
+      "show": {
+        "label": "传示通知",
+        "description": "许插件于阁中呈示消息。"
+      }
+    },
+    "storage": {
+      "plugin": {
+        "label": "插件私藏",
+        "description": "可读写此插件自家本地数据。"
+      }
+    }
   },
   "effects": {
     "title": "调音之术",
