@@ -3,12 +3,18 @@ mod i18n;
 mod lyrics;
 mod media_library;
 mod paths;
+mod plugin_manager;
+mod plugin_manifest;
+mod plugin_permissions;
 mod settings;
 mod smtc_bridge;
 
 use serde_json::json;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 use tauri_plugin_decorum::WebviewWindowExt;
+
+const DROPIN_SDK_JS: &[u8] = include_bytes!("../../plugin-sdk/js/dropin-sdk.js");
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -26,10 +32,47 @@ fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let protocol_manager: Arc<Mutex<Option<plugin_manager::PluginManager>>> =
+        Arc::new(Mutex::new(None));
+    let protocol_manager_for_handler = protocol_manager.clone();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_decorum::init())
-        .setup(|app| {
+        .register_uri_scheme_protocol("dropin-plugin", move |_context, request| {
+            let mut path = request.uri().path().to_string();
+            // WebView implementations differ on whether the custom-scheme host
+            // is included in the path. Normalize both forms before sandboxing.
+            if let Some(stripped) = path.strip_prefix("/localhost/") {
+                path = format!("/{stripped}");
+            }
+            let response = match path.as_str() {
+                "/sdk/dropin-sdk.js" | "/js/dropin-sdk.js" => Some((
+                    DROPIN_SDK_JS.to_vec(),
+                    "text/javascript; charset=utf-8".to_string(),
+                )),
+                _ => protocol_manager_for_handler
+                    .lock()
+                    .ok()
+                    .and_then(|manager| {
+                        manager
+                            .as_ref()
+                            .and_then(|manager| manager.serve(&path).ok())
+                    }),
+            };
+            match response {
+                Some((body, mime)) => tauri::http::Response::builder()
+                    .header("Content-Type", mime)
+                    .header("Access-Control-Allow-Origin", "*")
+                    .body(body)
+                    .unwrap(),
+                None => tauri::http::Response::builder()
+                    .status(tauri::http::StatusCode::NOT_FOUND)
+                    .header("Content-Type", "text/plain; charset=utf-8")
+                    .body(b"plugin resource not found".to_vec())
+                    .unwrap(),
+            }
+        })
+        .setup(move |app| {
             let main_window = app.get_webview_window("main").unwrap();
             main_window.create_overlay_titlebar().unwrap();
 
@@ -50,6 +93,11 @@ pub fn run() {
             });
             let app_paths = paths::app_paths_from_app(app.handle());
             let _ = app_paths.prepare();
+            let plugin_manager = plugin_manager::PluginManager::new(app_paths.clone());
+            if let Ok(mut slot) = protocol_manager.lock() {
+                *slot = Some(plugin_manager.clone());
+            }
+            app.manage(plugin_manager);
             app.manage(app_paths);
             app.manage(media_library::MediaService::new(
                 app.handle().clone(),
@@ -97,7 +145,18 @@ pub fn run() {
             settings::data_dir_set,
             i18n::i18n_list_custom,
             i18n::i18n_load_custom,
-            smtc_bridge::smtc_call
+            smtc_bridge::smtc_call,
+            plugin_manager::plugin_list,
+            plugin_manager::plugin_pick_package,
+            plugin_manager::plugin_install,
+            plugin_manager::plugin_uninstall,
+            plugin_manager::plugin_enable,
+            plugin_manager::plugin_disable,
+            plugin_manager::plugin_get_permissions,
+            plugin_manager::plugin_set_permissions,
+            plugin_manager::plugin_call,
+            plugin_manager::plugin_update_host_state,
+            plugin_manager::plugin_get_ui_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

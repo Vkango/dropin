@@ -1,7 +1,7 @@
 <template>
     <div class="page-layout-scroll">
         <div class="page-layout-titlebar-spacer" aria-hidden="true"></div>
-        <main class="page-layout" :class="{ 'has-header': Boolean($slots.header) }">
+        <main class="page-layout" :class="{ 'has-header': Boolean($slots.header), flush }">
             <header v-if="$slots.header" class="page-layout-header">
                 <slot name="header" />
             </header>
@@ -18,6 +18,7 @@ import { useReducedMotion } from 'motion-v'
 import { animateElement, APPLE_SPRING, INSTANT_MOTION } from '../utils/motion.js'
 
 const reducedMotion = useReducedMotion()
+defineProps({ flush: { type: Boolean, default: false } })
 const contentRef = ref(null)
 const blockAnimations = new WeakMap()
 let animationFrame = null
@@ -94,6 +95,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .page-layout-scroll {
+    display: flex;
+    flex-direction: column;
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -103,10 +106,11 @@ onBeforeUnmount(() => {
 }
 
 .page-layout {
+    flex: 0 0 auto;
     width: 100%;
     min-width: 0;
     min-height: calc(100% - 64px);
-    background: rgba(var(--surface-color), 0.1);
+    background: transparent;
     border-radius: 10px 0 0 0;
 }
 
@@ -115,6 +119,7 @@ onBeforeUnmount(() => {
     height: 64px;
     min-height: 64px;
     pointer-events: none;
+    flex: 0 0 64px;
 }
 
 .page-layout-header {
@@ -129,6 +134,19 @@ onBeforeUnmount(() => {
     width: 100%;
     min-width: 0;
     padding: 28px clamp(48px, 8vw, 112px) 48px;
+}
+
+.page-layout.flush {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100% - 64px);
+}
+
+.page-layout.flush .page-layout-content {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0;
 }
 
 .page-layout.has-header .page-layout-content {

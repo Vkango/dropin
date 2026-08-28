@@ -13,10 +13,15 @@ pub struct AppPaths {
     pub covers_dir: PathBuf,
     pub urls_dir: PathBuf,
     pub log_file: PathBuf,
+    pub plugins_dir: PathBuf,
+    pub plugin_data_dir: PathBuf,
+    pub plugins_file: PathBuf,
 }
 
 fn fallback_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data").join("application")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("data")
+        .join("application")
 }
 
 pub fn resolve(data_dir: Option<&str>) -> AppPaths {
@@ -31,12 +36,17 @@ pub fn resolve(data_dir: Option<&str>) -> AppPaths {
     let library_dir = root.join("library");
     let config_dir = root.join("config");
     let cache_dir = root.join("cache");
+    let plugins_dir = root.join("plugins");
+    let plugin_data_dir = root.join("plugin-data");
     AppPaths {
         database: library_dir.join("dropin.sqlite3"),
         settings_file: config_dir.join("settings.json"),
         covers_dir: cache_dir.join("covers"),
         urls_dir: cache_dir.join("urls"),
         log_file: config_dir.join("scan.log"),
+        plugins_file: config_dir.join("plugins.json"),
+        plugins_dir,
+        plugin_data_dir,
         library_dir,
         config_dir,
         cache_dir,
@@ -51,7 +61,9 @@ impl AppPaths {
         fs::create_dir_all(&self.config_dir)?;
         fs::create_dir_all(&self.cache_dir)?;
         fs::create_dir_all(&self.covers_dir)?;
-        fs::create_dir_all(&self.urls_dir)
+        fs::create_dir_all(&self.urls_dir)?;
+        fs::create_dir_all(&self.plugins_dir)?;
+        fs::create_dir_all(&self.plugin_data_dir)
     }
 
     pub fn resolve_track_path(&self, stored: &str) -> PathBuf {

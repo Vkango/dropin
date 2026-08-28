@@ -7,6 +7,7 @@ import AlbumsPage from './components/AlbumsPage.vue'
 import ArtistsPage from './components/ArtistsPage.vue'
 import SoundEffectsPage from './components/SoundEffectsPage.vue'
 import PluginsPage from './components/PluginsPage.vue'
+import PluginPage from './components/PluginPage.vue'
 import SettingsPage from './components/SettingsPage.vue'
 import DetailPanel from './components/DetailPanel.vue'
 import PlayerSurface from './components/PlayerSurface.vue'
@@ -20,6 +21,9 @@ import { themeManager } from './utils/themeManager.js'
 import { bassCall, listenToBassEvents } from './services/bassApi.js'
 import { createBassEffectsRuntime } from './services/bassEffectsRuntime.js'
 import { createBassPlaybackRuntime } from './services/bassPlaybackRuntime.js'
+import { pluginApi } from './services/pluginApi.js'
+import { createPluginRuntime } from './services/pluginRuntime.js'
+import { cloneForBridge } from './utils/cloneForBridge.js'
 import { smtcApi, listenToSmtcEvents } from './services/smtcApi.js'
 import { useLibraryStore } from './stores/libraryStore.js'
 import { useAppSettingsStore } from './stores/appSettingsStore.js'
@@ -31,6 +35,8 @@ const libraryStore = useLibraryStore()
 const settingsStore = useAppSettingsStore()
 const effectsRuntime = createBassEffectsRuntime(settingsStore)
 const playbackRuntime = createBassPlaybackRuntime(settingsStore)
+const pluginRuntime = createPluginRuntime()
+const enabledPlugins = computed(() => pluginRuntime.state.plugins.filter((plugin) => plugin.enabled))
 const { t } = useI18n()
 
 // 当前页面状态
@@ -117,6 +123,7 @@ const idleSong = () => ({
 })
 
 provide('currentSong', currentSong)
+provide('pluginRuntime', pluginRuntime)
 
 // 播放状态
 const isPlaying = ref(false)
@@ -152,6 +159,21 @@ const lyricsPayload = ref(null)
 const lyricsLoading = ref(false)
 let lyricsRequestId = 0
 
+const pluginHostState = computed(() => ({
+  song: currentSong.value,
+  isPlaying: isPlaying.value,
+  currentTime: currentTime.value,
+  currentTimeMs: currentTimeMs.value,
+  totalTime: totalTime.value,
+  progress: progress.value,
+  channelId: activeChannelId.value,
+  theme: {
+    mode: isDarkTheme.value ? 'dark' : 'light',
+    colors: currentTheme.value
+  }
+}))
+provide('pluginHostState', pluginHostState)
+
 // 通知系统
 const notificationRef = ref(null)
 provide('notification', notificationRef)
@@ -173,6 +195,48 @@ const applyThemeSettings = () => {
 const handleThemeChange = (themeColors) => {
   currentTheme.value = themeColors
 }
+
+let pluginHostSyncTimer = null
+let pluginHostSyncInFlight = false
+let pluginHostSyncQueued = false
+let pluginHostSyncDisposed = false
+
+const flushPluginHostState = async () => {
+  pluginHostSyncTimer = null
+  if (pluginHostSyncDisposed) return
+  if (pluginHostSyncInFlight) {
+    pluginHostSyncQueued = true
+    return
+  }
+
+  pluginHostSyncQueued = false
+  pluginHostSyncInFlight = true
+  try {
+    await pluginApi.updateHostState(cloneForBridge(pluginHostState.value))
+  } catch {
+    // Bridge failures must not become unhandled Vue watcher errors.
+  } finally {
+    pluginHostSyncInFlight = false
+    if (!pluginHostSyncDisposed && pluginHostSyncQueued) {
+      pluginHostSyncQueued = false
+      schedulePluginHostStateSync()
+    }
+  }
+}
+
+const schedulePluginHostStateSync = () => {
+  pluginHostSyncQueued = true
+  if (pluginHostSyncTimer !== null || pluginHostSyncInFlight || pluginHostSyncDisposed) return
+  pluginHostSyncTimer = window.setTimeout(() => {
+    void flushPluginHostState()
+  }, 100)
+}
+
+watch(
+  pluginHostState,
+  schedulePluginHostStateSync,
+  { immediate: true }
+)
 
 watch(
   () => [
@@ -353,6 +417,7 @@ const bindScrollSources = async () => {
 
 // 当前页面组件
 const currentPageComponent = computed(() => {
+  if (currentPage.value.startsWith('plugin:')) return PluginPage
   return pageComponents[currentPage.value] || HomePage
 })
 
@@ -370,6 +435,11 @@ const handleNavItemClick = (item) => {
   navigateToPage(item.id)
   if (isSidebarDrawer.value) closeSidebarDrawer()
   console.log('导航点击:', item.label)
+}
+
+const handleSelectPlugin = (plugin) => {
+  navigateToPage(`plugin:${plugin.id}`)
+  if (isSidebarDrawer.value) closeSidebarDrawer()
 }
 
 const handleScanNotify = (name, payload) => {
@@ -951,7 +1021,7 @@ const handleSelectTag = async (tag) => {
 }
 
 const handleAddPlugin = () => {
-  console.log('添加插件')
+  navigateToPage('plugins')
 }
 
 const handleRepeat = () => {
@@ -1051,7 +1121,15 @@ const getPageProps = () => {
       return { artists: artistsData }
     case 'effects':
       return { effectsRuntime, playbackRuntime }
+    case 'plugins':
+      return { pluginRuntime }
     default:
+      if (currentPage.value.startsWith('plugin:')) {
+        const id = currentPage.value.slice('plugin:'.length)
+        return {
+          plugin: pluginRuntime.state.plugins.find((item) => item.id === id) || null
+        }
+      }
       return {}
   }
 }
@@ -1111,6 +1189,7 @@ onMounted(async () => {
   // A webview refresh can leave the Rust BASS worker alive, so start from a clean native state.
   await releaseBassResources()
   await effectsRuntime.loadCatalog()
+  await pluginRuntime.refresh().catch(() => undefined)
   window.addEventListener('beforeunload', handleWindowExit)
   window.addEventListener('pagehide', handleWindowExit)
 
@@ -1144,6 +1223,11 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  pluginHostSyncDisposed = true
+  if (pluginHostSyncTimer !== null) {
+    window.clearTimeout(pluginHostSyncTimer)
+    pluginHostSyncTimer = null
+  }
   window.removeEventListener('beforeunload', handleWindowExit)
   window.removeEventListener('pagehide', handleWindowExit)
   if (sidebarDrawerMediaQuery && sidebarDrawerQueryHandler) {
@@ -1178,9 +1262,10 @@ onBeforeUnmount(() => {
     <div v-if="!isSidebarDrawer" class="sidebar-shell" :style="sidebarWidthStyle">
       <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
         :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
+        :installed-plugins="enabledPlugins"
         @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
         @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin"
-        @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" />
+        @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" @select-plugin="handleSelectPlugin" />
 
       <div class="sidebar-resize-handle" title="拖动调整侧边栏宽度" @pointerdown="handleSidebarResizeStart" />
     </div>
@@ -1198,10 +1283,11 @@ onBeforeUnmount(() => {
             :exit="{ x: '-100%', opacity: 0.4 }" :transition="sidebarDrawerTransition">
             <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
               :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
+              :installed-plugins="enabledPlugins"
               :is-drawer="true"
               @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
               @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin"
-              @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag"
+              @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" @select-plugin="handleSelectPlugin"
               @collapse="closeSidebarDrawer" />
           </MotionDiv>
         </MotionDiv>
@@ -1217,7 +1303,7 @@ onBeforeUnmount(() => {
             @song-select="handleSongSelect" @song-play="handleSongPlay" @album-select="handleAlbumSelect"
             @album-play="handleAlbumPlay" @artist-select="handleArtistSelect" @artist-play="handleArtistPlay"
             @artist-follow="handleArtistFollow" @playlist-play="handlePlaylistPlay" @navigate="handleNavigate"
-            @header-control-click="handleHeaderControlClick" />
+            @header-control-click="handleHeaderControlClick" @plugin-open="handleSelectPlugin" @plugin-close="navigateToPage('plugins')" @close="navigateToPage('plugins')" />
         </KeepAlive>
       </Transition>
     </div>

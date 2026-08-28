@@ -32,9 +32,8 @@
                             :transition="microTransition" @click.stop="$emit('add-tag')">+</MotionButton>
                     </div>
                     <div v-if="sections.tags" class="section-content">
-                        <MotionDiv v-for="tag in tags" :key="tag.id" class="nav-item"
-                            :while-hover="{ y: -1 }" :transition="microTransition"
-                            @click="$emit('select-tag', tag)">
+                        <MotionDiv v-for="tag in tags" :key="tag.id" class="nav-item" :while-hover="{ y: -1 }"
+                            :transition="microTransition" @click="$emit('select-tag', tag)">
                             <span class="section-icon">
                                 <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
                             </span>
@@ -87,23 +86,28 @@
                             :transition="microTransition" @click.stop="$emit('add-plugin')">+</MotionButton>
                     </div>
                     <div v-if="sections.plugins" class="section-content">
-                        <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition">
-                            <span class="nav-icon">👣</span>
-                            <span class="nav-label">{{ t('sidebar.footprints') }}</span>
+                        <MotionDiv v-for="plugin in installedPlugins" :key="plugin.id" class="nav-item"
+                            :class="{ active: `plugin:${plugin.id}` === currentPage }" :while-hover="{ y: -1 }"
+                            :transition="microTransition" @click="$emit('select-plugin', plugin)">
+                            <MotionDiv v-if="`plugin:${plugin.id}` === currentPage" class="active-nav-indicator"
+                                layout-id="sidebar-active-indicator" :initial="{ opacity: 0, scale: 0.92 }"
+                                :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.92 }"
+                                :transition="activeIndicatorTransition" aria-hidden="true" />
+                            <span class="section-icon">
+                                <img v-if="plugin.iconDataUrl" :src="plugin.iconDataUrl" alt="" />
+                                <Icon v-else src="/assets/plugin.svg" :color="iconColor" />
+                            </span>
+                            <span class="nav-label">{{ plugin.name }}</span>
                         </MotionDiv>
-                        <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition">
-                            <span class="nav-icon">⏰</span>
-                            <span class="nav-label">{{ t('sidebar.timedStop') }}</span>
-                        </MotionDiv>
+                        <div v-if="installedPlugins.length === 0" class="plugin-empty">{{ t('plugins.empty') }}</div>
                     </div>
 
                 </div>
             </div>
 
             <div class="sidebar-footer">
-                <MotionDiv v-if="isDrawer" class="nav-item" :while-hover="{ y: -1 }"
-                    :transition="microTransition" :aria-label="t('sidebar.collapseMenu')"
-                    @click="$emit('collapse')">
+                <MotionDiv v-if="isDrawer" class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition"
+                    :aria-label="t('sidebar.collapseMenu')" @click="$emit('collapse')">
                     <span class="nav-icon">
                         <PanelLeftClose :size="16" :stroke-width="1.8" />
                     </span>
@@ -161,6 +165,10 @@ const props = defineProps({
         type: Array,
         default: () => []
     },
+    installedPlugins: {
+        type: Array,
+        default: () => []
+    },
     isDrawer: {
         type: Boolean,
         default: false
@@ -175,6 +183,7 @@ const emit = defineEmits([
     'add-plugin',
     'select-playlist',
     'select-tag',
+    'select-plugin',
     'collapse'
 ])
 
@@ -222,6 +231,19 @@ const toggleSection = (sectionName) => {
 .sidebar-footer {
     margin-top: auto;
     padding-top: 28px;
+}
+
+.section-icon img {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    object-fit: cover;
+}
+
+.plugin-empty {
+    padding: 6px 0 6px 28px;
+    color: rgba(var(--text-color), 0.42);
+    font-size: 11px;
 }
 
 .sidebar-titlebar-spacer {
@@ -274,6 +296,8 @@ const toggleSection = (sectionName) => {
 
 .nav-item {
     position: relative;
+    isolation: isolate;
+    z-index: 0;
     display: flex;
     align-items: center;
     padding: 8px 18px;
@@ -288,6 +312,7 @@ const toggleSection = (sectionName) => {
 .nav-item.active,
 .nav-item.active:hover {
     background-color: transparent;
+    z-index: 1;
 }
 
 .active-nav-indicator {
@@ -298,10 +323,12 @@ const toggleSection = (sectionName) => {
     background: linear-gradient(105deg, rgba(var(--global-inverse-color), 0.18), rgba(var(--global-inverse-color), 0.08));
     box-shadow: inset 0 0 0 1px rgba(var(--global-inverse-color), 0.04), 0 5px 16px rgba(var(--global-inverse-color), 0.04);
     pointer-events: none;
+    will-change: transform, opacity;
 }
 
 .nav-icon,
-.nav-label {
+.nav-label,
+.section-icon {
     position: relative;
     z-index: 1;
 }
@@ -360,9 +387,6 @@ const toggleSection = (sectionName) => {
     transform: rotate(-90deg);
 }
 
-.section-content {
-    overflow: hidden;
-}
 
 .section-title {
     flex: 1;

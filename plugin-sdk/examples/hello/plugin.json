@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "com.dropin.hello",
+  "name": "Hello Plugin",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "author": "dropin",
+  "description": "A minimal dynamically installed HTML and WASM plugin.",
+  "categories": ["utility"],
+  "backend": "backend.wasm",
+  "ui": "ui/index.html",
+  "icon": "icon.svg",
+  "permissions": ["ui.panel", "storage.plugin"]
+}

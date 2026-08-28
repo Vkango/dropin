@@ -1,0 +1,10 @@
+(module
+  (memory (export "memory") 1)
+  (func (export "plugin_init") (param i32) (result i32) i32.const 0)
+  (func (export "plugin_alloc") (param i32) (result i32) i32.const 1024)
+  (func (export "plugin_dealloc") (param i32) (param i32))
+  (func (export "plugin_call") (param i32) (param i32) (result i64) i64.const 8796093022219)
+  (func (export "plugin_free_response") (param i32) (param i32))
+  (func (export "plugin_shutdown"))
+  (data (i32.const 2048) "{\"ok\":true}")
+)

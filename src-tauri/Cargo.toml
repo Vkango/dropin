@@ -36,6 +36,9 @@ md5 = "0.7"
 base64 = "0.22"
 lrc = "0.2"
 encoding_rs = "0.8"
+wasmtime = "48"
+zip = "9.0.0-pre3"
+semver = "1"
 
 [target.'cfg(windows)'.dependencies]
 smtc-player = "0.1.0"

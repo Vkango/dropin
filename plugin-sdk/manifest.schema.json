@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schemaVersion", "id", "name", "version", "apiVersion", "backend", "ui"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9._-]{1,128}$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "version": { "type": "string" },
+    "apiVersion": { "const": 1 },
+    "author": { "type": "string" },
+    "description": { "type": "string" },
+    "categories": { "type": "array", "items": { "type": "string" } },
+    "backend": { "type": "string" },
+    "ui": { "type": "string" },
+    "icon": { "type": "string" },
+    "permissions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["ui.panel", "player.read", "player.control", "library.read", "storage.plugin"] }
+    }
+  }
+}
