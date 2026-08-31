@@ -63,8 +63,14 @@
                     </div>
                     <div v-if="sections.playlists" class="section-content">
                         <MotionDiv v-for="playlist in playlists" :key="playlist.id" class="nav-item"
+                            :class="{ active: currentPage === 'playlists' && playlist.id === selectedPlaylistId }"
                             :while-hover="{ y: -1 }" :transition="microTransition"
                             @click="$emit('select-playlist', playlist)">
+                            <MotionDiv v-if="currentPage === 'playlists' && playlist.id === selectedPlaylistId"
+                                class="active-nav-indicator" layout-id="sidebar-active-indicator"
+                                :initial="{ opacity: 0, scale: 0.92 }" :animate="{ opacity: 1, scale: 1 }"
+                                :exit="{ opacity: 0, scale: 0.92 }" :transition="activeIndicatorTransition"
+                                aria-hidden="true" />
                             <span class="section-icon">
                                 <Icon src="/assets/playlist.svg" style="scale: 0.7" :color="iconColor" />
                             </span>
@@ -160,6 +166,10 @@ const props = defineProps({
     playlists: {
         type: Array,
         default: () => []
+    },
+    selectedPlaylistId: {
+        type: String,
+        default: ''
     },
     tags: {
         type: Array,

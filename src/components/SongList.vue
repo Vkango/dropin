@@ -1,15 +1,26 @@
 <template>
     <div class="song-list">
-        <div class="list-header">
-            <div class="col-play">
+        <div v-if="showHeader" class="list-header">
+            <MotionButton v-if="primaryActionClickable" class="col-play list-header-action" type="button"
+                :while-hover="{ y: -1 }" :while-press="{ scale: 0.96 }" :transition="microTransition"
+                @click="$emit('primary-action')">
+                <ListMusic size="13" />
+                {{ resolvedPrimaryActionLabel }}
+            </MotionButton>
+            <div v-else class="col-play">
                 <PlayIcon fill="rgb(var(--global-inverse-color))" color="rgb(var(--global-inverse-color))" size="12" />
-                {{ t('library.addToPlaylist') }}
+                {{ resolvedPrimaryActionLabel }}
             </div>
-            <div class="col-play">
+            <MotionButton v-if="showPlayAll" class="col-play list-header-action" type="button" :while-hover="{ y: -1 }"
+                :while-press="{ scale: 0.96 }" :transition="microTransition" @click="$emit('play-all')">
+                <PlayIcon fill="rgb(var(--global-inverse-color))" color="rgb(var(--global-inverse-color))" size="12" />
+                {{ t('library.playAll') }}
+            </MotionButton>
+            <MotionButton class="col-play list-header-action">
                 <ListFilter fill="rgb(var(--global-inverse-color))" color="rgb(var(--global-inverse-color))"
                     size="12" />
                 {{ t('library.filter') }}
-            </div>
+            </MotionButton>
         </div>
 
         <div class="songs">
@@ -39,8 +50,7 @@ import { motion, useReducedMotion } from 'motion-v'
 import { INSTANT_MOTION, MICRO_SPRING } from '../utils/motion.js'
 import { groupByInitial } from '../utils/alphabet.js'
 import GroupLabel from './GroupLabel.vue'
-import { PlayIcon } from '@lucide/vue'
-import { ListFilter } from '@lucide/vue'
+import { ListFilter, ListMusic, PlayIcon } from '@lucide/vue'
 import { useI18n } from '../i18n/index.js'
 
 const { t } = useI18n()
@@ -49,14 +59,32 @@ const props = defineProps({
     songs: {
         type: Array,
         required: true
+    },
+    showHeader: {
+        type: Boolean,
+        default: true
+    },
+    primaryActionLabel: {
+        type: String,
+        default: ''
+    },
+    primaryActionClickable: {
+        type: Boolean,
+        default: false
+    },
+    showPlayAll: {
+        type: Boolean,
+        default: false
     }
 })
 
-const emit = defineEmits(['song-select', 'song-play', 'group-label-click'])
+const emit = defineEmits(['primary-action', 'play-all', 'song-select', 'song-play', 'group-label-click'])
 const MotionDiv = motion.div
+const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const groupedSongs = computed(() => groupByInitial(props.songs, (song) => song.title))
+const resolvedPrimaryActionLabel = computed(() => props.primaryActionLabel || t('library.addToPlaylist'))
 </script>
 
 <style scoped>
@@ -84,6 +112,17 @@ const groupedSongs = computed(() => groupByInitial(props.songs, (song) => song.t
     align-items: center;
     gap: 10px;
     opacity: 0.5;
+    font-size: 12px;
+}
+
+.list-header-action {
+    margin: 0;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
     font-size: 12px;
 }
 

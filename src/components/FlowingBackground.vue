@@ -39,6 +39,7 @@ const QUALITY_SCALE = 0.5
 const BASE_FLOW_SPEED = 2.4
 const AUDIO_RESPONSE_SECONDS = 0.9
 const AUDIO_RELEASE_SECONDS = 1.6
+const TAU = Math.PI * 2
 
 let canvas = null
 let fallback = null
@@ -48,7 +49,8 @@ let uniforms = null
 let resizeObserver = null
 let animationFrame = 0
 let lastTime = 0
-let simTime = Math.random() * 200
+let shaderTime = Math.random() * 200
+let animationGeneration = 0
 let blobs = []
 let coverRequestId = 0
 let hasLoadedCoverPalette = false
@@ -342,7 +344,11 @@ function initWebgl() {
     })
 
     const vertex = createShader(gl.VERTEX_SHADER, VERTEX_SHADER)
-    const fragment = createShader(gl.FRAGMENT_SHADER, FRAGMENT_SHADER)
+    const highp = gl.getShaderPrecisionFormat?.(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT)
+    const fragmentSource = highp?.precision > 0
+        ? FRAGMENT_SHADER.replace('precision mediump float;', 'precision highp float;')
+        : FRAGMENT_SHADER
+    const fragment = createShader(gl.FRAGMENT_SHADER, fragmentSource)
     if (!vertex || !fragment) {
         updateWebglDiagnostics({ status: 'shader-failed', error: 'WebGL shader compilation failed' })
         return false
@@ -422,10 +428,11 @@ function makeBlobs(palette) {
         audioBand: Math.floor(random() * 3),
         audioDirection: random() < 0.5 ? -1 : 1,
         audioTurn: 0,
-        px: random() * Math.PI * 2,
-        py: random() * Math.PI * 2,
+        phaseX: random() * TAU,
+        phaseY: random() * TAU,
+        breathePhase: random() * TAU,
+        weightPhase: random() * TAU,
         sig: 0.12 + random() * 0.11,
-        pulse: random() * Math.PI * 2,
         weight: 0.85 + random() * 0.5
     }))
 
@@ -493,7 +500,7 @@ function updateBlobs(delta) {
         smoothedBands[key] += (target[key] - smoothedBands[key]) * amount
     }
     const audio = smoothedBands
-    simTime += delta * BASE_FLOW_SPEED
+    shaderTime += delta * BASE_FLOW_SPEED
     for (let index = 0; index < blobs.length; index++) {
         const blob = blobs[index]
         const band = audio[blob.audioBand === 0 ? 'bass' : blob.audioBand === 1 ? 'mid' : 'treble']
@@ -501,17 +508,25 @@ function updateBlobs(delta) {
         const speed = blob.flowSpeed * (1 + audioAmount * 0.16)
         const turnTarget = blob.audioDirection * audioAmount * 0.24
         blob.audioTurn += (turnTarget - blob.audioTurn) * (1 - Math.exp(-delta / 1.2))
-        const phaseX = simTime * blob.wx * speed * blob.direction + blob.px
-        const phaseY = simTime * blob.wy * speed * blob.direction + blob.py
+        // Integrate phase instead of multiplying the accumulated time by the
+        // current audio-reactive speed. The latter re-applies a new speed to
+        // the entire history whenever the audio level changes, which makes
+        // the animation appear to accelerate over time.
+        blob.phaseX = (blob.phaseX + delta * BASE_FLOW_SPEED * blob.wx * speed * blob.direction) % TAU
+        blob.phaseY = (blob.phaseY + delta * BASE_FLOW_SPEED * blob.wy * speed * blob.direction) % TAU
+        blob.breathePhase = (blob.breathePhase + delta * BASE_FLOW_SPEED * 0.9) % TAU
+        blob.weightPhase = (blob.weightPhase + delta * BASE_FLOW_SPEED * 0.7) % TAU
+        const phaseX = blob.phaseX
+        const phaseY = blob.phaseY
         const localX = blob.rx * Math.sin(phaseX)
         const localY = blob.ry * Math.sin(phaseY)
         const cosTurn = Math.cos(blob.audioTurn)
         const sinTurn = Math.sin(blob.audioTurn)
         const x = blob.cx + localX * cosTurn - localY * sinTurn
         const y = blob.cy + localX * sinTurn + localY * cosTurn
-        const breathe = 0.6 + 0.4 * Math.sin(simTime * 0.9 + blob.pulse)
+        const breathe = 0.6 + 0.4 * Math.sin(blob.breathePhase)
         const sigma = blob.sig * (1 + 0.1 * audio.bass * breathe)
-        const weight = blob.weight * (1 + 0.08 * audio.mid * Math.sin(simTime * 0.7 + blob.pulse * 1.7))
+        const weight = blob.weight * (1 + 0.08 * audio.mid * Math.sin(blob.weightPhase))
         blobValues[index * 4] = Math.max(-0.2, Math.min(1.2, x))
         blobValues[index * 4 + 1] = Math.max(-0.2, Math.min(1.2, y))
         blobValues[index * 4 + 2] = sigma
@@ -535,7 +550,7 @@ function draw(now) {
     updatePalette(delta)
     const audio = updateBlobs(delta)
     gl.uniform2f(uniforms.res, canvas.width, canvas.height)
-    gl.uniform1f(uniforms.time, simTime)
+    gl.uniform1f(uniforms.time, shaderTime)
     gl.uniform1f(uniforms.bass, audio.bass)
     gl.uniform1f(uniforms.mid, audio.mid)
     gl.uniform1f(uniforms.treble, audio.treble)
@@ -543,19 +558,22 @@ function draw(now) {
     gl.drawArrays(gl.TRIANGLES, 0, 3)
 }
 
-function renderFrame(now) {
-    animationFrame = requestAnimationFrame(renderFrame)
+function renderFrame(now, generation) {
+    if (generation !== animationGeneration) return
+    animationFrame = requestAnimationFrame((timestamp) => renderFrame(timestamp, generation))
     draw(now)
 }
 
 function startAnimation() {
     if (!animationFrame && !reducedMotion) {
+        const generation = ++animationGeneration
         lastTime = performance.now()
-        animationFrame = requestAnimationFrame(renderFrame)
+        animationFrame = requestAnimationFrame((timestamp) => renderFrame(timestamp, generation))
     }
 }
 
 function stopAnimation() {
+    animationGeneration++
     if (animationFrame) cancelAnimationFrame(animationFrame)
     animationFrame = 0
 }

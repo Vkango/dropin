@@ -3,7 +3,9 @@
     <template #header>
       <div class="music-banner">
         <div class="image-container">
-          <img class="background-image" :src="bannerImage" referrerpolicy="no-referrer" />
+          <MotionTransition variant="banner">
+            <img :key="bannerImage" class="background-image" :src="bannerImage" referrerpolicy="no-referrer" />
+          </MotionTransition>
         </div>
         <div class="banner-content">
           <div class="title">{{ t('app.name') }}</div>
@@ -92,14 +94,35 @@
       </div>
     </div>
   </PageLayout>
+
+  <Dialog v-model="isPermissionDialogOpen" width="520" :aria-labelledby="'plugin-permission-dialog-title'">
+    <div class="dialog-content">
+      <header class="dialog-header">
+        <h2 id="plugin-permission-dialog-title">{{ t('plugins.permissions') }}</h2>
+      </header>
+      <PluginPermissionRequest v-if="permissionDialogPlugin" v-model="permissionDialogValue"
+        :permissions="declaredPermissions(permissionDialogPlugin)" :description="t('plugins.permissionHint')" />
+      <footer class="dialog-actions">
+        <button type="button" class="dialog-button secondary" :disabled="isSavingPermissions"
+          @click="isPermissionDialogOpen = false">
+          {{ t('plugins.cancel') }}
+        </button>
+        <button type="button" class="dialog-button primary" :disabled="isSavingPermissions"
+          @click="savePermissions">
+          {{ t('plugins.savePermissions') }}
+        </button>
+      </footer>
+    </div>
+  </Dialog>
 </template>
 
 <script setup>
 import { computed, inject, onMounted, ref } from 'vue'
+import Dialog from './Dialog.vue'
+import MotionTransition from './MotionTransition.vue'
 import PageLayout from './PageLayout.vue'
 import PluginPermissionRequest from './PluginPermissionRequest.vue'
 import { useI18n } from '../i18n/index.js'
-import { openDialog } from '../services/dialogService.js'
 import { pluginPermissionMeta } from '../utils/pluginPermissions.js'
 
 const props = defineProps({
@@ -113,6 +136,10 @@ const { t } = useI18n()
 const currentSong = inject('currentSong')
 const runtime = props.pluginRuntime
 const activeCategory = ref('all')
+const isPermissionDialogOpen = ref(false)
+const permissionDialogPlugin = ref(null)
+const permissionDialogValue = ref([])
+const isSavingPermissions = ref(false)
 const bannerImage = computed(() => currentSong.value?.cover || '/assets/cover.jpg')
 const plugins = computed(() => runtime.state.plugins)
 const categories = computed(() => runtime.categories.value)
@@ -139,34 +166,28 @@ const grantedPermissions = (plugin) => plugin.permissions?.granted || []
 const isPermissionGranted = (plugin, permission) => grantedPermissions(plugin).includes(permission)
 const permissionLabel = (permission) => pluginPermissionMeta(permission, t).label
 
-const requestPermissions = async (plugin) => {
+const requestPermissions = (plugin) => {
   const declared = declaredPermissions(plugin)
   const selected = grantedPermissions(plugin).filter((permission) => declared.includes(permission))
+  permissionDialogPlugin.value = plugin
+  permissionDialogValue.value = [...selected]
+  isPermissionDialogOpen.value = true
+}
 
-  const result = await openDialog({
-    variant: 'custom',
-    eyebrow: plugin.name,
-    title: t('plugins.permissions'),
-    message: t('plugins.permissionHint'),
-    bodyComponent: PluginPermissionRequest,
-    bodyProps: {
-      permissions: declared
-    },
-    value: selected,
-    width: 520,
-    submitOnEnter: false,
-    confirmLabel: t('plugins.savePermissions'),
-    cancelLabel: t('plugins.cancel')
-  })
+const savePermissions = async () => {
+  const plugin = permissionDialogPlugin.value
+  if (!plugin || isSavingPermissions.value) return
 
-  if (result.action !== 'confirm') return false
-
+  isSavingPermissions.value = true
   try {
-    await runtime.setPermissions(plugin.id, Array.isArray(result.value) ? result.value : [])
+    await runtime.setPermissions(plugin.id, Array.isArray(permissionDialogValue.value) ? permissionDialogValue.value : [])
+    isPermissionDialogOpen.value = false
     return true
   } catch (error) {
     runtime.setError(error)
     return false
+  } finally {
+    isSavingPermissions.value = false
   }
 }
 
@@ -381,4 +402,5 @@ onMounted(() => {
     justify-content: flex-start;
   }
 }
+
 </style>

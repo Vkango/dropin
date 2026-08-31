@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -20,7 +20,7 @@ use lofty::{
     tag::ItemKey,
 };
 use reqwest::blocking::Client;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -151,6 +151,42 @@ pub struct ScanJob {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlaylistRule {
+    version: u32,
+    steps: Vec<PlaylistRuleStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(deny_unknown_fields)]
+enum PlaylistRuleStep {
+    #[serde(rename = "source")]
+    Source {
+        kind: String,
+        id: Option<String>,
+    },
+    #[serde(rename = "operator")]
+    Operator {
+        op: String,
+        count: Option<u64>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct RuleSource {
+    kind: String,
+    id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct RuleTrack {
+    id: String,
+    sources: Vec<RuleSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CoverPayload {
     pub cover_id: String,
@@ -273,6 +309,10 @@ impl MediaRuntime {
             "media_playlist_list" => self.playlist_list(args),
             "media_playlist_add_track" => self.playlist_add_track(args),
             "media_playlist_remove_track" => self.playlist_remove_track(args),
+            "media_playlist_rule_get" => self.playlist_rule_get(args),
+            "media_playlist_rule_save" => self.playlist_rule_save(args),
+            "media_playlist_rule_evaluate" => self.playlist_rule_evaluate(args),
+            "media_playlist_rule_materialize" => self.playlist_rule_materialize(args),
             "media_tag_create" => self.tag_create(args),
             "media_tag_remove" => self.tag_remove(args),
             "media_tag_list" => self.tag_list(args),
@@ -1236,6 +1276,8 @@ impl MediaRuntime {
         let mut statement = connection
             .prepare(
                 "SELECT p.id, p.name, COALESCE(p.description, ''), p.cover_track_id, p.created_at, p.updated_at,
+                        CASE WHEN EXISTS(SELECT 1 FROM playlist_rules pr WHERE pr.playlist_id = p.id)
+                             THEN 'dynamic' ELSE 'static' END,
                         (SELECT COUNT(*) FROM playlist_tracks pt WHERE pt.playlist_id = p.id)
                  FROM playlists p ORDER BY p.created_at",
             )
@@ -1249,7 +1291,8 @@ impl MediaRuntime {
                     "coverTrackId": row.get::<_, Option<String>>(3)?,
                     "createdAt": row.get::<_, i64>(4)?,
                     "updatedAt": row.get::<_, i64>(5)?,
-                    "trackCount": row.get::<_, i64>(6)?,
+                    "type": row.get::<_, String>(6)?,
+                    "trackCount": row.get::<_, i64>(7)?,
                 }))
             })
             .map_err(|error| sqlite_error("media_playlist_list", error))?;
@@ -1257,6 +1300,215 @@ impl MediaRuntime {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| sqlite_error("media_playlist_list", error))?;
         Ok(json!({ "playlists": playlists }))
+    }
+
+    fn playlist_rule_get(&mut self, args: Value) -> Result<Value, MediaError> {
+        let playlist_id = required_string(&args, "playlistId", "media_playlist_rule_get")?;
+        let connection = self.connection("media_playlist_rule_get")?;
+        let exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM playlists WHERE id = ?1)",
+                params![playlist_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| sqlite_error("media_playlist_rule_get", error))?;
+        if !exists {
+            return Err(media_error(
+                "media_playlist_rule_get",
+                "playlist does not exist",
+            ));
+        }
+
+        let rule = load_saved_playlist_rule(connection, &playlist_id, "media_playlist_rule_get")?;
+        Ok(json!({
+            "playlistId": playlist_id,
+            "type": if rule.is_some() { "dynamic" } else { "static" },
+            "rule": rule,
+        }))
+    }
+
+    fn playlist_rule_save(&mut self, args: Value) -> Result<Value, MediaError> {
+        let playlist_id = required_string(&args, "playlistId", "media_playlist_rule_save")?;
+        let rule_value = args
+            .get("rule")
+            .cloned()
+            .ok_or_else(|| media_error("media_playlist_rule_save", "rule is required"))?;
+        let rule = parse_playlist_rule(rule_value, "media_playlist_rule_save")?;
+        let rule_json = serde_json::to_string(&rule)
+            .map_err(|error| media_error("media_playlist_rule_save", error.to_string()))?;
+
+        let connection = self.connection("media_playlist_rule_save")?;
+        ensure_playlist_exists(connection, &playlist_id, "media_playlist_rule_save")?;
+        validate_playlist_rule(connection, &playlist_id, &rule, "media_playlist_rule_save")?;
+        // Evaluate before writing so indirect references cannot introduce a cycle.
+        evaluate_playlist_rule_ids(
+            connection,
+            &playlist_id,
+            &rule,
+            &mut Vec::new(),
+            "media_playlist_rule_save",
+        )?;
+
+        let tx = connection
+            .transaction()
+            .map_err(|error| sqlite_error("media_playlist_rule_save", error))?;
+        tx.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+        )
+        .map_err(|error| sqlite_error("media_playlist_rule_save", error))?;
+        tx.execute(
+            "INSERT INTO playlist_rules(playlist_id, rule_json, updated_at) VALUES(?1, ?2, ?3)
+             ON CONFLICT(playlist_id) DO UPDATE SET rule_json = excluded.rule_json, updated_at = excluded.updated_at",
+            params![playlist_id, rule_json, now_ms()],
+        )
+        .map_err(|error| sqlite_error("media_playlist_rule_save", error))?;
+        tx.execute(
+            "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
+            params![playlist_id, now_ms()],
+        )
+        .map_err(|error| sqlite_error("media_playlist_rule_save", error))?;
+        tx.commit()
+            .map_err(|error| sqlite_error("media_playlist_rule_save", error))?;
+
+        Ok(json!({ "playlistId": playlist_id, "type": "dynamic", "rule": rule }))
+    }
+
+    fn playlist_rule_evaluate(&mut self, args: Value) -> Result<Value, MediaError> {
+        let playlist_id = required_string(&args, "playlistId", "media_playlist_rule_evaluate")?;
+        let supplied_rule = args
+            .get("rule")
+            .filter(|value| !value.is_null())
+            .cloned();
+        let connection = self.connection("media_playlist_rule_evaluate")?;
+        ensure_playlist_exists(connection, &playlist_id, "media_playlist_rule_evaluate")?;
+        let rule = match supplied_rule {
+            Some(value) => parse_playlist_rule(value, "media_playlist_rule_evaluate")?,
+            None => load_saved_playlist_rule(connection, &playlist_id, "media_playlist_rule_evaluate")?
+                .ok_or_else(|| media_error("media_playlist_rule_evaluate", "playlist is static"))?,
+        };
+        validate_playlist_rule(
+            connection,
+            &playlist_id,
+            &rule,
+            "media_playlist_rule_evaluate",
+        )?;
+        let evaluated = evaluate_playlist_rule_ids(
+            connection,
+            &playlist_id,
+            &rule,
+            &mut Vec::new(),
+            "media_playlist_rule_evaluate",
+        )?;
+        let tracks = load_tracks_by_ids(
+            connection,
+            &evaluated.iter().map(|track| track.id.clone()).collect::<Vec<_>>(),
+            "media_playlist_rule_evaluate",
+        )?;
+        let track_map = tracks
+            .into_iter()
+            .map(|track| (track.id.clone(), track))
+            .collect::<HashMap<_, _>>();
+        let ordered_tracks = evaluated
+            .iter()
+            .filter_map(|track| track_map.get(&track.id).cloned())
+            .collect::<Vec<_>>();
+        let contributions = evaluated
+            .iter()
+            .map(|track| json!({ "trackId": track.id, "sources": track.sources }))
+            .collect::<Vec<_>>();
+        let mut source_counts = HashMap::<String, (RuleSource, usize)>::new();
+        for track in &evaluated {
+            for source in &track.sources {
+                let key = format!("{}\u{0}{}", source.kind, source.id.as_deref().unwrap_or(""));
+                let entry = source_counts
+                    .entry(key)
+                    .or_insert_with(|| (source.clone(), 0));
+                entry.1 += 1;
+            }
+        }
+        let source_counts = source_counts
+            .into_values()
+            .map(|(source, count)| json!({ "source": source, "count": count }))
+            .collect::<Vec<_>>();
+
+        Ok(json!({
+            "playlistId": playlist_id,
+            "type": "dynamic",
+            "rule": rule,
+            "tracks": ordered_tracks,
+            "contributions": contributions,
+            "sourceCounts": source_counts,
+        }))
+    }
+
+    fn playlist_rule_materialize(&mut self, args: Value) -> Result<Value, MediaError> {
+        let playlist_id = required_string(&args, "playlistId", "media_playlist_rule_materialize")?;
+        let values = args
+            .get("trackIds")
+            .and_then(Value::as_array)
+            .ok_or_else(|| media_error("media_playlist_rule_materialize", "trackIds is required"))?;
+        let mut track_ids = Vec::new();
+        for value in values {
+            let track_id = value.as_str().ok_or_else(|| {
+                media_error("media_playlist_rule_materialize", "trackIds must contain strings")
+            })?;
+            if !track_ids.iter().any(|existing| existing == track_id) {
+                track_ids.push(track_id.to_string());
+            }
+        }
+
+        let connection = self.connection("media_playlist_rule_materialize")?;
+        ensure_playlist_exists(connection, &playlist_id, "media_playlist_rule_materialize")?;
+        for track_id in &track_ids {
+            let exists: bool = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM tracks WHERE id = ?1 AND missing = 0)",
+                    params![track_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+            if !exists {
+                return Err(media_error(
+                    "media_playlist_rule_materialize",
+                    format!("track does not exist: {track_id}"),
+                ));
+            }
+        }
+
+        let tx = connection
+            .transaction()
+            .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+        tx.execute(
+            "DELETE FROM playlist_rules WHERE playlist_id = ?1",
+            params![playlist_id],
+        )
+        .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+        tx.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+        )
+        .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+        for (position, track_id) in track_ids.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO playlist_tracks(playlist_id, track_id, position) VALUES(?1, ?2, ?3)",
+                params![playlist_id, track_id, position as i64],
+            )
+            .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+        }
+        tx.execute(
+            "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
+            params![playlist_id, now_ms()],
+        )
+        .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+        tx.commit()
+            .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+
+        Ok(json!({
+            "playlistId": playlist_id,
+            "type": "static",
+            "trackCount": track_ids.len(),
+        }))
     }
 
     fn playlist_add_track(&mut self, args: Value) -> Result<Value, MediaError> {
@@ -1267,6 +1519,7 @@ impl MediaRuntime {
             .and_then(Value::as_i64)
             .unwrap_or(i64::MAX);
         let connection = self.connection("media_playlist_add_track")?;
+        ensure_static_playlist(connection, &playlist_id, "media_playlist_add_track")?;
         connection
             .execute(
                 "INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position) VALUES(?1, ?2, ?3)",
@@ -1284,6 +1537,7 @@ impl MediaRuntime {
         let playlist_id = required_string(&args, "playlistId", "media_playlist_remove_track")?;
         let track_id = required_string(&args, "trackId", "media_playlist_remove_track")?;
         let connection = self.connection("media_playlist_remove_track")?;
+        ensure_static_playlist(connection, &playlist_id, "media_playlist_remove_track")?;
         let removed = connection
             .execute(
                 "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
@@ -1377,6 +1631,477 @@ impl MediaRuntime {
     }
 }
 
+fn parse_playlist_rule(value: Value, operation: &str) -> Result<PlaylistRule, MediaError> {
+    serde_json::from_value(value)
+        .map_err(|error| media_error(operation, format!("invalid playlist rule: {error}")))
+}
+
+fn ensure_playlist_exists(
+    connection: &Connection,
+    playlist_id: &str,
+    operation: &str,
+) -> Result<(), MediaError> {
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlists WHERE id = ?1)",
+            params![playlist_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| sqlite_error(operation, error))?;
+    if exists {
+        Ok(())
+    } else {
+        Err(media_error(operation, "playlist does not exist"))
+    }
+}
+
+fn load_saved_playlist_rule(
+    connection: &Connection,
+    playlist_id: &str,
+    operation: &str,
+) -> Result<Option<PlaylistRule>, MediaError> {
+    let payload: Option<String> = connection
+        .query_row(
+            "SELECT rule_json FROM playlist_rules WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| sqlite_error(operation, error))?;
+    payload
+        .map(|value| {
+            let parsed = serde_json::from_str(&value).map_err(|error| {
+                media_error(operation, format!("stored playlist rule is invalid: {error}"))
+            })?;
+            parse_playlist_rule(parsed, operation)
+        })
+        .transpose()
+}
+
+fn ensure_static_playlist(
+    connection: &Connection,
+    playlist_id: &str,
+    operation: &str,
+) -> Result<(), MediaError> {
+    ensure_playlist_exists(connection, playlist_id, operation)?;
+    let is_dynamic: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlist_rules WHERE playlist_id = ?1)",
+            params![playlist_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| sqlite_error(operation, error))?;
+    if is_dynamic {
+        return Err(media_error(
+            operation,
+            "dynamic playlists must be edited through their saved rule",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_playlist_rule(
+    connection: &Connection,
+    target_playlist_id: &str,
+    rule: &PlaylistRule,
+    operation: &str,
+) -> Result<(), MediaError> {
+    if rule.version != 1 {
+        return Err(media_error(
+            operation,
+            format!("unsupported playlist rule version: {}", rule.version),
+        ));
+    }
+    if rule.steps.is_empty() || rule.steps.len() > 64 {
+        return Err(media_error(
+            operation,
+            "playlist rule must contain between 1 and 64 steps",
+        ));
+    }
+
+    let first_source = match &rule.steps[0] {
+        PlaylistRuleStep::Source { kind, id } => (kind, id),
+        PlaylistRuleStep::Operator { .. } => {
+            return Err(media_error(operation, "playlist rule must start with a source"));
+        }
+    };
+    validate_playlist_rule_source(
+        connection,
+        target_playlist_id,
+        first_source.0,
+        first_source.1,
+        operation,
+    )?;
+
+    let mut index = 1;
+    while index < rule.steps.len() {
+        let (op, count) = match &rule.steps[index] {
+            PlaylistRuleStep::Operator { op, count } => (op, count),
+            PlaylistRuleStep::Source { .. } => {
+                return Err(media_error(
+                    operation,
+                    "playlist rule must alternate sources and operators",
+                ));
+            }
+        };
+
+        match op.as_str() {
+            "union" | "inter" | "subtract" | "concatenate" => {
+                if count.is_some() {
+                    return Err(media_error(
+                        operation,
+                        format!("operator {op} does not accept a count"),
+                    ));
+                }
+                let Some(PlaylistRuleStep::Source { kind, id }) = rule.steps.get(index + 1) else {
+                    return Err(media_error(
+                        operation,
+                        format!("operator {op} must be followed by a source"),
+                    ));
+                };
+                validate_playlist_rule_source(
+                    connection,
+                    target_playlist_id,
+                    kind,
+                    id,
+                    operation,
+                )?;
+                index += 2;
+            }
+            "randomChoose" => {
+                let Some(count) = count else {
+                    return Err(media_error(
+                        operation,
+                        "randomChoose requires a positive count",
+                    ));
+                };
+                if !(1..=10_000).contains(count) {
+                    return Err(media_error(
+                        operation,
+                        "randomChoose count must be between 1 and 10000",
+                    ));
+                }
+                if index + 1 != rule.steps.len() {
+                    return Err(media_error(
+                        operation,
+                        "randomChoose must be the final operator",
+                    ));
+                }
+                index += 1;
+            }
+            _ => {
+                return Err(media_error(
+                    operation,
+                    format!("unsupported playlist operator: {op}"),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_playlist_rule_source(
+    connection: &Connection,
+    target_playlist_id: &str,
+    kind: &str,
+    id: &Option<String>,
+    operation: &str,
+) -> Result<(), MediaError> {
+    match kind {
+        "library" => {
+            if id.is_some() {
+                return Err(media_error(operation, "library source must not have an id"));
+            }
+        }
+        "playlist" => {
+            let source_id = id.as_deref().filter(|value| !value.trim().is_empty()).ok_or_else(|| {
+                media_error(operation, "playlist source requires an id")
+            })?;
+            if source_id == target_playlist_id {
+                return Err(media_error(operation, "playlist rules cannot reference themselves"));
+            }
+            ensure_playlist_exists(connection, source_id, operation)?;
+        }
+        "tag" => {
+            let source_id = id.as_deref().filter(|value| !value.trim().is_empty()).ok_or_else(|| {
+                media_error(operation, "tag source requires an id")
+            })?;
+            let exists: bool = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM tags WHERE id = ?1)",
+                    params![source_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| sqlite_error(operation, error))?;
+            if !exists {
+                return Err(media_error(operation, "tag source does not exist"));
+            }
+        }
+        _ => return Err(media_error(operation, format!("unsupported playlist source: {kind}"))),
+    }
+    Ok(())
+}
+
+fn source_track_ids(
+    connection: &Connection,
+    source: &RuleSource,
+    stack: &mut Vec<String>,
+    operation: &str,
+) -> Result<Vec<String>, MediaError> {
+    match source.kind.as_str() {
+        "library" => {
+            let mut statement = connection
+                .prepare(
+                    "SELECT t.id FROM tracks t
+                     WHERE t.missing = 0
+                     ORDER BY COALESCE(t.album, ''), t.disc_number IS NULL, t.disc_number,
+                              t.track_number IS NULL, t.track_number, t.title",
+                )
+                .map_err(|error| sqlite_error(operation, error))?;
+            let rows = statement
+                .query_map([], |row| row.get(0))
+                .map_err(|error| sqlite_error(operation, error))?;
+            rows.collect::<Result<Vec<String>, _>>()
+                .map_err(|error| sqlite_error(operation, error))
+        }
+        "tag" => {
+            let tag_id = source.id.as_deref().ok_or_else(|| {
+                media_error(operation, "tag source requires an id")
+            })?;
+            let mut statement = connection
+                .prepare(
+                    "SELECT t.id FROM tracks t
+                     INNER JOIN track_tags tt ON tt.track_id = t.id
+                     WHERE tt.tag_id = ?1 AND t.missing = 0
+                     ORDER BY COALESCE(t.album, ''), t.disc_number IS NULL, t.disc_number,
+                              t.track_number IS NULL, t.track_number, t.title",
+                )
+                .map_err(|error| sqlite_error(operation, error))?;
+            let rows = statement
+                .query_map(params![tag_id], |row| row.get(0))
+                .map_err(|error| sqlite_error(operation, error))?;
+            rows.collect::<Result<Vec<String>, _>>()
+                .map_err(|error| sqlite_error(operation, error))
+        }
+        "playlist" => {
+            let playlist_id = source.id.as_deref().ok_or_else(|| {
+                media_error(operation, "playlist source requires an id")
+            })?;
+            if stack.iter().any(|id| id == playlist_id) {
+                return Err(media_error(
+                    operation,
+                    format!("playlist rule cycle detected at {playlist_id}"),
+                ));
+            }
+            if let Some(rule) = load_saved_playlist_rule(connection, playlist_id, operation)? {
+                validate_playlist_rule(connection, playlist_id, &rule, operation)?;
+                return evaluate_playlist_rule_ids(connection, playlist_id, &rule, stack, operation)
+                    .map(|tracks| tracks.into_iter().map(|track| track.id).collect());
+            }
+            let mut statement = connection
+                .prepare(
+                    "SELECT pt.track_id FROM playlist_tracks pt
+                     INNER JOIN tracks t ON t.id = pt.track_id
+                     WHERE pt.playlist_id = ?1 AND t.missing = 0
+                     ORDER BY pt.position, COALESCE(t.album, ''), t.track_number IS NULL,
+                              t.track_number, t.title",
+                )
+                .map_err(|error| sqlite_error(operation, error))?;
+            let rows = statement
+                .query_map(params![playlist_id], |row| row.get(0))
+                .map_err(|error| sqlite_error(operation, error))?;
+            rows.collect::<Result<Vec<String>, _>>()
+                .map_err(|error| sqlite_error(operation, error))
+        }
+        _ => Err(media_error(
+            operation,
+            format!("unsupported playlist source: {}", source.kind),
+        )),
+    }
+}
+
+fn source_rule_tracks(
+    connection: &Connection,
+    source: &RuleSource,
+    stack: &mut Vec<String>,
+    operation: &str,
+) -> Result<Vec<RuleTrack>, MediaError> {
+    let source_ids = source_track_ids(connection, source, stack, operation)?;
+    Ok(source_ids
+        .into_iter()
+        .map(|id| RuleTrack {
+            id,
+            sources: vec![source.clone()],
+        })
+        .collect())
+}
+
+fn merge_rule_sources(left: &mut Vec<RuleSource>, right: &[RuleSource]) {
+    for source in right {
+        if !left.iter().any(|existing| existing == source) {
+            left.push(source.clone());
+        }
+    }
+}
+
+fn append_unique_rule_tracks(target: &mut Vec<RuleTrack>, incoming: Vec<RuleTrack>) {
+    let positions = target
+        .iter()
+        .enumerate()
+        .map(|(index, track)| (track.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    for track in incoming {
+        if let Some(index) = positions.get(&track.id) {
+            merge_rule_sources(&mut target[*index].sources, &track.sources);
+        } else {
+            target.push(track);
+        }
+    }
+}
+
+fn shuffle_rule_tracks(tracks: &mut [RuleTrack], seed: u64) {
+    let mut state = seed.max(1);
+    for index in (1..tracks.len()).rev() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let swap_index = (state as usize) % (index + 1);
+        tracks.swap(index, swap_index);
+    }
+}
+
+fn evaluate_playlist_rule_ids(
+    connection: &Connection,
+    playlist_id: &str,
+    rule: &PlaylistRule,
+    stack: &mut Vec<String>,
+    operation: &str,
+) -> Result<Vec<RuleTrack>, MediaError> {
+    if rule.steps.is_empty() {
+        return Err(media_error(
+            operation,
+            "playlist rule must contain at least one step",
+        ));
+    }
+    if stack.iter().any(|id| id == playlist_id) {
+        return Err(media_error(
+            operation,
+            format!("playlist rule cycle detected at {playlist_id}"),
+        ));
+    }
+    stack.push(playlist_id.to_string());
+    let result = (|| {
+        let first = match &rule.steps[0] {
+            PlaylistRuleStep::Source { kind, id } => RuleSource {
+                kind: kind.clone(),
+                id: id.clone(),
+            },
+            PlaylistRuleStep::Operator { .. } => {
+                return Err(media_error(operation, "playlist rule must start with a source"));
+            }
+        };
+        let mut current = source_rule_tracks(connection, &first, stack, operation)?;
+        let mut index = 1;
+        while index < rule.steps.len() {
+            let (op, count) = match &rule.steps[index] {
+                PlaylistRuleStep::Operator { op, count } => (op.as_str(), *count),
+                PlaylistRuleStep::Source { .. } => {
+                    return Err(media_error(
+                        operation,
+                        "playlist rule must alternate sources and operators",
+                    ));
+                }
+            };
+            if op == "randomChoose" {
+                shuffle_rule_tracks(&mut current, now_ms() as u64);
+                current.truncate(count.unwrap_or(0) as usize);
+                index += 1;
+                continue;
+            }
+
+            let source = match rule.steps.get(index + 1) {
+                Some(PlaylistRuleStep::Source { kind, id }) => RuleSource {
+                    kind: kind.clone(),
+                    id: id.clone(),
+                },
+                _ => {
+                    return Err(media_error(
+                        operation,
+                        format!("operator {op} must be followed by a source"),
+                    ));
+                }
+            };
+            let next = source_rule_tracks(connection, &source, stack, operation)?;
+            match op {
+                "union" => append_unique_rule_tracks(&mut current, next),
+                "concatenate" => append_unique_rule_tracks(&mut current, next),
+                "inter" => {
+                    let mut next_by_id = next
+                        .into_iter()
+                        .map(|track| (track.id.clone(), track))
+                        .collect::<HashMap<_, _>>();
+                    current.retain_mut(|track| {
+                        let Some(other) = next_by_id.remove(&track.id) else {
+                            return false;
+                        };
+                        merge_rule_sources(&mut track.sources, &other.sources);
+                        true
+                    });
+                }
+                "subtract" => {
+                    let excluded = next
+                        .into_iter()
+                        .map(|track| track.id)
+                        .collect::<HashSet<_>>();
+                    current.retain(|track| !excluded.contains(&track.id));
+                }
+                _ => return Err(media_error(operation, format!("unsupported playlist operator: {op}"))),
+            }
+            index += 2;
+        }
+        Ok(current)
+    })();
+    stack.pop();
+    result
+}
+
+fn load_tracks_by_ids(
+    connection: &Connection,
+    ids: &[String],
+    operation: &str,
+) -> Result<Vec<MediaTrack>, MediaError> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut tracks = Vec::new();
+    // Keep the IN list below SQLite's default host-parameter limit. The caller
+    // restores the rule order after loading, so chunk order is immaterial here.
+    for chunk in ids.chunks(500) {
+        let placeholders = (1..=chunk.len())
+            .map(|index| format!("?{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT t.id, t.source, t.path, t.url, t.title, t.artist, t.album, t.album_artist, t.composer,
+                    t.genres_json, t.year, t.track_number, t.track_total, t.disc_number, t.disc_total,
+                    t.duration_ms, t.bitrate, t.sample_rate, t.channels, t.codec, t.format, t.cover_id,
+                    t.cover_mime_type, t.file_hash, t.warnings_json, t.added_at, t.updated_at, t.last_played_at
+             FROM tracks t WHERE t.missing = 0 AND t.id IN ({placeholders})"
+        );
+        let mut statement = connection
+            .prepare(&sql)
+            .map_err(|error| sqlite_error(operation, error))?;
+        let rows = statement
+            .query_map(params_from_iter(chunk.iter()), row_to_track)
+            .map_err(|error| sqlite_error(operation, error))?;
+        tracks.extend(
+            rows.collect::<Result<Vec<MediaTrack>, _>>()
+                .map_err(|error| sqlite_error(operation, error))?,
+        );
+    }
+    Ok(tracks)
+}
+
 fn migrate(connection: &Connection) -> rusqlite::Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS library_roots(
@@ -1429,13 +2154,14 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
         CREATE TABLE IF NOT EXISTS track_tags(track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE, PRIMARY KEY(track_id, tag_id));
         CREATE TABLE IF NOT EXISTS playlists(id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, cover_track_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS playlist_tracks(playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, position INTEGER NOT NULL, PRIMARY KEY(playlist_id, track_id));
+        CREATE TABLE IF NOT EXISTS playlist_rules(playlist_id TEXT PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE, rule_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS albums(id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT, year INTEGER, cover_id TEXT, updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS artists(id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, cover_id TEXT, updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS covers(id TEXT PRIMARY KEY, path TEXT NOT NULL, mime_type TEXT NOT NULL, byte_length INTEGER NOT NULL, created_at INTEGER NOT NULL, last_accessed_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS url_cache(url TEXT PRIMARY KEY, local_path TEXT NOT NULL, etag TEXT, last_modified TEXT, content_type TEXT, content_length INTEGER, fetched_at INTEGER NOT NULL, last_accessed_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS scan_jobs(id TEXT PRIMARY KEY, state TEXT NOT NULL, root_ids_json TEXT NOT NULL, scanned INTEGER NOT NULL DEFAULT 0, imported INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, started_at INTEGER NOT NULL, finished_at INTEGER, error TEXT);
         CREATE TABLE IF NOT EXISTS playback_history(id INTEGER PRIMARY KEY AUTOINCREMENT, track_id TEXT NOT NULL, played_at INTEGER NOT NULL, position_ms INTEGER NOT NULL DEFAULT 0);
-        PRAGMA user_version = 2;",
+        PRAGMA user_version = 3;",
     )
 }
 
@@ -2370,6 +3096,50 @@ pub fn media_playlist_remove_track(
 }
 
 #[tauri::command]
+pub fn media_playlist_rule_get(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+) -> Result<Value, MediaError> {
+    service.call("media_playlist_rule_get", json!({ "playlistId": playlist_id }))
+}
+
+#[tauri::command]
+pub fn media_playlist_rule_save(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+    rule: Value,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_rule_save",
+        json!({ "playlistId": playlist_id, "rule": rule }),
+    )
+}
+
+#[tauri::command]
+pub fn media_playlist_rule_evaluate(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+    rule: Option<Value>,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_rule_evaluate",
+        json!({ "playlistId": playlist_id, "rule": rule }),
+    )
+}
+
+#[tauri::command]
+pub fn media_playlist_rule_materialize(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+    track_ids: Vec<String>,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_rule_materialize",
+        json!({ "playlistId": playlist_id, "trackIds": track_ids }),
+    )
+}
+
+#[tauri::command]
 pub fn media_tag_create(
     service: State<'_, MediaService>,
     label: String,
@@ -2466,5 +3236,274 @@ mod tests {
             )
             .expect("table count");
         assert_eq!(count, 1);
+        let rules_table_count: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'playlist_rules'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("rules table count");
+        assert_eq!(rules_table_count, 1);
+    }
+
+    fn test_source(kind: &str, id: Option<&str>) -> PlaylistRuleStep {
+        PlaylistRuleStep::Source {
+            kind: kind.to_string(),
+            id: id.map(str::to_string),
+        }
+    }
+
+    fn test_operator(op: &str) -> PlaylistRuleStep {
+        PlaylistRuleStep::Operator {
+            op: op.to_string(),
+            count: None,
+        }
+    }
+
+    fn test_random_choose(count: u64) -> PlaylistRuleStep {
+        PlaylistRuleStep::Operator {
+            op: "randomChoose".to_string(),
+            count: Some(count),
+        }
+    }
+
+    fn test_rule(steps: Vec<PlaylistRuleStep>) -> PlaylistRule {
+        PlaylistRule { version: 1, steps }
+    }
+
+    fn rule_test_connection() -> Connection {
+        let connection = Connection::open_in_memory().expect("sqlite");
+        connection
+            .execute_batch("PRAGMA foreign_keys = ON;")
+            .expect("foreign keys");
+        migrate(&connection).expect("migration");
+        for id in ["track-a", "track-b", "track-c", "track-d"] {
+            connection
+                .execute(
+                    "INSERT INTO tracks(id, source, title, artist, album, added_at, updated_at)
+                     VALUES(?1, 'file', ?1, 'artist', 'album', 1, 1)",
+                    params![id],
+                )
+                .expect("track");
+        }
+        for id in ["target", "playlist-one", "playlist-two"] {
+            connection
+                .execute(
+                    "INSERT INTO playlists(id, name, created_at, updated_at) VALUES(?1, ?1, 1, 1)",
+                    params![id],
+                )
+                .expect("playlist");
+        }
+        connection
+            .execute(
+                "INSERT INTO tags(id, label, created_at) VALUES('tag-one', 'Tag one', 1), ('tag-empty', 'Empty', 1)",
+                [],
+            )
+            .expect("tags");
+        for (track_id, position) in [("track-a", 0), ("track-b", 1)] {
+            connection
+                .execute(
+                    "INSERT INTO playlist_tracks(playlist_id, track_id, position) VALUES('playlist-one', ?1, ?2)",
+                    params![track_id, position],
+                )
+                .expect("playlist one track");
+        }
+        for (track_id, position) in [("track-b", 0), ("track-c", 1)] {
+            connection
+                .execute(
+                    "INSERT INTO playlist_tracks(playlist_id, track_id, position) VALUES('playlist-two', ?1, ?2)",
+                    params![track_id, position],
+                )
+                .expect("playlist two track");
+        }
+        for track_id in ["track-a", "track-b"] {
+            connection
+                .execute(
+                    "INSERT INTO track_tags(track_id, tag_id) VALUES(?1, 'tag-one')",
+                    params![track_id],
+                )
+                .expect("tag track");
+        }
+        connection
+    }
+
+    fn track_ids(tracks: &[RuleTrack]) -> Vec<&str> {
+        tracks.iter().map(|track| track.id.as_str()).collect()
+    }
+
+    #[test]
+    fn playlist_rule_json_is_structured_and_rejects_unknown_fields() {
+        let parsed = parse_playlist_rule(
+            json!({
+                "version": 1,
+                "steps": [
+                    { "type": "source", "kind": "library", "id": null },
+                    { "type": "operator", "op": "randomChoose", "count": 2 }
+                ]
+            }),
+            "test",
+        )
+        .expect("rule parses");
+        assert!(matches!(parsed.steps[0], PlaylistRuleStep::Source { .. }));
+        assert!(parse_playlist_rule(
+            json!({ "version": 1, "steps": [], "sql": "select *" }),
+            "test",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn playlist_rule_set_operators_have_expected_membership() {
+        let connection = rule_test_connection();
+        let mut stack = Vec::new();
+
+        let union = evaluate_playlist_rule_ids(
+            &connection,
+            "target",
+            &test_rule(vec![
+                test_source("playlist", Some("playlist-one")),
+                test_operator("union"),
+                test_source("playlist", Some("playlist-two")),
+            ]),
+            &mut stack,
+            "test",
+        )
+        .expect("union");
+        assert_eq!(track_ids(&union), vec!["track-a", "track-b", "track-c"]);
+
+        let inter = evaluate_playlist_rule_ids(
+            &connection,
+            "target",
+            &test_rule(vec![
+                test_source("playlist", Some("playlist-one")),
+                test_operator("inter"),
+                test_source("playlist", Some("playlist-two")),
+            ]),
+            &mut stack,
+            "test",
+        )
+        .expect("intersection");
+        assert_eq!(track_ids(&inter), vec!["track-b"]);
+
+        let subtract = evaluate_playlist_rule_ids(
+            &connection,
+            "target",
+            &test_rule(vec![
+                test_source("library", None),
+                test_operator("subtract"),
+                test_source("tag", Some("tag-one")),
+            ]),
+            &mut stack,
+            "test",
+        )
+        .expect("subtract");
+        assert_eq!(track_ids(&subtract), vec!["track-c", "track-d"]);
+    }
+
+    #[test]
+    fn playlist_rule_concatenate_preserves_order_and_deduplicates() {
+        let connection = rule_test_connection();
+        let tracks = evaluate_playlist_rule_ids(
+            &connection,
+            "target",
+            &test_rule(vec![
+                test_source("playlist", Some("playlist-one")),
+                test_operator("concatenate"),
+                test_source("playlist", Some("playlist-two")),
+                test_operator("concatenate"),
+                test_source("playlist", Some("playlist-one")),
+            ]),
+            &mut Vec::new(),
+            "test",
+        )
+        .expect("concatenate");
+        assert_eq!(track_ids(&tracks), vec!["track-a", "track-b", "track-c"]);
+    }
+
+    #[test]
+    fn playlist_rule_random_choose_is_bounded_and_empty_sources_are_safe() {
+        let connection = rule_test_connection();
+        let chosen = evaluate_playlist_rule_ids(
+            &connection,
+            "target",
+            &test_rule(vec![test_source("library", None), test_random_choose(2)]),
+            &mut Vec::new(),
+            "test",
+        )
+        .expect("random choose");
+        assert_eq!(chosen.len(), 2);
+
+        let all = evaluate_playlist_rule_ids(
+            &connection,
+            "target",
+            &test_rule(vec![test_source("tag", Some("tag-empty")), test_random_choose(20)]),
+            &mut Vec::new(),
+            "test",
+        )
+        .expect("empty random choose");
+        assert!(all.is_empty());
+    }
+
+    #[test]
+    fn playlist_rule_detects_indirect_cycles() {
+        let connection = rule_test_connection();
+        let playlist_one_rule = test_rule(vec![test_source("playlist", Some("playlist-two"))]);
+        let playlist_two_rule = test_rule(vec![test_source("playlist", Some("playlist-one"))]);
+        connection
+            .execute(
+                "INSERT INTO playlist_rules(playlist_id, rule_json, updated_at) VALUES('playlist-one', ?1, 1), ('playlist-two', ?2, 1)",
+                params![
+                    serde_json::to_string(&playlist_one_rule).expect("rule one json"),
+                    serde_json::to_string(&playlist_two_rule).expect("rule two json"),
+                ],
+            )
+            .expect("rules");
+
+        let error = evaluate_playlist_rule_ids(
+            &connection,
+            "target",
+            &test_rule(vec![test_source("playlist", Some("playlist-one"))]),
+            &mut Vec::new(),
+            "test",
+        )
+        .expect_err("cycle should fail");
+        assert!(error.message.contains("cycle"));
+    }
+
+    #[test]
+    fn playlist_rule_rejects_self_reference_and_non_final_random_choose() {
+        let connection = rule_test_connection();
+        let self_reference = test_rule(vec![test_source("playlist", Some("target"))]);
+        assert!(validate_playlist_rule(&connection, "target", &self_reference, "test").is_err());
+
+        let random_not_final = test_rule(vec![
+            test_source("library", None),
+            test_random_choose(2),
+            test_source("tag", Some("tag-one")),
+        ]);
+        assert!(validate_playlist_rule(&connection, "target", &random_not_final, "test").is_err());
+    }
+
+    #[test]
+    fn deleting_playlist_cascades_its_saved_rule() {
+        let connection = rule_test_connection();
+        let rule = test_rule(vec![test_source("library", None)]);
+        connection
+            .execute(
+                "INSERT INTO playlist_rules(playlist_id, rule_json, updated_at) VALUES('target', ?1, 1)",
+                params![serde_json::to_string(&rule).expect("rule json")],
+            )
+            .expect("saved rule");
+        connection
+            .execute("DELETE FROM playlists WHERE id = 'target'", [])
+            .expect("delete playlist");
+        let rules: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM playlist_rules WHERE playlist_id = 'target'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("rule count");
+        assert_eq!(rules, 0);
     }
 }

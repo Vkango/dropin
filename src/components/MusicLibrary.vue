@@ -11,9 +11,8 @@
                 </div>
                 <div class="banner-content">
                     <div class="title">{{ t('app.name') }}</div>
-                    <h2 class="library-title">{{ t('library.title') }}</h2>
-                    <div class="description">{{ musicLibrary.totalSongs }} songs • {{ musicLibrary.totalDuration }}
-                    </div>
+                    <h2 class="library-title">{{ resolvedTitle }}</h2>
+                    <div class="description">{{ resolvedDescription }}</div>
                 </div>
                 <div class="controls-row">
                     <MotionButton v-for="control in headerControls" :key="control.id" class="control-btn"
@@ -30,8 +29,11 @@
         </template>
         <div ref="pageRef" class="library-content-with-alphabet">
             <div class="song-list-container">
-                <SongList :songs="musicLibrary.songs" @song-select="$emit('song-select', $event)"
-                    @song-play="$emit('song-play', $event)" @group-label-click="handleGroupLabelClick" />
+                <SongList :songs="musicLibrary.songs" :primary-action-label="resolvedPrimaryActionLabel"
+                    :primary-action-clickable="primaryActionClickable" :show-play-all="showPlayAll"
+                    @primary-action="$emit('primary-action')" @play-all="$emit('play-all')"
+                    @song-select="$emit('song-select', $event)" @song-play="$emit('song-play', $event)"
+                    @group-label-click="handleGroupLabelClick" />
             </div>
             <AlphabetFilter :active-initial="activeInitial" :top-offset="alphabetTopOffset"
                 :available-initials="availableInitials"
@@ -65,14 +67,37 @@ const props = defineProps({
     headerControls: {
         type: Array,
         default: () => []
+    },
+    title: {
+        type: String,
+        default: ''
+    },
+    description: {
+        type: String,
+        default: ''
+    },
+    primaryActionLabel: {
+        type: String,
+        default: ''
+    },
+    primaryActionClickable: {
+        type: Boolean,
+        default: false
+    },
+    showPlayAll: {
+        type: Boolean,
+        default: false
     }
 })
 
-const emit = defineEmits(['header-control-click', 'song-select', 'song-play'])
-
+const emit = defineEmits(['header-control-click', 'primary-action', 'play-all', 'song-select', 'song-play'])
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
+const resolvedTitle = computed(() => props.title || t('library.title'))
+const resolvedDescription = computed(() => props.description
+    || props.musicLibrary.totalSongs + ' songs • ' + props.musicLibrary.totalDuration)
+const resolvedPrimaryActionLabel = computed(() => props.primaryActionLabel || t('library.addToPlaylist'))
 
 const headerControls = computed(() => props.headerControls?.length ? props.headerControls : [
     { id: 'all', icon: 'library.svg', label: t('library.all'), selected: true },

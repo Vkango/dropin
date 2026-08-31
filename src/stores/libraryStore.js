@@ -156,7 +156,54 @@ export function useLibraryStore() {
 
   const playlistTracks = async (playlistId) => {
     const result = await mediaApi.tracks({ playlistId })
-    return result.tracks || []
+    const tracks = result.tracks || []
+    await hydrateCovers(tracks)
+    return tracks.map(toSong)
+  }
+
+  const getPlaylistRule = async (playlistId) => mediaApi.playlistRuleGet(playlistId)
+
+  const evaluatePlaylist = async (playlistId, rule = null) => {
+    const result = await mediaApi.playlistRuleEvaluate(playlistId, rule)
+    const tracks = result.tracks || []
+    await hydrateCovers(tracks)
+    const contributionsByTrackId = new Map(
+      (result.contributions || []).map((item) => [
+        item.trackId,
+        (item.sources || []).map((source) => `${source.kind || ''}:${source.id || ''}`)
+      ])
+    )
+    return {
+      ...result,
+      tracks: tracks.map((track) => ({
+        ...toSong(track),
+        sourceKeys: contributionsByTrackId.get(track.id) || []
+      }))
+    }
+  }
+
+  const savePlaylistRule = async (playlistId, rule) => {
+    const result = await mediaApi.playlistRuleSave(playlistId, rule)
+    await refresh()
+    return result
+  }
+
+  const materializePlaylist = async (playlistId, trackIds) => {
+    const result = await mediaApi.playlistRuleMaterialize(playlistId, trackIds)
+    await refresh()
+    return result
+  }
+
+  const sourceTracks = async (source) => {
+    if (source?.kind === 'library') return state.tracks.map(toSong)
+    if (source?.kind === 'tag') return tracksByTag(source.id)
+    if (source?.kind === 'playlist') {
+      const playlist = state.playlists.find((item) => item.id === source.id)
+      return playlist?.type === 'dynamic'
+        ? (await evaluatePlaylist(source.id)).tracks
+        : playlistTracks(source.id)
+    }
+    return []
   }
 
   const createTag = async (label) => {
@@ -185,7 +232,9 @@ export function useLibraryStore() {
 
   const tracksByTag = async (tagId) => {
     const result = await mediaApi.tracks({ tagId })
-    return result.tracks || []
+    const tracks = result.tracks || []
+    await hydrateCovers(tracks)
+    return tracks.map(toSong)
   }
 
   const installListeners = async (onEvent = null) => {
@@ -234,6 +283,11 @@ export function useLibraryStore() {
     addToPlaylist,
     removeFromPlaylist,
     playlistTracks,
+    getPlaylistRule,
+    evaluatePlaylist,
+    savePlaylistRule,
+    materializePlaylist,
+    sourceTracks,
     createTag,
     removeTag,
     tagTrack,

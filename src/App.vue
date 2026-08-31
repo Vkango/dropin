@@ -5,6 +5,7 @@ import MusicLibrary from './components/MusicLibrary.vue'
 import HomePage from './components/HomePage.vue'
 import AlbumsPage from './components/AlbumsPage.vue'
 import ArtistsPage from './components/ArtistsPage.vue'
+import PlaylistsPage from './components/PlaylistsPage.vue'
 import SoundEffectsPage from './components/SoundEffectsPage.vue'
 import PluginsPage from './components/PluginsPage.vue'
 import PluginPage from './components/PluginPage.vue'
@@ -13,7 +14,7 @@ import DetailPanel from './components/DetailPanel.vue'
 import PlayerSurface from './components/PlayerSurface.vue'
 import TitleBar from './components/TitleBar.vue'
 import Drawer from './components/Drawer.vue'
-import GlobalDialog from './components/GlobalDialog.vue'
+import Dialog from './components/Dialog.vue'
 import Playlist from './components/Playlist.vue'
 import Notification from './components/notification/Notification.vue'
 import LoadingWithTip from './components/notification/LoadingWithTip.vue'
@@ -32,7 +33,6 @@ import { useAppSettingsStore } from './stores/appSettingsStore.js'
 import { useI18n } from './i18n/index.js'
 import { activateLocale } from './stores/i18nStore.js'
 import { animateElement, APPLE_SPRING, INSTANT_MOTION, SOFT_SPRING } from './utils/motion.js'
-import { promptDialog } from './services/dialogService.js'
 
 const libraryStore = useLibraryStore()
 const settingsStore = useAppSettingsStore()
@@ -67,6 +67,12 @@ const isSidebarDrawer = ref(
   typeof window !== 'undefined' && window.matchMedia(`(max-width: ${DRAWER_BREAKPOINT}px)`).matches
 )
 const isSidebarDrawerOpen = ref(false)
+const isCreateTagDialogOpen = ref(false)
+const isCreatePlaylistDialogOpen = ref(false)
+const createTagValue = ref('')
+const createPlaylistValue = ref('')
+const isCreatingTag = ref(false)
+const isCreatingPlaylist = ref(false)
 let sidebarDrawerMediaQuery = null
 let sidebarDrawerQueryHandler = null
 
@@ -103,6 +109,7 @@ const pageComponents = {
   library: MusicLibrary,
   albums: AlbumsPage,
   artists: ArtistsPage,
+  playlists: PlaylistsPage,
   effects: SoundEffectsPage,
   plugins: PluginsPage,
   settings: SettingsPage
@@ -141,6 +148,7 @@ const muted = ref(false)
 const playbackMode = ref('sequential')
 const listLoop = ref(false)
 const shufflePlayedIds = new Set()
+const selectedPlaylistId = ref('')
 let completionInFlight = false
 const isQueueDrawerOpen = ref(false)
 const fullscreenBackgroundMode = ref('flowing')
@@ -829,6 +837,11 @@ const handlePlaylistPlay = (playlist) => {
 }
 
 const handleNavigate = (pageId) => {
+  if (pageId === 'playlists') {
+    const firstPlaylist = libraryStore.playlists.value[0]
+    if (firstPlaylist) handleSelectPlaylist(firstPlaylist)
+    return
+  }
   navigateToPage(pageId)
 }
 
@@ -996,50 +1009,67 @@ const handleProgressCommit = (percent) => {
   scheduleSeek()
 }
 
-const handleAddTag = async () => {
-  const label = await promptDialog({
-    eyebrow: t('sidebar.myTags'),
-    title: t('dialog.tag.createTitle'),
-    message: t('dialog.tag.createMessage'),
-    inputPlaceholder: t('dialog.tag.createPlaceholder'),
-    confirmLabel: t('dialog.tag.createConfirm'),
-    required: true
-  })
-  if (!label || !label.trim()) return
+const handleAddTag = () => {
+  createTagValue.value = ''
+  isCreateTagDialogOpen.value = true
+}
+
+const submitCreateTag = async () => {
+  const label = createTagValue.value.trim()
+  if (!label || isCreatingTag.value) return
+  isCreatingTag.value = true
   try {
-    await libraryStore.createTag(label.trim())
+    await libraryStore.createTag(label)
+    isCreateTagDialogOpen.value = false
   } catch (error) {
     console.error('创建标签失败:', error)
+  } finally {
+    isCreatingTag.value = false
   }
 }
 
-const handleAddPlaylist = async () => {
-  const name = await promptDialog({
-    eyebrow: t('sidebar.playlists'),
-    title: t('dialog.playlist.createTitle'),
-    message: t('dialog.playlist.createMessage'),
-    inputPlaceholder: t('dialog.playlist.createPlaceholder'),
-    confirmLabel: t('dialog.playlist.createConfirm'),
-    required: true
-  })
-  if (!name || !name.trim()) return
+const handleAddPlaylist = () => {
+  createPlaylistValue.value = ''
+  isCreatePlaylistDialogOpen.value = true
+}
+
+const submitCreatePlaylist = async () => {
+  const name = createPlaylistValue.value.trim()
+  if (!name || isCreatingPlaylist.value) return
+  isCreatingPlaylist.value = true
   try {
-    await libraryStore.createPlaylist(name.trim())
+    const result = await libraryStore.createPlaylist(name)
+    isCreatePlaylistDialogOpen.value = false
+    selectedPlaylistId.value = result?.id || ''
+    navigateToPage('playlists')
+    return result
   } catch (error) {
     console.error('创建播放列表失败:', error)
+  } finally {
+    isCreatingPlaylist.value = false
   }
 }
 
-const handleSelectPlaylist = async (playlist) => {
-  try {
-    const tracks = await libraryStore.playlistTracks(playlist.id)
-    if (tracks.length) {
-      shufflePlayedIds.clear()
-      playSong(tracks[0], tracks)
-    }
-  } catch (error) {
-    console.error('加载播放列表失败:', error)
-  }
+const handleSelectPlaylist = (playlist) => {
+  selectedPlaylistId.value = playlist?.id || ''
+  navigateToPage('playlists')
+  if (isSidebarDrawer.value) closeSidebarDrawer()
+}
+
+const handlePlaylistPageSelect = (playlist) => {
+  selectedPlaylistId.value = playlist?.id || ''
+}
+
+const handleUserPlaylistPlay = ({ songs } = {}) => {
+  if (!songs?.length) return
+  shufflePlayedIds.clear()
+  playSong(songs[0], songs)
+}
+
+const handlePlaylistSongPlay = ({ song, songs } = {}) => {
+  if (!song) return
+  shufflePlayedIds.clear()
+  playSong(song, songs?.length ? songs : null)
 }
 
 const handleSelectTag = async (tag) => {
@@ -1153,6 +1183,11 @@ const getPageProps = () => {
       return { albums: albumsData, songs: musicLibrary.songs }
     case 'artists':
       return { artists: artistsData }
+    case 'playlists':
+      return {
+        playlists: libraryStore.playlists.value,
+        selectedPlaylistId: selectedPlaylistId.value
+      }
     case 'effects':
       return { effectsRuntime, playbackRuntime }
     case 'plugins':
@@ -1298,6 +1333,7 @@ onBeforeUnmount(() => {
     <div v-if="!isSidebarDrawer" class="sidebar-shell" :style="sidebarWidthStyle">
       <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
         :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
+        :selected-playlist-id="selectedPlaylistId"
         :installed-plugins="enabledPlugins"
         @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
         @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin"
@@ -1319,6 +1355,7 @@ onBeforeUnmount(() => {
             :exit="{ x: '-100%', opacity: 0.4 }" :transition="sidebarDrawerTransition">
             <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
               :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
+              :selected-playlist-id="selectedPlaylistId"
               :installed-plugins="enabledPlugins"
               :is-drawer="true"
               @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
@@ -1338,7 +1375,9 @@ onBeforeUnmount(() => {
           <component :is="currentPageComponent" :key="currentPage" v-bind="getPageProps()"
             @song-select="handleSongSelect" @song-play="handleSongPlay" @album-select="handleAlbumSelect"
             @album-play="handleAlbumPlay" @artist-select="handleArtistSelect" @artist-play="handleArtistPlay"
-            @artist-follow="handleArtistFollow" @playlist-play="handlePlaylistPlay" @navigate="handleNavigate"
+            @artist-follow="handleArtistFollow" @playlist-play="handlePlaylistPlay"
+            @playlist-select="handlePlaylistPageSelect" @playlist-song-play="handlePlaylistSongPlay"
+            @user-playlist-play="handleUserPlaylistPlay" @navigate="handleNavigate"
             @header-control-click="handleHeaderControlClick" @plugin-open="handleSelectPlugin" @plugin-close="navigateToPage('plugins')" @close="navigateToPage('plugins')" />
         </KeepAlive>
       </Transition>
@@ -1367,7 +1406,52 @@ onBeforeUnmount(() => {
         @song-select="handleQueueSongSelect" />
     </Drawer>
 
-    <GlobalDialog />
+    <Dialog v-model="isCreateTagDialogOpen" :aria-labelledby="'create-tag-dialog-title'">
+      <form class="dialog-content" @submit.prevent="submitCreateTag">
+        <header class="dialog-header">
+          <div>
+            <h2 id="create-tag-dialog-title">{{ t('dialog.tag.createTitle') }}</h2>
+          </div>
+        </header>
+        <p class="dialog-message">{{ t('dialog.tag.createMessage') }}</p>
+        <input v-model="createTagValue" class="dialog-input" type="text"
+          :placeholder="t('dialog.tag.createPlaceholder')" :disabled="isCreatingTag" autofocus />
+        <footer class="dialog-actions">
+          <button type="button" class="dialog-button secondary" :disabled="isCreatingTag"
+            @click="isCreateTagDialogOpen = false">
+            {{ t('dialog.actions.cancel') }}
+          </button>
+          <button type="submit" class="dialog-button primary"
+            :disabled="isCreatingTag || !createTagValue.trim()">
+            {{ t('dialog.tag.createConfirm') }}
+          </button>
+        </footer>
+      </form>
+    </Dialog>
+
+    <Dialog v-model="isCreatePlaylistDialogOpen" :aria-labelledby="'create-playlist-dialog-title'">
+      <form class="dialog-content" @submit.prevent="submitCreatePlaylist">
+        <header class="dialog-header">
+          <div>
+            <h2 id="create-playlist-dialog-title">{{ t('dialog.playlist.createTitle') }}</h2>
+          </div>
+        </header>
+        <p class="dialog-message">{{ t('dialog.playlist.createMessage') }}</p>
+        <input v-model="createPlaylistValue" class="dialog-input" type="text"
+          :placeholder="t('dialog.playlist.createPlaceholder')" :disabled="isCreatingPlaylist" autofocus />
+        <footer class="dialog-actions">
+          <button type="button" class="dialog-button secondary" :disabled="isCreatingPlaylist"
+            @click="isCreatePlaylistDialogOpen = false">
+            {{ t('dialog.actions.cancel') }}
+          </button>
+          <button type="submit" class="dialog-button primary"
+            :disabled="isCreatingPlaylist || !createPlaylistValue.trim()">
+            {{ t('dialog.playlist.createConfirm') }}
+          </button>
+        </footer>
+      </form>
+    </Dialog>
+
     <Notification ref="notificationRef" class="app-notification-layer" />
   </div>
 </template>
@@ -1633,4 +1717,6 @@ body {
 .app-notification-layer :deep(.notification) {
   pointer-events: auto;
 }
+
+
 </style>
