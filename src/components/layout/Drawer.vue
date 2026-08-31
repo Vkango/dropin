@@ -1,20 +1,21 @@
 <template>
     <Teleport to="body">
         <AnimatePresence>
-            <div v-if="open" class="drawer-layer" :class="`drawer-layer-${resolvedPlacement}`" role="presentation"
-                @click.self="requestClose">
+            <div v-if="open" class="drawer-layer" :class="`drawer-layer-${resolvedPlacement}`" :style="{ zIndex }"
+                role="presentation" @click.self="requestClose">
                 <MotionDiv class="drawer-backdrop" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
                     :exit="{ opacity: 0 }" :transition="backdropTransition" aria-hidden="true" @click="requestClose" />
 
                 <MotionDiv ref="panelRef" class="drawer-panel" :class="`drawer-panel-${resolvedPlacement}`"
-                    :initial="panelMotion.initial" :animate="panelMotion.animate" :exit="panelMotion.exit"
-                    :transition="panelTransition" role="dialog" aria-modal="true" :aria-labelledby="titleId"
-                    tabindex="-1" @click.stop>
-                    <header class="drawer-header">
+                    :style="panelStyle" :initial="panelMotion.initial" :animate="panelMotion.animate"
+                    :exit="panelMotion.exit" :transition="panelTransition" role="dialog" aria-modal="true"
+                    :aria-labelledby="titleId" tabindex="-1" @click.stop>
+                    <header v-if="showHeader" class="drawer-header">
                         <MotionButton ref="closeButtonRef" class="drawer-close-button" type="button"
                             :while-hover="buttonHover" :while-press="buttonPress" :transition="microTransition"
                             :aria-label="closeLabel || t('drawer.close')" @click="requestClose">
-                            <ArrowLeft :size="20" :stroke-width="1.8" />
+                            <ArrowLeft v-if="back" :size="20" :stroke-width="1.8" />
+                            <X v-else :size="20" :stroke-width="1.8" />
                         </MotionButton>
                         <h2 :id="titleId" class="drawer-title">{{ title || t('drawer.defaultTitle') }}</h2>
                         <div class="drawer-header-actions">
@@ -34,7 +35,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from 'vue'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
-import { ArrowLeft } from '@lucide/vue'
+import { ArrowLeft, X } from '@lucide/vue'
 import { APPLE_SPRING, INSTANT_MOTION, MICRO_SPRING, SOFT_SPRING } from '@/utils/motion.js'
 import { useI18n } from '@/i18n/index.js'
 
@@ -57,6 +58,22 @@ const props = defineProps({
     closeLabel: {
         type: String,
         default: ''
+    },
+    width: {
+        type: String,
+        default: ''
+    },
+    zIndex: {
+        type: Number,
+        default: 1200
+    },
+    back: {
+        type: Boolean,
+        default: false
+    },
+    showHeader: {
+        type: Boolean,
+        default: true
     }
 })
 
@@ -80,6 +97,9 @@ const backdropTransition = computed(() => reducedMotion.value ? INSTANT_MOTION :
 const buttonHover = { scale: 1.08, color: 'rgb(var(--primary-color))' }
 const buttonPress = { scale: 0.92 }
 const resolvedPlacement = computed(() => props.placement === 'right' && isCompactViewport.value ? 'bottom' : props.placement)
+const panelStyle = computed(() => props.width
+    ? { width: `min(${props.width}, 86vw)`, maxWidth: '86vw' }
+    : undefined)
 
 const panelMotion = computed(() => resolvedPlacement.value === 'bottom'
     ? {

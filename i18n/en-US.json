@@ -833,7 +833,19 @@
   "albumCard": {
     "typeMusicAlbum": "Music album",
     "tracksCount": "{count} tracks",
-    "playAll": "Play all"
+    "playAll": "Play all",
+    "artistDetail": "View artist"
+  },
+  "artistCard": {
+    "typeArtist": "Artist",
+    "albumsCount": "{count} albums",
+    "tracksCount": "{count} tracks",
+    "playAll": "Play all",
+    "albums": "Albums",
+    "tracks": "Tracks",
+    "emptyAlbums": "No albums",
+    "emptyTracks": "No tracks",
+    "backToArtist": "Back to artist"
   },
   "combobox": {
     "open": "Open options",
@@ -851,5 +863,10 @@
     "jumpTo": "Jump to {letter}",
     "songInfo": "Song information",
     "lyricsAndPlaylist": "Lyrics and playlist"
+  },
+  "artistDrawer": {
+    "albumsTab": "Albums",
+    "tracksTab": "Tracks",
+    "albumColumn": "Album"
   }
 }

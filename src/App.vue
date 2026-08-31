@@ -16,6 +16,8 @@ import TitleBar from './components/layout/TitleBar.vue'
 import Drawer from './components/layout/Drawer.vue'
 import Dialog from './components/ui/Dialog.vue'
 import Playlist from './components/player/Playlist.vue'
+import ArtistDrawer from './components/library/ArtistDrawer.vue'
+import AlbumDetailCard from './components/library/AlbumDetailCard.vue'
 import Notification from './components/notification/Notification.vue'
 import LoadingWithTip from './components/notification/LoadingWithTip.vue'
 import Tip from './components/notification/Tip.vue'
@@ -828,6 +830,139 @@ const handleArtistFollow = (artist) => {
   console.log(artist.isFollowing ? '关注' : '取消关注', artist.name)
 }
 
+// 艺术家抽屉：从右侧滑出，展示专辑与歌曲；点专辑再叠出 AlbumDetailCard
+const ARTIST_DRAWER_Z = 1200
+const ALBUM_OVER_DRAWER_Z = 1210
+const isArtistDrawerOpen = ref(false)
+const artistDrawerAlbumOpen = ref(false)
+const artistDrawerArtist = ref(null)
+const artistDrawerAlbum = ref(null)
+const artistDrawerAlbumDetail = ref(null)
+let artistDrawerReopenTimer = null
+let artistDrawerCloseTimer = null
+
+const buildArtistDetail = (artist) => {
+  const songs = (musicLibrary.songs || []).filter((song) => song.artist === artist.name)
+  const albumTitles = [...new Set(songs.map((song) => song.album).filter(Boolean))]
+  const albums = albumTitles.map((title) => {
+    const albumSongs = songs.filter((song) => song.album === title)
+    return {
+      id: `artist-album-${artist.id}-${title}`,
+      title,
+      artist: artist.name,
+      cover: albumSongs[0]?.cover || artist.cover,
+      year: albumSongs[0]?.year,
+      trackCount: albumSongs.length,
+      tracks: albumSongs.map((song, index) => ({
+        id: song.id,
+        number: index + 1,
+        title: song.title,
+        artist: song.artist,
+        duration: song.duration,
+        url: song.url
+      }))
+    }
+  })
+  const hasCover = (value) => typeof value === 'string' && value.startsWith('data:')
+  const heroCover = hasCover(artist.cover)
+    ? artist.cover
+    : (albums.find((album) => hasCover(album.cover))?.cover
+      || songs.find((song) => hasCover(song.cover))?.cover
+      || artist.cover)
+  return {
+    ...artist,
+    cover: heroCover,
+    genres: artist.genres || [],
+    albums,
+    tracks: songs.map((song, index) => ({
+      id: song.id,
+      number: index + 1,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      cover: song.cover || artist.cover,
+      duration: song.duration,
+      url: song.url
+    }))
+  }
+}
+
+const openArtistDrawer = (artist) => {
+  if (!artist) return
+  if (artistDrawerCloseTimer) clearTimeout(artistDrawerCloseTimer)
+  artistDrawerArtist.value = artist
+  artistDrawerAlbumOpen.value = false
+  artistDrawerAlbum.value = null
+  artistDrawerAlbumDetail.value = null
+  if (artistDrawerReopenTimer) clearTimeout(artistDrawerReopenTimer)
+  // 关闭退出动画期间延迟重开，避免 AnimatePresence 同 key 动画冲突
+  if (isArtistDrawerOpen.value) {
+    isArtistDrawerOpen.value = false
+    artistDrawerReopenTimer = setTimeout(() => {
+      isArtistDrawerOpen.value = true
+    }, 320)
+    return
+  }
+  isArtistDrawerOpen.value = true
+}
+
+const closeArtistDrawer = () => {
+  if (artistDrawerReopenTimer) clearTimeout(artistDrawerReopenTimer)
+  // 延迟收起，让叠加在抽屉上的 AlbumDetailCard 先播完退出动画
+  if (artistDrawerCloseTimer) clearTimeout(artistDrawerCloseTimer)
+  artistDrawerCloseTimer = setTimeout(() => {
+    isArtistDrawerOpen.value = false
+    artistDrawerAlbumOpen.value = false
+    artistDrawerAlbum.value = null
+    artistDrawerAlbumDetail.value = null
+  }, 380)
+}
+
+const handleArtistDrawerAlbumSelect = (album) => {
+  const tracks = (musicLibrary.songs || []).filter((song) => song.album === album.title)
+  artistDrawerAlbum.value = album
+  artistDrawerAlbumDetail.value = {
+    ...album,
+    coverUrl: album.cover,
+    type: t('albumCard.typeMusicAlbum'),
+    tracks: tracks.map((song, index) => ({
+      id: song.id,
+      number: index + 1,
+      title: song.title,
+      artist: song.artist,
+      duration: song.duration,
+      url: song.url
+    }))
+  }
+  artistDrawerAlbumOpen.value = true
+}
+
+const closeArtistDrawerAlbum = () => {
+  artistDrawerAlbumOpen.value = false
+  artistDrawerAlbum.value = null
+  artistDrawerAlbumDetail.value = null
+}
+
+const handleArtistDrawerPlayAll = () => {
+  if (artistDrawerArtist.value) handleArtistPlay(artistDrawerArtist.value)
+}
+
+const handleArtistDrawerAlbumPlayAll = () => {
+  if (artistDrawerAlbum.value) handleAlbumPlay(artistDrawerAlbum.value)
+}
+
+const resolveSong = (track) => (musicLibrary.songs || []).find((song) => song.id === track.id || song.title === track.title)
+
+const handleArtistDrawerTrackPlay = (track) => {
+  const song = resolveSong(track)
+  if (song) handleSongPlay(song)
+}
+
+const handleArtistDrawerAlbumTrackPlay = (track) => {
+  const song = resolveSong(track)
+  if (song) handleSongPlay(song)
+}
+
 const handlePlaylistPlay = (playlist) => {
   const tracks = libraryStore.tracks.value.filter((track) => track.album === playlist.name)
   if (tracks.length) {
@@ -1374,7 +1509,8 @@ onBeforeUnmount(() => {
         <KeepAlive :max="5">
           <component :is="currentPageComponent" :key="currentPage" v-bind="getPageProps()"
             @song-select="handleSongSelect" @song-play="handleSongPlay" @album-select="handleAlbumSelect"
-            @album-play="handleAlbumPlay" @artist-select="handleArtistSelect" @artist-play="handleArtistPlay"
+            @album-play="handleAlbumPlay" @artist-select="openArtistDrawer" @artist-play="handleArtistPlay"
+            @artist-jump="openArtistDrawer"
             @artist-follow="handleArtistFollow" @playlist-play="handlePlaylistPlay"
             @playlist-select="handlePlaylistPageSelect" @playlist-song-play="handlePlaylistSongPlay"
             @user-playlist-play="handleUserPlaylistPlay" @navigate="handleNavigate"
@@ -1405,6 +1541,19 @@ onBeforeUnmount(() => {
       <Playlist :songs="effectiveQueue" :current-song="currentSong" :is-playing="isPlaying"
         @song-select="handleQueueSongSelect" />
     </Drawer>
+
+    <!-- 艺术家抽屉：右侧滑出，点专辑再叠出专辑详情卡（z 叠于抽屉之上） -->
+    <Drawer :open="isArtistDrawerOpen" :title="artistDrawerArtist?.name || t('artists.title')" placement="right"
+      width="460px" :z-index="ARTIST_DRAWER_Z" :show-header="false" :close-label="t('drawer.close')"
+      @close="closeArtistDrawer">
+      <ArtistDrawer v-if="artistDrawerArtist" :artist="buildArtistDetail(artistDrawerArtist)"
+        @close="closeArtistDrawer" @play-all="handleArtistDrawerPlayAll"
+        @album-select="handleArtistDrawerAlbumSelect" @track-play="handleArtistDrawerTrackPlay" />
+    </Drawer>
+    <AlbumDetailCard :visible="artistDrawerAlbumOpen" :album="artistDrawerAlbumDetail"
+      :z-index="ALBUM_OVER_DRAWER_Z" :show-backdrop="false" @close="closeArtistDrawerAlbum"
+      @play-all="handleArtistDrawerAlbumPlayAll" @track-play="handleArtistDrawerAlbumTrackPlay"
+      @artist-jump="closeArtistDrawerAlbum" />
 
     <Dialog v-model="isCreateTagDialogOpen" :aria-labelledby="'create-tag-dialog-title'">
       <form class="dialog-content" @submit.prevent="submitCreateTag">

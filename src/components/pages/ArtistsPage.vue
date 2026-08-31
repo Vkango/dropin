@@ -52,7 +52,8 @@
                                 @click="handleGroupLabelClick(group.initial)" />
                             <div class="artists-grid">
                                 <MotionDiv v-for="artist in group.items" :key="artist.id" class="artist-card"
-                                    initial="rest" while-hover="hover" :variants="cardVariants">
+                                    initial="rest" while-hover="hover" :variants="cardVariants"
+                                    @click="$emit('artist-select', artist)">
                                     <div class="artist-avatar">
                                         <MotionTransition variant="cover" mode="out-in">
                                             <MotionImg :key="artist.avatar || artist.cover"
@@ -68,7 +69,7 @@
                                         </MotionDiv>
                                     </div>
                                     <div class="artist-info">
-                                        <h3 class="artist-name">{{ artist.name }}</h3>
+                                        <h3 class="artist-name" @click="$emit('artist-select', artist)">{{ artist.name }}</h3>
                                         <p class="artist-meta">{{ t('artists.albumsCount', { count: artist.albumCount })
                                             }} • {{
                                                 t('artists.songsCount', { count: artist.songCount }) }}</p>
@@ -97,7 +98,7 @@
                             <GroupLabel v-if="group.initial" :label="group.initial"
                                 @click="handleGroupLabelClick(group.initial)" />
                             <MotionDiv v-for="artist in group.items" :key="artist.id" class="artist-row" initial="rest"
-                                while-hover="hover" :variants="rowVariants">
+                                while-hover="hover" :variants="rowVariants" @click="$emit('artist-select', artist)">
                                 <div class="row-avatar">
                                     <img :src="artist.avatar || artist.cover" :alt="artist.name" />
                                 </div>

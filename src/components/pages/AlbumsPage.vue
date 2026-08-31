@@ -124,8 +124,9 @@
             <AlphabetFilter :active-initial="activeInitial" :top-offset="alphabetTopOffset"
                 :available-initials="availableInitials" @select="handleAlphabetSelect" />
         </div>
-        <AlbumDetailCard :visible="albumDetailVisible" :album="currentAlbumDetail" @close="hideAlbumDetail"
-            @play-all="handlePlayAll" @track-select="handleTrackSelect" @track-play="handleTrackPlay" />
+        <AlbumDetailCard :visible="albumDetailVisible" :album="currentAlbumDetail" :z-index="120"
+            @close="hideAlbumDetail" @play-all="handlePlayAll" @track-select="handleTrackSelect"
+            @track-play="handleTrackPlay" @artist-jump="handleArtistJump" />
     </PageLayout>
 </template>
 
@@ -158,7 +159,7 @@ const props = defineProps({
     }
 })
 const currentSong = inject('currentSong')
-const emit = defineEmits(['album-select', 'album-play'])
+const emit = defineEmits(['album-select', 'album-play', 'song-select', 'song-play', 'artist-jump'])
 
 const MotionDiv = motion.div
 const MotionImg = motion.img
@@ -283,6 +284,10 @@ const handleTrackSelect = (track) => {
 const handleTrackPlay = (track) => {
     const song = resolveTrack(track)
     if (song) emit('song-play', song)
+}
+
+const handleArtistJump = (artistName) => {
+    if (artistName) emit('artist-jump', { name: artistName })
 }
 </script>
 

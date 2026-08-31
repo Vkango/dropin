@@ -833,7 +833,19 @@
   "albumCard": {
     "typeMusicAlbum": "音乐专辑",
     "tracksCount": "{count} 首歌",
-    "playAll": "全部播放"
+    "playAll": "全部播放",
+    "artistDetail": "查看艺术家"
+  },
+  "artistCard": {
+    "typeArtist": "艺术家",
+    "albumsCount": "{count} 张专辑",
+    "tracksCount": "{count} 首歌",
+    "playAll": "全部播放",
+    "albums": "专辑",
+    "tracks": "歌曲",
+    "emptyAlbums": "暂无专辑",
+    "emptyTracks": "暂无歌曲",
+    "backToArtist": "返回艺术家"
   },
   "combobox": {
     "open": "打开选项",
@@ -851,5 +863,10 @@
     "jumpTo": "跳转到 {letter}",
     "songInfo": "歌曲信息",
     "lyricsAndPlaylist": "歌词和播放列表"
+  },
+  "artistDrawer": {
+    "albumsTab": "专辑",
+    "tracksTab": "歌曲",
+    "albumColumn": "专辑"
   }
 }

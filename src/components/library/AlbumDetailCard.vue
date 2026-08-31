@@ -1,6 +1,7 @@
 <template>
     <MotionTransition variant="modal" appear>
-        <div v-if="visible" class="modal-overlay" @click="handleOverlayClick">
+        <div v-if="visible" class="modal-overlay" :class="{ 'overlay-transparent': !showBackdrop }"
+            :style="{ zIndex }" @click="handleOverlayClick">
             <MotionTransition variant="card" appear>
                 <div v-if="visible" class="album-card" @click.stop>
                     <MotionButton class="close-button" :while-hover="{ scale: 1.08 }" :while-press="{ scale: 0.94 }"
@@ -18,10 +19,13 @@
                             <div class="album-type">{{ album.type || t('albumCard.typeMusicAlbum') }} · {{
                                 t('albumCard.tracksCount', { count: album.tracks.length }) }}</div>
                             <h2 class="album-title">{{ album.title }}</h2>
-                            <div class="album-artist">
+                            <MotionButton class="album-artist" :while-hover="{ y: -1 }" :while-press="{ scale: 0.97 }"
+                                :transition="microTransition" :aria-label="t('albumCard.artistDetail')"
+                                @click="$emit('artist-jump', album.artist)">
                                 <Icon src="/assets/user.svg" size="sm" />
                                 <span>{{ album.artist }}</span>
-                            </div>
+                                <ArrowRight :size="14" :stroke-width="2" class="artist-arrow" />
+                            </MotionButton>
                         </div>
 
                         <!-- 操作按钮 -->
@@ -37,7 +41,7 @@
                         <div class="track-list">
                             <MotionDiv v-for="(track, index) in album.tracks" :key="track.id" class="track-item"
                                 :while-hover="{ backgroundColor: 'rgba(var(--primary-color), 0.08)' }"
-                                :transition="microTransition" @click="$emit('track-play', track)">
+                                :transition="microTransition" @click="handleTrackPlay(track)">
                                 <div class="track-number">{{ index + 1 }}</div>
                                 <div class="track-info">
                                     <div class="track-title">{{ track.title }}</div>
@@ -58,6 +62,7 @@ import { defineProps, defineEmits } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import MotionTransition from '@/components/ui/MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
+import { ArrowRight } from '@lucide/vue'
 import { computed } from 'vue'
 import { INSTANT_MOTION, MICRO_SPRING } from '@/utils/motion.js'
 import { useI18n } from '@/i18n/index.js'
@@ -84,17 +89,34 @@ const props = defineProps({
             songCount: 0,
             tracks: []
         })
+    },
+    zIndex: {
+        type: Number,
+        default: 100
+    },
+    showBackdrop: {
+        type: Boolean,
+        default: true
     }
 })
 
-const emit = defineEmits(['close', 'play-all', 'track-select', 'track-play'])
+const emit = defineEmits(['close', 'play-all', 'track-select', 'track-play', 'artist-jump'])
 
 const handleOverlayClick = () => {
     emit('close')
 }
+
+const handleTrackPlay = (track) => {
+    emit('track-play', track)
+}
 </script>
 
 <style scoped>
+/* 叠在已暗下层之上时，遮罩保持透明，避免越叠越黑 */
+.modal-overlay.overlay-transparent {
+    background: transparent;
+}
+
 /* 背景遮罩 - 简单的淡入淡出，无3D效果 */
 .modal-overlay {
     position: fixed;
@@ -194,11 +216,26 @@ const handleOverlayClick = () => {
 }
 
 .album-artist {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
+    align-self: flex-start;
+    background: transparent;
+    border: none;
+    padding: 4px 8px;
+    border-radius: 8px;
     color: rgba(var(--text-color), 0.8);
     font-size: 14px;
+    cursor: pointer;
+}
+
+.album-artist:hover {
+    background: rgba(var(--primary-color), 0.08);
+    color: rgb(var(--text-color));
+}
+
+.artist-arrow {
+    color: rgba(var(--text-color), 0.5);
 }
 
 .action-buttons {

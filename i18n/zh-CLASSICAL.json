@@ -832,7 +832,19 @@
   "albumCard": {
     "typeMusicAlbum": "音律曲谱",
     "tracksCount": "共{count}曲",
-    "playAll": "尽数奏之"
+    "playAll": "尽数奏之",
+    "artistDetail": "观其乐师"
+  },
+  "artistCard": {
+    "typeArtist": "乐师",
+    "albumsCount": "共{count}部曲谱",
+    "tracksCount": "共{count}曲",
+    "playAll": "尽数奏之",
+    "albums": "曲谱",
+    "tracks": "曲目",
+    "emptyAlbums": "尚无曲谱",
+    "emptyTracks": "尚无曲目",
+    "backToArtist": "返归乐师"
   },
   "combobox": {
     "open": "展开选项",
@@ -842,5 +854,10 @@
   "drawer": {
     "defaultTitle": "暗屉",
     "close": "合拢"
+  },
+  "artistDrawer": {
+    "albumsTab": "曲谱",
+    "tracksTab": "曲目",
+    "albumColumn": "曲谱"
   }
 }
