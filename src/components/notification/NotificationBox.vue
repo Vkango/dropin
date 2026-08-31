@@ -56,7 +56,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import RippleButton from '#components/common/RippleButton.vue';
+import RippleButton from '@/components/ui/RippleButton.vue';
 import { getTimeInterval } from '@/utils/helper';
 import { sanitize } from '@/utils/sanitizer';
 

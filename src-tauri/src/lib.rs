@@ -1,13 +1,14 @@
-mod bass_bridge;
-mod i18n;
-mod lyrics;
-mod media_library;
-mod paths;
-mod plugin_manager;
-mod plugin_manifest;
-mod plugin_permissions;
-mod settings;
-mod smtc_bridge;
+mod core;
+mod media;
+mod plugin;
+
+use core::bass_bridge;
+use core::i18n;
+use core::paths;
+use core::settings;
+use core::smtc_bridge;
+use media::media_library;
+use plugin::manager as plugin_manager;
 
 use serde_json::json;
 use std::{
