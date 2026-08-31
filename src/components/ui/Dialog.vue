@@ -1,6 +1,6 @@
 <template>
   <Teleport to="body">
-    <AnimatePresence :initial="false">
+    <AnimatePresence>
       <div v-if="modelValue" class="dialog-layer" role="presentation" @click.self="requestClose('backdrop')">
         <MotionDiv class="dialog-backdrop" aria-hidden="true" :initial="{ opacity: 0 }" :animate="{ opacity: 1 }"
           :exit="{ opacity: 0 }" :transition="backdropTransition" @click="requestClose('backdrop')" />
