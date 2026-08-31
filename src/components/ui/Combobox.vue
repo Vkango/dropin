@@ -1,6 +1,22 @@
 <template>
-  <div ref="rootRef" class="combobox" :class="{ 'is-open': isOpen, 'is-disabled': disabled }">
-    <div class="combobox-control">
+  <div ref="rootRef" class="combobox" :class="{
+    'is-open': isOpen,
+    'is-disabled': disabled,
+    'is-readonly': readable
+  }">
+    <button v-if="readable" ref="triggerRef" class="combobox-readonly-trigger" type="button" :id="inputId"
+      :disabled="disabled" role="combobox" aria-autocomplete="list" :aria-expanded="isOpen" :aria-controls="listId"
+      :aria-activedescendant="activeDescendantId" :aria-valuetext="displayLabel || undefined" @click="toggleDropdown"
+      @keydown="handleKeydown">
+      <span v-if="icon" class="combobox-label-icon" aria-hidden="true">
+        <slot name="icon" :option="selectedOption?.option">
+          <Icon :src="icon" size="sm" />
+        </slot>
+      </span>
+      <span class="combobox-label-text">{{ displayLabel }}</span>
+      <span class="combobox-chevron" aria-hidden="true"></span>
+    </button>
+    <div v-else class="combobox-control">
       <div v-if="!isOpen && selectedOption" class="combobox-selected-value" aria-hidden="true">
         <slot name="selected" :option="selectedOption.option" :value="selectedOption.value"
           :label="selectedOption.label" :selected="true" :active="false" :disabled="selectedOption.disabled">
@@ -9,9 +25,9 @@
       </div>
       <input ref="inputRef" class="combobox-input" :id="inputId" :value="isOpen ? searchQuery : selectedLabel"
         :placeholder="placeholder || t('generic.selectPlaceholder')" :disabled="disabled" role="combobox"
-        aria-autocomplete="list" :aria-expanded="isOpen"
-        :aria-controls="listId" :aria-activedescendant="activeDescendantId" :aria-valuetext="selectedLabel || undefined"
-        autocomplete="off" @focus="openDropdown" @input="handleInput" @keydown="handleKeydown" />
+        aria-autocomplete="list" :aria-expanded="isOpen" :aria-controls="listId"
+        :aria-activedescendant="activeDescendantId" :aria-valuetext="selectedLabel || undefined" autocomplete="off"
+        @focus="openDropdown" @input="handleInput" @keydown="handleKeydown" />
       <button class="combobox-trigger" type="button" tabindex="-1" :disabled="disabled"
         :aria-label="isOpen ? t('combobox.close') : t('combobox.open')" @mousedown.prevent @click="toggleDropdown">
         <span class="combobox-chevron" aria-hidden="true"></span>
@@ -50,6 +66,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import { APPLE_SPRING, INSTANT_MOTION } from '@/utils/motion.js'
 import { useI18n } from '@/i18n/index.js'
+import Icon from '@/components/ui/Icon.vue'
 
 const { t } = useI18n()
 let nextComboboxId = 0
@@ -81,12 +98,25 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  readable: {
+    type: Boolean,
+    default: false
+  },
+  label: {
+    type: String,
+    default: ''
+  },
+  icon: {
+    type: String,
+    default: ''
   }
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
 const rootRef = ref(null)
 const inputRef = ref(null)
+const triggerRef = ref(null)
 const isOpen = ref(false)
 const searchQuery = ref('')
 const activeIndex = ref(-1)
@@ -129,6 +159,7 @@ const normalizedOptions = computed(() => props.options.map((option, index) => {
 
 const selectedOption = computed(() => normalizedOptions.value.find((item) => isEqual(item.value, props.modelValue)))
 const selectedLabel = computed(() => selectedOption.value?.label || '')
+const displayLabel = computed(() => props.readable ? (props.label || selectedLabel.value) : selectedLabel.value)
 const filteredOptions = computed(() => {
   const query = searchQuery.value.trim().toLocaleLowerCase()
   if (!query) return normalizedOptions.value
@@ -159,25 +190,38 @@ const openDropdown = async () => {
       ? selectedIndex
       : firstEnabledIndex()
     await nextTick()
-    inputRef.value?.select()
+    if (props.readable) {
+      triggerRef.value?.focus()
+    } else {
+      inputRef.value?.select()
+    }
   }
 }
 
-const closeDropdown = () => {
+const closeDropdown = (restoreFocus = true) => {
   if (!isOpen.value) return
   isOpen.value = false
   searchQuery.value = ''
   activeIndex.value = -1
+  if (restoreFocus) {
+    nextTick(() => {
+      if (props.readable) {
+        if (document.activeElement === triggerRef.value || triggerRef.value?.contains(document.activeElement)) {
+          triggerRef.value?.blur()
+        }
+      } else {
+        inputRef.value?.focus()
+      }
+    })
+  }
 }
 
 const toggleDropdown = async () => {
   if (props.disabled) return
   if (isOpen.value) {
-    closeDropdown()
-    inputRef.value?.focus()
+    closeDropdown(false)
   } else {
     await openDropdown()
-    inputRef.value?.focus()
   }
 }
 
@@ -192,7 +236,6 @@ const selectOption = (item) => {
   emit('update:modelValue', item.value)
   emit('change', item.value, item.option)
   closeDropdown()
-  nextTick(() => inputRef.value?.focus())
 }
 
 const moveActive = (direction) => {
@@ -218,6 +261,30 @@ const handleKeydown = async (event) => {
     if (isOpen.value) {
       event.preventDefault()
       closeDropdown()
+    }
+    return
+  }
+
+  if (props.readable) {
+    if (!isOpen.value && (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault()
+      await openDropdown()
+      return
+    }
+    if (!isOpen.value) return
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveActive(event.key === 'ArrowDown' ? 1 : -1)
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault()
+      const items = filteredOptions.value
+      const index = event.key === 'Home' ? firstEnabledIndex(items) : items.findLastIndex((item) => !item.disabled)
+      if (index >= 0) activeIndex.value = index
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      const item = filteredOptions.value[activeIndex.value]
+      if (item) selectOption(item)
     }
     return
   }
@@ -266,7 +333,6 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
 <style scoped>
 .combobox {
   position: relative;
-  min-width: 160px;
   color: rgb(var(--text-color));
   font-size: 14px;
 }
@@ -346,12 +412,51 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
   transform: translateY(2px) rotate(225deg);
 }
 
+/* 不可编辑下拉式：无边框、无内边距，仅图标 + 标题 + 箭头 */
+.combobox-readonly-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(var(--text-color), 0.75);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.combobox-readonly-trigger:hover,
+.combobox.is-open .combobox-readonly-trigger {
+  color: rgb(var(--text-color));
+}
+
+.combobox-readonly-trigger:focus-visible {
+  outline: none;
+}
+
+.combobox-label-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: inherit;
+  opacity: 0.8;
+}
+
+.combobox-label-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .combobox-menu {
   position: absolute;
   z-index: 30;
   top: calc(100% + 6px);
   right: 0;
   left: 0;
+  min-width: 160px;
   overflow: hidden;
   border: 1px solid rgba(var(--outline-color), 0.22);
   border-radius: 10px;
@@ -364,6 +469,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', handleDocument
   max-height: 280px;
   overflow-y: auto;
   padding: 4px;
+  min-width: 160px;
 }
 
 .combobox-option {

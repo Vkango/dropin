@@ -67,7 +67,7 @@
                   <Search :size="15" :stroke-width="1.8" />
                   <input v-model="query" type="search" :placeholder="t('playlistsPage.searchPlaceholder')" />
                 </label>
-                <MotionButton type="button" class="select-all-button" :disabled="!filteredSourceSongs.length"
+                <MotionButton type="button" class="select-all-button" :disabled="!staticVisibleSongs.length"
                   :while-hover="{ y: -1 }" :while-press="{ scale: 0.97 }" :transition="microTransition"
                   @click="toggleAllStaticSongs">
                   {{ allVisibleStaticSongsSelected ? t('playlistsPage.clearAll') : t('playlistsPage.selectAll') }}
@@ -75,30 +75,41 @@
               </div>
             </template>
 
-            <section class="picker-content">
+            <div ref="staticListRef" class="picker-content">
               <template v-if="mode === 'static'">
-                <div v-if="isLoadingSource" class="picker-empty">
-                  <p>{{ t('playlistsPage.loadingSongs') }}</p>
+                <div ref="staticScrollRef" class="song-list-container">
+                  <div v-if="isLoadingSource" class="picker-empty">
+                    <p>{{ t('playlistsPage.loadingSongs') }}</p>
+                  </div>
+                  <div v-else-if="staticVisibleSongs.length" class="picker-list">
+                    <template v-for="group in groupedStaticSongs" :key="group.initial">
+                      <GroupLabel :label="group.initial" @click="handleStaticGroupLabelClick(group.initial)" />
+                      <label v-for="song in group.items" :key="song.id" class="picker-row"
+                        :class="{ selected: staticSelectedIds.includes(song.id) }">
+                        <span class="picker-check">
+                          <input v-model="staticSelectedIds" type="checkbox" :value="song.id" />
+                          <span aria-hidden="true"></span>
+                        </span>
+                        <div class="col-info">
+                          <img :src="song.cover" :alt="song.title" class="song-cover" />
+                          <div class="song-details">
+                            <div class="song-title">{{ song.title }}</div>
+                            <div class="song-artist">{{ song.artist || t('player.unknownArtist') }}</div>
+                          </div>
+                        </div>
+                        <div class="col-album">{{ song.album }}</div>
+                        <div class="col-duration">{{ song.duration }}</div>
+                      </label>
+                    </template>
+                  </div>
+                  <div v-else class="picker-empty">
+                    <h3>{{ query ? t('playlistsPage.emptyAvailable') : t('playlistsPage.noSourceSongs') }}</h3>
+                    <p v-if="query">{{ t('playlistsPage.clearSearch') }}</p>
+                  </div>
                 </div>
-                <div v-else-if="filteredSourceSongs.length" class="picker-list">
-                  <label v-for="song in filteredSourceSongs" :key="song.id" class="picker-row"
-                    :class="{ selected: staticSelectedIds.includes(song.id) }">
-                    <span class="picker-check">
-                      <input v-model="staticSelectedIds" type="checkbox" :value="song.id" />
-                      <span aria-hidden="true"></span>
-                    </span>
-                    <img :src="song.cover" :alt="song.title" class="song-cover" />
-                    <span class="song-copy">
-                      <strong>{{ song.title }}</strong>
-                      <small>{{ song.artist || t('player.unknownArtist') }}<span v-if="song.album"> · {{ song.album
-                      }}</span></small>
-                    </span>
-                  </label>
-                </div>
-                <div v-else class="picker-empty">
-                  <h3>{{ query ? t('playlistsPage.emptyAvailable') : t('playlistsPage.noSourceSongs') }}</h3>
-                  <p v-if="query">{{ t('playlistsPage.clearSearch') }}</p>
-                </div>
+                <AlphabetFilter v-if="staticAvailableInitials.length" :active-initial="staticActiveInitial"
+                  :top-offset="staticAlphabetTopOffset" :available-initials="staticAvailableInitials"
+                  @select="handleStaticAlphabetSelect" />
               </template>
 
               <template v-else>
@@ -158,7 +169,7 @@
 
                 </div>
               </template>
-            </section>
+            </div>
           </div>
 
           <div class="fab-actions">
@@ -196,6 +207,10 @@ import {
 } from '@/utils/playlistRule.js'
 import { InfoIcon } from '@lucide/vue'
 import { RefreshCcwIcon } from '@lucide/vue'
+import AlphabetFilter from '@/components/ui/AlphabetFilter.vue'
+import GroupLabel from '@/components/library/GroupLabel.vue'
+import { getAvailableInitials, groupByInitial } from '@/utils/alphabet.js'
+import { useAlphabetNavigation } from '@/utils/useAlphabetNavigation.js'
 
 const props = defineProps({
   open: {
@@ -304,7 +319,7 @@ const sourceSongMap = computed(() => {
   for (const song of sourceSongs.value) map.set(song.id, song)
   return map
 })
-const filteredSourceSongs = computed(() => {
+const staticVisibleSongs = computed(() => {
   const value = query.value.trim().toLowerCase()
   const songs = sourceSongs.value.filter((song) => !value
     || [song.title, song.artist, song.album]
@@ -321,9 +336,23 @@ const filteredSourceSongs = computed(() => {
     .filter((song) => (seen.has(song.id) ? false : (seen.add(song.id), true)))
     .slice(0, 100)
 })
+const staticGroupedSongs = computed(() => groupByInitial(
+  staticVisibleSongs.value,
+  (song) => song.title
+))
+const groupedStaticSongs = computed(() => staticGroupedSongs.value)
+const staticAvailableInitials = computed(() => getAvailableInitials(staticVisibleSongs.value, (song) => song.title))
+const staticListRef = ref(null)
+const staticScrollRef = ref(null)
+const {
+  activeInitial: staticActiveInitial,
+  alphabetTopOffset: staticAlphabetTopOffset,
+  handleAlphabetSelect: handleStaticAlphabetSelect,
+  handleGroupLabelClick: handleStaticGroupLabelClick
+} = useAlphabetNavigation(staticListRef, staticAvailableInitials, staticScrollRef)
 const allVisibleStaticSongsSelected = computed(() =>
-  filteredSourceSongs.value.length > 0
-  && filteredSourceSongs.value.every((song) => staticSelectedIds.value.includes(song.id))
+  staticVisibleSongs.value.length > 0
+  && staticVisibleSongs.value.every((song) => staticSelectedIds.value.includes(song.id))
 )
 const ruleSourceKeys = computed(() => rule.value.steps
   .filter((step) => step.type === 'source')
@@ -471,7 +500,7 @@ const updateRandomCount = (index, event) => {
 }
 
 const toggleAllStaticSongs = () => {
-  const visibleIds = filteredSourceSongs.value.map((song) => song.id)
+  const visibleIds = staticVisibleSongs.value.map((song) => song.id)
   if (allVisibleStaticSongsSelected.value) {
     staticSelectedIds.value = staticSelectedIds.value.filter((id) => !visibleIds.includes(id))
   } else {
@@ -655,7 +684,6 @@ onBeforeUnmount(() => {
   padding: 4px 6px;
   color: rgba(var(--text-color), 0.5);
   font-size: 11px;
-  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -684,12 +712,10 @@ onBeforeUnmount(() => {
 .source-row:hover,
 .source-row.active,
 .source-row.selected {
-  border-color: rgba(var(--primary-color), 0.12);
   background: var(--picker-raised);
 }
 
 .source-row.highlighted {
-  border-color: rgba(var(--primary-color), 0.4);
   box-shadow: inset 0 0 0 1px rgba(var(--primary-color), 0.22);
 }
 
@@ -803,12 +829,31 @@ onBeforeUnmount(() => {
 
 .picker-content {
   display: grid;
-  align-content: start;
+  align-items: flex-start;
   gap: 10px;
-  grid-template-rows: auto auto 1fr;
+  grid-template-columns: 1fr auto;
   min-width: 0;
   min-height: 0;
   height: 100%;
+}
+
+.song-list-container {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.song-list-container:has(.picker-empty) {
+  align-content: center;
+  overflow: visible;
+}
+
+.song-list-container:has(> .rule-section) {
+  overflow: visible;
+  height: auto;
 }
 
 .fab-actions {
@@ -932,9 +977,7 @@ onBeforeUnmount(() => {
 .picker-list {
   display: grid;
   gap: 2px;
-  min-height: 0;
-  height: 100%;
-  overflow-y: auto;
+  min-width: 0;
 }
 
 .picker-row,
@@ -946,11 +989,11 @@ onBeforeUnmount(() => {
 
 .picker-row {
   display: grid;
-  grid-template-columns: 20px 40px minmax(0, 1fr);
+  grid-template-columns: 20px 1fr 200px 80px;
   align-items: center;
-  gap: 10px;
-  min-height: 52px;
-  padding: 5px 8px;
+  gap: 20px;
+  padding: 12px 20px;
+  border-radius: 10px;
   cursor: pointer;
 }
 
@@ -958,7 +1001,6 @@ onBeforeUnmount(() => {
 .picker-row.selected,
 .preview-row:hover,
 .preview-row.highlighted {
-  border-color: rgba(var(--primary-color), 0.2);
   background: rgba(var(--primary-color), 0.09);
 }
 
@@ -997,9 +1039,55 @@ onBeforeUnmount(() => {
 .song-cover {
   width: 40px;
   height: 40px;
-  border-radius: 7px;
+  border-radius: 4px;
   object-fit: cover;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.col-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.song-details {
+  min-width: 0;
+}
+
+.song-title {
+  margin-bottom: 4px;
+  overflow: hidden;
+  color: rgb(var(--text-color));
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.song-artist {
+  overflow: hidden;
+  color: rgba(var(--text-color), 0.6);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-album {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  color: rgba(var(--text-color), 0.6);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-duration {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: rgba(var(--text-color), 0.6);
+  font-size: 13px;
 }
 
 .song-copy strong {
@@ -1142,6 +1230,11 @@ onBeforeUnmount(() => {
   .source-panel {
     padding-right: 12px;
     padding-left: 12px;
+  }
+
+  .picker-row {
+    grid-template-columns: 20px 1fr 120px 70px;
+    gap: 12px;
   }
 
   .picker-content {

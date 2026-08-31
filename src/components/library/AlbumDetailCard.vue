@@ -15,7 +15,8 @@
                     </div>
                     <div class="album-info">
                         <div class="album-header">
-                            <div class="album-type">{{ album.type || t('albumCard.typeMusicAlbum') }} · {{ t('albumCard.tracksCount', { count: album.tracks.length }) }}</div>
+                            <div class="album-type">{{ album.type || t('albumCard.typeMusicAlbum') }} · {{
+                                t('albumCard.tracksCount', { count: album.tracks.length }) }}</div>
                             <h2 class="album-title">{{ album.title }}</h2>
                             <div class="album-artist">
                                 <Icon src="/assets/user.svg" size="sm" />
@@ -25,9 +26,8 @@
 
                         <!-- 操作按钮 -->
                         <div class="action-buttons">
-                            <MotionButton class="play-all-btn"
-                                :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.3)' }"
-                                :while-press="{ scale: 0.96 }" :transition="microTransition" @click="$emit('play-all')">
+                            <MotionButton class="play-all-btn" :while-hover="{ y: -1 }" :while-press="{ scale: 0.96 }"
+                                :transition="microTransition" @click="$emit('play-all')">
                                 <Icon src="/assets/play.svg" size="sm" />
                                 <span>{{ t('albumCard.playAll') }}</span>
                             </MotionButton>
@@ -207,11 +207,9 @@ const handleOverlayClick = () => {
 }
 
 .play-all-btn {
-    background: rgb(var(--primary-color), 0.1);
-    color: rgba(var(--primary-color), 0.3);
+    background-color: transparent;
+    color: rgba(var(--primary-color));
     border: none;
-    border-radius: 8px;
-    padding: 12px 20px;
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;

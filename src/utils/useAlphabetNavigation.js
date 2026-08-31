@@ -3,7 +3,7 @@ import { ALL_INITIAL } from './alphabet.js'
 
 const STICKY_TOP_OFFSET = 72
 
-export function useAlphabetNavigation(pageRef, availableInitials) {
+export function useAlphabetNavigation(pageRef, availableInitials, scrollContainerRef = null) {
   const activeInitial = ref(ALL_INITIAL)
   const alphabetTopOffset = ref(0)
   let scrollContainer = null
@@ -83,7 +83,8 @@ export function useAlphabetNavigation(pageRef, availableInitials) {
 
   const bind = () => {
     unbind()
-    scrollContainer = pageRef.value?.closest('.page-layout-scroll') || null
+    scrollContainer = scrollContainerRef?.value
+      || pageRef.value?.closest('.page-layout-scroll') || null
     scrollContainer?.addEventListener('scroll', scheduleActiveUpdate, { passive: true })
     scrollContainer?.addEventListener('scrollend', completePendingScroll, { passive: true })
     window.addEventListener('resize', scheduleActiveUpdate, { passive: true })

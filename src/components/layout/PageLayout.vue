@@ -112,7 +112,6 @@ onBeforeUnmount(() => {
     min-height: calc(100% - 64px);
     background: transparent;
     border-radius: 10px 0 0 0;
-    overflow: hidden;
 }
 
 .page-layout-titlebar-spacer {
@@ -135,6 +134,7 @@ onBeforeUnmount(() => {
     width: 100%;
     min-width: 0;
     padding: 28px clamp(48px, 8vw, 112px) 48px;
+    /* overflow: hidden; */
 }
 
 .page-layout.flush {

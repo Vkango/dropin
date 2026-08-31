@@ -211,6 +211,7 @@
     "sortArtist": "Sort by artist",
     "sortYear": "Sort by year",
     "sortRecent": "Recently added",
+    "genreFilter": "Genre",
     "genreAll": "All genres",
     "genreElectronic": "Electronic",
     "genrePop": "Pop",

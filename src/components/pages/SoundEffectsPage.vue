@@ -215,7 +215,7 @@
                                                             @change="handleParameterChange(descriptor, parameter, $event.target.checked ? 1 : 0)" /><span>{{
                                                                 parameterValue(descriptor, parameter).value ?
                                                                     t('effects.on') :
-                                                            t('effects.off') }}</span></label>
+                                                                    t('effects.off') }}</span></label>
                                                     <input v-else-if="parameter.type === 'array'"
                                                         class="parameter-input" type="text"
                                                         :value="arrayText(parameterValue(descriptor, parameter).value)"
@@ -239,7 +239,7 @@
                                                             @update:model-value="handleParameterChange(descriptor, parameter, $event)" />
                                                         <output class="parameter-value">{{
                                                             parameterValueLabel(parameter,
-                                                            parameterValue(descriptor, parameter).value) }}</output>
+                                                                parameterValue(descriptor, parameter).value) }}</output>
                                                     </div>
                                                     <input v-else class="parameter-input" type="number"
                                                         :min="parameter.min ?? undefined"
@@ -614,8 +614,6 @@ onBeforeUnmount(() => {
     gap: 18px;
     width: 100%;
     padding: 14px 0 16px;
-    border-top: 1px solid rgba(var(--outline-color), .12);
-    border-bottom: 1px solid rgba(var(--outline-color), .12);
 }
 
 .effects-shell {
@@ -942,7 +940,7 @@ onBeforeUnmount(() => {
 
 .equalizer-band-labels {
     display: grid;
-    grid-template-columns: repeat(10, minmax(42px, 1fr));
+    grid-template-columns: repeat(10, minmax(42px, 1fr)) 25px;
     gap: 8px;
     min-width: 580px;
 }

@@ -1,122 +1,128 @@
 <template>
     <PageLayout>
         <template #header>
-        <!-- 页面标题 -->
-        <div class="music-banner">
-            <div class="image-container">
-                <MotionTransition variant="banner">
-                    <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
-                        referrerpolicy="no-referrer">
-                </MotionTransition>
-            </div>
-            <div class="banner-content">
-                <div class="title">{{ t('app.name') }}</div>
-                <h2 class="library-title">{{ t('albums.title') }}</h2>
-                <div class="description">{{ t('albums.bannerDescription') }}
+            <!-- 页面标题 -->
+            <div class="music-banner">
+                <div class="image-container">
+                    <MotionTransition variant="banner">
+                        <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
+                            referrerpolicy="no-referrer">
+                    </MotionTransition>
                 </div>
-            </div>
-        </div>
-        </template>
-        <div ref="pageRef" class="albums-page">
-        <div class="albums-main">
-        <div class="page-header">
-            <h1 class="page-title"></h1>
-            <div class="view-controls">
-                <MotionButton class="view-btn" :class="{ active: viewMode === 'grid' }"
-                    :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
-                    :while-press="{ scale: 0.96 }" :transition="microTransition"
-                    @click="setViewMode('grid')">
-                    <Icon src="/assets/list.svg" size="sm" />
-                </MotionButton>
-                <MotionButton class="view-btn" :class="{ active: viewMode === 'list' }"
-                    :while-hover="{ y: -1, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
-                    :while-press="{ scale: 0.96 }" :transition="microTransition"
-                    @click="setViewMode('list')">
-                    <Icon src="/assets/folder.svg" size="sm" />
-                </MotionButton>
-            </div>
-        </div>
-
-        <!-- 筛选和排序 -->
-        <div class="filter-section">
-            <div class="filter-options">
-                <Combobox v-model="sortBy" class="sort-select" :options="sortOptions" />
-                <Combobox v-model="filterGenre" class="genre-select" :options="genreOptions" />
-            </div>
-        </div>
-
-        <!-- 专辑网格/列表 -->
-        <MotionTransition variant="page" mode="out-in">
-            <div v-if="viewMode === 'grid' && filteredAlbums.length" key="grid" class="albums-grid-view">
-                <div v-for="group in visibleGroups" :key="group.key" class="album-group">
-                    <GroupLabel v-if="group.initial" :label="group.initial"
-                        @click="handleGroupLabelClick(group.initial)" />
-                    <div class="albums-grid">
-                        <MotionDiv v-for="album in group.items" :key="album.id" class="album-card" initial="rest"
-                            while-hover="hover" :variants="cardVariants"
-                            @click="showAlbumDetail(album)">
-                            <div class="album-cover">
-                                <MotionTransition variant="cover" mode="out-in">
-                                    <MotionImg :key="album.cover" :src="album.cover" :alt="album.title"
-                                        :variants="imageVariants" />
-                                </MotionTransition>
-                                <MotionDiv class="album-overlay" :variants="overlayVariants">
-                                    <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }"
-                                        :while-press="{ scale: 0.94 }" :transition="microTransition"
-                                        @click.stop="$emit('album-play', album)">
-                                        <Icon src="/assets/play.svg" size="lg" />
-                                    </MotionButton>
-                                </MotionDiv>
-                            </div>
-                            <div class="album-info">
-                                <h3 class="album-title">{{ album.title }}</h3>
-                                <p class="album-artist">{{ album.artist }}</p>
-                                <p class="album-meta">{{ album.year }} • {{ t('albums.tracksCount', { count: album.trackCount }) }}</p>
-                            </div>
-                        </MotionDiv>
+                <div class="banner-content">
+                    <div class="title">{{ t('app.name') }}</div>
+                    <h2 class="library-title">{{ t('albums.title') }}</h2>
+                    <div class="description">{{ t('albums.bannerDescription') }}
                     </div>
                 </div>
             </div>
-
-            <div v-else-if="viewMode === 'list' && filteredAlbums.length" key="list" class="albums-list">
-                <div class="list-header">
-                    <div class="header-cover"></div>
-                    <div class="header-title">{{ t('albums.headerTitle') }}</div>
-                    <div class="header-artist">{{ t('albums.headerArtist') }}</div>
-                    <div class="header-year">{{ t('albums.headerYear') }}</div>
-                    <div class="header-tracks">{{ t('albums.headerTracks') }}</div>
-                    <div class="header-duration">{{ t('albums.headerDuration') }}</div>
+        </template>
+        <div ref="pageRef" class="albums-page">
+            <div class="albums-main">
+                <div class="page-header">
+                    <div class="filter-options">
+                        <Combobox v-model="sortBy" class="filter-combo" readable :label="t('albums.sortBy')"
+                            :options="sortOptions">
+                            <template #icon>
+                                <ListFilter size="13" :stroke-width="1.8" />
+                            </template>
+                        </Combobox>
+                        <Combobox v-model="filterGenre" class="filter-combo" readable :label="t('albums.genreFilter')"
+                            :options="genreOptions">
+                            <template #icon>
+                                <Tags size="13" :stroke-width="1.8" />
+                            </template>
+                        </Combobox>
+                    </div>
+                    <div class="view-controls">
+                        <MotionButton class="view-btn" :class="{ active: viewMode === 'grid' }"
+                            :while-press="{ scale: 0.92 }" :transition="microTransition" @click="setViewMode('grid')"
+                            :aria-label="t('albums.title')">
+                            <LayoutGrid size="16" :stroke-width="1.8" />
+                        </MotionButton>
+                        <MotionButton class="view-btn" :class="{ active: viewMode === 'list' }"
+                            :while-press="{ scale: 0.92 }" :transition="microTransition" @click="setViewMode('list')"
+                            :aria-label="t('albums.title')">
+                            <List size="16" :stroke-width="1.8" />
+                        </MotionButton>
+                    </div>
                 </div>
-                <template v-for="group in visibleGroups" :key="group.key">
-                    <GroupLabel v-if="group.initial" :label="group.initial"
-                        @click="handleGroupLabelClick(group.initial)" />
-                    <MotionDiv v-for="album in group.items" :key="album.id" class="album-row" initial="rest"
-                        while-hover="hover" :variants="rowVariants"
-                        @click="showAlbumDetail(album)">
-                        <div class="row-cover">
-                            <img :src="album.cover" :alt="album.title" />
-                        </div>
-                        <div class="row-title">{{ album.title }}</div>
-                        <div class="row-artist">{{ album.artist }}</div>
-                        <div class="row-year">{{ album.year }}</div>
-                        <div class="row-tracks">{{ album.trackCount }}</div>
-                        <div class="row-duration">{{ album.duration }}</div>
-                        <div class="row-actions">
-                            <MotionButton class="action-btn" :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
-                                :transition="microTransition" @click.stop="$emit('album-play', album)">
-                                <Icon src="/assets/play.svg" size="sm" />
-                            </MotionButton>
-                        </div>
-                    </MotionDiv>
-                </template>
-            </div>
 
-            <div v-else key="empty" class="albums-empty">{{ t('albums.empty') }}</div>
-        </MotionTransition>
-        </div>
-        <AlphabetFilter :active-initial="activeInitial" :top-offset="alphabetTopOffset"
-            :available-initials="availableInitials"
-            @select="handleAlphabetSelect" />
+                <!-- 专辑网格/列表 -->
+                <MotionTransition variant="page" mode="out-in">
+                    <div v-if="viewMode === 'grid' && filteredAlbums.length" key="grid" class="albums-grid-view">
+                        <div v-for="group in visibleGroups" :key="group.key" class="album-group">
+                            <GroupLabel v-if="group.initial" :label="group.initial"
+                                @click="handleGroupLabelClick(group.initial)" />
+                            <div class="albums-grid">
+                                <MotionDiv v-for="album in group.items" :key="album.id" class="album-card"
+                                    initial="rest" while-hover="hover" :variants="cardVariants"
+                                    @click="showAlbumDetail(album)">
+                                    <div class="album-cover">
+                                        <MotionTransition variant="cover" mode="out-in">
+                                            <MotionImg :key="album.cover" :src="album.cover" :alt="album.title"
+                                                :variants="imageVariants" />
+                                        </MotionTransition>
+                                        <MotionDiv class="album-overlay" :variants="overlayVariants">
+                                            <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }"
+                                                :while-press="{ scale: 0.94 }" :transition="microTransition"
+                                                @click.stop="$emit('album-play', album)">
+                                                <Icon src="/assets/play.svg" size="lg" />
+                                            </MotionButton>
+                                        </MotionDiv>
+                                    </div>
+                                    <div class="album-info">
+                                        <h3 class="album-title">{{ album.title }}</h3>
+                                        <p class="album-artist">{{ album.artist }}</p>
+                                        <p class="album-meta"><span v-if="album.year">{{ album.year }} • </span>{{
+                                            t('albums.tracksCount', {
+                                                count:
+                                                    album.trackCount
+                                            }) }}</p>
+                                    </div>
+                                </MotionDiv>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else-if="viewMode === 'list' && filteredAlbums.length" key="list" class="albums-list">
+                        <div class="list-header">
+                            <div class="header-cover"></div>
+                            <div class="header-title">{{ t('albums.headerTitle') }}</div>
+                            <div class="header-artist">{{ t('albums.headerArtist') }}</div>
+                            <div class="header-year">{{ t('albums.headerYear') }}</div>
+                            <div class="header-tracks">{{ t('albums.headerTracks') }}</div>
+                            <div class="header-duration">{{ t('albums.headerDuration') }}</div>
+                        </div>
+                        <template v-for="group in visibleGroups" :key="group.key">
+                            <GroupLabel v-if="group.initial" :label="group.initial"
+                                @click="handleGroupLabelClick(group.initial)" />
+                            <MotionDiv v-for="album in group.items" :key="album.id" class="album-row" initial="rest"
+                                while-hover="hover" :variants="rowVariants" @click="showAlbumDetail(album)">
+                                <div class="row-cover">
+                                    <img :src="album.cover" :alt="album.title" />
+                                </div>
+                                <div class="row-title">{{ album.title }}</div>
+                                <div class="row-artist">{{ album.artist }}</div>
+                                <div class="row-year">{{ album.year }}</div>
+                                <div class="row-tracks">{{ album.trackCount }}</div>
+                                <div class="row-duration">{{ album.duration }}</div>
+                                <div class="row-actions">
+                                    <MotionButton class="action-btn"
+                                        :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
+                                        :transition="microTransition" @click.stop="$emit('album-play', album)">
+                                        <Icon src="/assets/play.svg" size="sm" />
+                                    </MotionButton>
+                                </div>
+                            </MotionDiv>
+                        </template>
+                    </div>
+
+                    <div v-else key="empty" class="albums-empty">{{ t('albums.empty') }}</div>
+                </MotionTransition>
+            </div>
+            <AlphabetFilter :active-initial="activeInitial" :top-offset="alphabetTopOffset"
+                :available-initials="availableInitials" @select="handleAlphabetSelect" />
         </div>
         <AlbumDetailCard :visible="albumDetailVisible" :album="currentAlbumDetail" @close="hideAlbumDetail"
             @play-all="handlePlayAll" @track-select="handleTrackSelect" @track-play="handleTrackPlay" />
@@ -128,6 +134,7 @@ import { ref, computed, inject } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import Combobox from '@/components/ui/Combobox.vue'
 import AlphabetFilter from '@/components/ui/AlphabetFilter.vue'
+import { List, LayoutGrid, ListFilter, Tags } from '@lucide/vue'
 import GroupLabel from '@/components/library/GroupLabel.vue'
 import AlbumDetailCard from '@/components/library/AlbumDetailCard.vue'
 import MotionTransition from '@/components/ui/MotionTransition.vue'
@@ -297,6 +304,7 @@ const handleTrackPlay = (track) => {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 16px;
     margin-bottom: 30px;
 }
 
@@ -308,32 +316,35 @@ const handleTrackPlay = (track) => {
 
 .view-controls {
     display: flex;
-    gap: 8px;
-}
-
-.view-btn {
-    background: rgba(var(--surface-color), 0.1);
-    border: 1px solid rgba(var(--outline-color), 0.2);
-    border-radius: 8px;
-    padding: 8px 12px;
-    cursor: pointer;
-    color: rgba(var(--text-color), 0.7);
-}
-
-.view-btn.active {
-    background: rgba(var(--primary-color), 0.3);
-    color: white;
-    border-color: rgba(var(--primary-color), 0.3);
-}
-
-/* 筛选区域 */
-.filter-section {
-    margin-bottom: 30px;
+    align-items: center;
+    gap: 6px;
 }
 
 .filter-options {
     display: flex;
-    gap: 16px;
+    gap: 30px;
+    align-items: center;
+}
+
+.view-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: rgba(var(--text-color), 0.45);
+    cursor: pointer;
+    transition: color 160ms ease;
+}
+
+.view-btn:hover {
+    color: rgba(var(--text-color), 0.85);
+}
+
+.view-btn.active {
+    color: rgb(var(--primary-color));
 }
 
 .albums-grid-view {
@@ -344,16 +355,16 @@ const handleTrackPlay = (track) => {
     width: 100%;
 }
 
-.sort-select,
-.genre-select {
-    min-width: 160px;
+.filter-combo {
+    flex: 0 0 auto;
 }
 
 /* 网格视图 */
 .albums-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 24px;
+    gap: 40px;
+    margin: 20px 0 10px 16px;
 }
 
 .album-card {
