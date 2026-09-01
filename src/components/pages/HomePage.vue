@@ -33,7 +33,7 @@
                                 :variants="imageVariants" />
                         </MotionTransition>
                         <MotionDiv class="play-overlay" :variants="overlayVariants">
-                            <Icon src="/assets/play.svg" size="md" />
+                            <Play :size="20" :stroke-width="1.8" />
                         </MotionDiv>
                     </div>
                     <div class="recent-info">
@@ -59,7 +59,7 @@
                     <div class="playlist-cover">
                         <MotionImg :src="playlist.cover" :alt="playlist.name" :variants="imageVariants" />
                         <MotionDiv class="play-overlay" :variants="overlayVariants">
-                            <Icon src="/assets/play.svg" size="lg" />
+                            <Play :size="24" :stroke-width="1.8" />
                         </MotionDiv>
                     </div>
                     <div class="playlist-info">
@@ -80,6 +80,7 @@ import Icon from '@/components/ui/Icon.vue'
 import PageLayout from '@/components/layout/PageLayout.vue'
 import MotionTransition from '@/components/ui/MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
+import { Play } from '@lucide/vue'
 import { INSTANT_MOTION, MICRO_SPRING } from '@/utils/motion.js'
 import { useI18n } from '@/i18n/index.js'
 

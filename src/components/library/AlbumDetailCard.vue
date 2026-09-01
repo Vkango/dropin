@@ -1,9 +1,12 @@
 <template>
     <MotionTransition variant="modal" appear>
-        <div v-if="visible" class="modal-overlay" :class="{ 'overlay-transparent': !showBackdrop }"
-            :style="{ zIndex }" @click="handleOverlayClick">
+        <div v-if="visible" class="modal-overlay" :style="{ zIndex }" @click="handleOverlayClick">
             <MotionTransition variant="card" appear>
                 <div v-if="visible" class="album-card" @click.stop>
+                    <MotionButton class="play-all-fab" :while-hover="{ y: -2 }" :while-press="{ scale: 0.96 }"
+                        :transition="microTransition" :aria-label="t('albumCard.playAll')" @click="$emit('play-all')">
+                        <Play :size="22" :stroke-width="1.8" />
+                    </MotionButton>
                     <MotionButton class="close-button" :while-hover="{ scale: 1.08 }" :while-press="{ scale: 0.94 }"
                         :transition="microTransition" @click="$emit('close')">
                         <Icon src="/assets/close.svg" size="sm" />
@@ -25,15 +28,6 @@
                                 <Icon src="/assets/user.svg" size="sm" />
                                 <span>{{ album.artist }}</span>
                                 <ArrowRight :size="14" :stroke-width="2" class="artist-arrow" />
-                            </MotionButton>
-                        </div>
-
-                        <!-- 操作按钮 -->
-                        <div class="action-buttons">
-                            <MotionButton class="play-all-btn" :while-hover="{ y: -1 }" :while-press="{ scale: 0.96 }"
-                                :transition="microTransition" @click="$emit('play-all')">
-                                <Icon src="/assets/play.svg" size="sm" />
-                                <span>{{ t('albumCard.playAll') }}</span>
                             </MotionButton>
                         </div>
 
@@ -62,7 +56,7 @@ import { defineProps, defineEmits } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import MotionTransition from '@/components/ui/MotionTransition.vue'
 import { motion, useReducedMotion } from 'motion-v'
-import { ArrowRight } from '@lucide/vue'
+import { ArrowRight, Play } from '@lucide/vue'
 import { computed } from 'vue'
 import { INSTANT_MOTION, MICRO_SPRING } from '@/utils/motion.js'
 import { useI18n } from '@/i18n/index.js'
@@ -93,10 +87,6 @@ const props = defineProps({
     zIndex: {
         type: Number,
         default: 100
-    },
-    showBackdrop: {
-        type: Boolean,
-        default: true
     }
 })
 
@@ -112,11 +102,6 @@ const handleTrackPlay = (track) => {
 </script>
 
 <style scoped>
-/* 叠在已暗下层之上时，遮罩保持透明，避免越叠越黑 */
-.modal-overlay.overlay-transparent {
-    background: transparent;
-}
-
 /* 背景遮罩 - 简单的淡入淡出，无3D效果 */
 .modal-overlay {
     position: fixed;
@@ -238,21 +223,31 @@ const handleTrackPlay = (track) => {
     color: rgba(var(--text-color), 0.5);
 }
 
-.action-buttons {
-    display: flex;
-    gap: 12px;
+/* 播放全部：右下角悬浮按钮，与其他页 fab 设计语言一致 */
+.play-all-fab {
+    position: absolute;
+    right: 22px;
+    bottom: 18px;
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    color: rgb(var(--global-inverse-color));
+    background: color-mix(in srgb, rgb(var(--global-color)) 60%, rgb(var(--primary-color)) 40%);
+    box-shadow:
+        0 6px 18px rgba(0, 0, 0, 0.22),
+        0 2px 6px rgba(0, 0, 0, 0.14);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
-.play-all-btn {
-    background-color: transparent;
-    color: rgba(var(--primary-color));
-    border: none;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+.play-all-fab:hover {
+    box-shadow:
+        0 10px 26px rgba(0, 0, 0, 0.28),
+        0 4px 10px rgba(0, 0, 0, 0.16);
 }
 
 .track-list {

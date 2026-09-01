@@ -64,7 +64,7 @@
                                             <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }"
                                                 :while-press="{ scale: 0.94 }" :transition="microTransition"
                                                 @click.stop="$emit('artist-play', artist)">
-                                                <Icon src="/assets/play.svg" size="lg" />
+                                                <Play :size="24" :stroke-width="1.8" />
                                             </MotionButton>
                                         </MotionDiv>
                                     </div>
@@ -119,7 +119,7 @@
                                     <MotionButton class="action-btn"
                                         :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
                                         :transition="microTransition" @click.stop="$emit('artist-play', artist)">
-                                        <Icon src="/assets/play.svg" size="sm" />
+                                        <Play :size="16" :stroke-width="1.8" />
                                     </MotionButton>
                                     <MotionButton class="action-btn"
                                         :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
@@ -146,7 +146,7 @@ import { ref, computed, inject } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import Combobox from '@/components/ui/Combobox.vue'
 import AlphabetFilter from '@/components/ui/AlphabetFilter.vue'
-import { List, LayoutGrid, ListFilter } from '@lucide/vue'
+import { List, LayoutGrid, ListFilter, Play } from '@lucide/vue'
 import GroupLabel from '@/components/library/GroupLabel.vue'
 import MotionTransition from '@/components/ui/MotionTransition.vue'
 import PageLayout from '@/components/layout/PageLayout.vue'

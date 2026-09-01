@@ -28,12 +28,16 @@
                     <MotionTransition variant="songInfo" mode="out-in">
                         <div :key="currentSong.title" class="song-details">
                             <h1 class="song-title">{{ currentSong.title }}</h1>
-                            <h2 class="song-artist">
+                            <MotionButton class="song-link song-artist" :while-press="buttonPress"
+                                :transition="microTransition" :aria-label="t('player.artistDetail')"
+                                @click="emit('artist-select', currentSong.artist)">
                                 <User2Icon style="scale: 0.7;" />{{ currentSong.artist }}
-                            </h2>
-                            <p class="song-album">
+                            </MotionButton>
+                            <MotionButton class="song-link song-album" :while-press="buttonPress"
+                                :transition="microTransition" :aria-label="t('player.albumDetail')"
+                                @click="emit('album-select', currentSong.album)">
                                 <DiscAlbum style="scale: 0.7;" />{{ currentSong.album }}
-                            </p>
+                            </MotionButton>
 
                             <div class="song-tags" aria-live="polite">
                                 <AnimatePresence :initial="false">
@@ -619,7 +623,9 @@ const emit = defineEmits([
     'list-loop-change',
     'add-to-playlist',
     'playlist-song-select',
-    'background-mode-change'
+    'background-mode-change',
+    'artist-select',
+    'album-select'
 ])
 
 const MotionDiv = motion.div
@@ -1555,6 +1561,22 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion, albumRotatio
     font-weight: bold;
 }
 
+/* 宽屏下歌手名 / 专辑名可点击，跳转歌手抽屉 / 专辑卡片 */
+.song-link {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: opacity 160ms ease;
+}
+
+.song-link:hover,
+.song-link:focus-visible {
+    opacity: 1;
+}
+
 .song-artist {
     margin-top: 20px;
     font-size: 16px;
@@ -1566,6 +1588,13 @@ watch([() => props.isVisible, () => props.isPlaying, reducedMotion, albumRotatio
     margin-top: 10px;
     font-size: 16px;
     opacity: 0.5;
+}
+
+@media (max-width: 720px) {
+    /* 窄屏下歌曲信息整体承担切页职责，歌手名 / 专辑名不再单独可点 */
+    .song-link {
+        cursor: inherit;
+    }
 }
 
 .song-tags {

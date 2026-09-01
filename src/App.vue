@@ -943,6 +943,35 @@ const closeArtistDrawerAlbum = () => {
   artistDrawerAlbumDetail.value = null
 }
 
+// 全屏播放器内点击歌手名：按名称打开歌手抽屉
+const handleFullscreenArtistSelect = (artistName) => {
+  if (!artistName) return
+  const artist = artistsData.find((item) => item.name === artistName)
+  openArtistDrawer(artist || { name: artistName, id: `artist-${artistName}`, cover: currentSong.value?.cover })
+}
+
+// 全屏播放器内点击专辑名：按名称打开专辑详情卡（叠于抽屉之上）
+const handleFullscreenAlbumSelect = (albumTitle) => {
+  if (!albumTitle) return
+  const album = albumsData.find((item) => item.title === albumTitle)
+  const tracks = (musicLibrary.songs || []).filter((song) => song.album === albumTitle)
+  artistDrawerAlbum.value = album || { title: albumTitle, artist: currentSong.value?.artist }
+  artistDrawerAlbumDetail.value = {
+    ...(album || { title: albumTitle, artist: currentSong.value?.artist }),
+    coverUrl: album?.cover || currentSong.value?.cover,
+    type: t('albumCard.typeMusicAlbum'),
+    tracks: tracks.map((song, index) => ({
+      id: song.id,
+      number: index + 1,
+      title: song.title,
+      artist: song.artist,
+      duration: song.duration,
+      url: song.url
+    }))
+  }
+  artistDrawerAlbumOpen.value = true
+}
+
 const handleArtistDrawerPlayAll = () => {
   if (artistDrawerArtist.value) handleArtistPlay(artistDrawerArtist.value)
 }
@@ -1533,7 +1562,8 @@ onBeforeUnmount(() => {
       @progress-commit="handleProgressCommit" @volume-change="handleVolumeChange" @mute-change="handleMuteChange"
       @playback-mode-change="handlePlaybackModeChange" @list-loop-change="handleListLoopChange"
       @add-to-playlist="() => console.log('添加到播放列表')"
-      @playlist-song-select="handleQueueSongSelect" @background-mode-change="handleBackgroundModeChange" />
+      @playlist-song-select="handleQueueSongSelect" @background-mode-change="handleBackgroundModeChange"
+      @artist-select="handleFullscreenArtistSelect" @album-select="handleFullscreenAlbumSelect" />
 
     <Drawer :open="isQueueDrawerOpen" :title="t('player.queueTitle')" placement="right"
       :close-label="t('player.closePlaylist')"
@@ -1551,7 +1581,7 @@ onBeforeUnmount(() => {
         @album-select="handleArtistDrawerAlbumSelect" @track-play="handleArtistDrawerTrackPlay" />
     </Drawer>
     <AlbumDetailCard :visible="artistDrawerAlbumOpen" :album="artistDrawerAlbumDetail"
-      :z-index="ALBUM_OVER_DRAWER_Z" :show-backdrop="false" @close="closeArtistDrawerAlbum"
+      :z-index="ALBUM_OVER_DRAWER_Z" @close="closeArtistDrawerAlbum"
       @play-all="handleArtistDrawerAlbumPlayAll" @track-play="handleArtistDrawerAlbumTrackPlay"
       @artist-jump="closeArtistDrawerAlbum" />
 

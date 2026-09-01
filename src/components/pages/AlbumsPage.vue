@@ -67,7 +67,7 @@
                                             <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }"
                                                 :while-press="{ scale: 0.94 }" :transition="microTransition"
                                                 @click.stop="$emit('album-play', album)">
-                                                <Icon src="/assets/play.svg" size="lg" />
+                                                <Play :size="24" :stroke-width="1.8" />
                                             </MotionButton>
                                         </MotionDiv>
                                     </div>
@@ -111,7 +111,7 @@
                                     <MotionButton class="action-btn"
                                         :while-hover="{ scale: 1.08, backgroundColor: 'rgba(var(--primary-color), 0.1)', color: 'rgba(var(--primary-color), 0.3)' }"
                                         :transition="microTransition" @click.stop="$emit('album-play', album)">
-                                        <Icon src="/assets/play.svg" size="sm" />
+                                        <Play :size="16" :stroke-width="1.8" />
                                     </MotionButton>
                                 </div>
                             </MotionDiv>
@@ -132,10 +132,9 @@
 
 <script setup>
 import { ref, computed, inject } from 'vue'
-import Icon from '@/components/ui/Icon.vue'
 import Combobox from '@/components/ui/Combobox.vue'
 import AlphabetFilter from '@/components/ui/AlphabetFilter.vue'
-import { List, LayoutGrid, ListFilter, Tags } from '@lucide/vue'
+import { List, LayoutGrid, ListFilter, Play, Tags } from '@lucide/vue'
 import GroupLabel from '@/components/library/GroupLabel.vue'
 import AlbumDetailCard from '@/components/library/AlbumDetailCard.vue'
 import MotionTransition from '@/components/ui/MotionTransition.vue'

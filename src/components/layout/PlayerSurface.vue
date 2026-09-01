@@ -22,7 +22,9 @@
                 @playback-mode-change="$emit('playback-mode-change', $event)"
                 @list-loop-change="$emit('list-loop-change', $event)" @add-to-playlist="$emit('add-to-playlist')"
                 @playlist-song-select="$emit('playlist-song-select', $event)"
-                @background-mode-change="$emit('background-mode-change', $event)" />
+                @background-mode-change="$emit('background-mode-change', $event)"
+                @artist-select="$emit('artist-select', $event)"
+                @album-select="$emit('album-select', $event)" />
         </MotionDiv>
     </AnimatePresence>
 </template>
@@ -113,7 +115,9 @@ defineEmits([
     'list-loop-change',
     'add-to-playlist',
     'playlist-song-select',
-    'background-mode-change'
+    'background-mode-change',
+    'artist-select',
+    'album-select'
 ])
 
 const MotionDiv = motion.div
