@@ -14,8 +14,7 @@
                         <MotionButton ref="closeButtonRef" class="drawer-close-button" type="button"
                             :while-hover="buttonHover" :while-press="buttonPress" :transition="microTransition"
                             :aria-label="closeLabel || t('drawer.close')" @click="requestClose">
-                            <ArrowLeft v-if="back" :size="20" :stroke-width="1.8" />
-                            <X v-else :size="20" :stroke-width="1.8" />
+                            <ArrowLeft :size="20" :stroke-width="1.8" />
                         </MotionButton>
                         <h2 :id="titleId" class="drawer-title">{{ title || t('drawer.defaultTitle') }}</h2>
                         <div class="drawer-header-actions">
@@ -66,10 +65,6 @@ const props = defineProps({
     zIndex: {
         type: Number,
         default: 1200
-    },
-    back: {
-        type: Boolean,
-        default: false
     },
     showHeader: {
         type: Boolean,

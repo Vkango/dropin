@@ -18,6 +18,7 @@
                         </MotionTransition>
                     </div>
                     <div class="album-info">
+                        <div class="album-bg" :style="{ backgroundImage: `url(${album.coverUrl})` }" />
                         <div class="album-header">
                             <div class="album-type">{{ album.type || t('albumCard.typeMusicAlbum') }} · {{
                                 t('albumCard.tracksCount', { count: album.tracks.length }) }}</div>
@@ -120,7 +121,6 @@ const handleTrackPlay = (track) => {
 
 /* 卡片本体 - 3D动画效果 */
 .album-card {
-    background: rgba(var(--global-color), 0.8);
     border: 1px solid rgba(var(--outline-color), 0.2);
     border-radius: 5px;
     box-shadow:
@@ -130,9 +130,10 @@ const handleTrackPlay = (track) => {
     max-height: calc(100vh - 40px);
     min-height: 0;
     width: 1100px;
+    background: rgba(var(--global-color), 0.8);
     display: grid;
     grid-template-columns: 600px 1fr;
-    gap: 30px;
+    /* gap: 30px; */
     /* padding: 30px; */
     position: relative;
     overflow: hidden;
@@ -141,12 +142,12 @@ const handleTrackPlay = (track) => {
 
 .close-button {
     position: absolute;
-    top: 16px;
-    right: 16px;
+    top: 0px;
+    right: 0px;
     background: transparent;
     border: none;
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -169,6 +170,7 @@ const handleTrackPlay = (track) => {
 }
 
 .album-info {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 24px;
@@ -179,10 +181,27 @@ const handleTrackPlay = (track) => {
     margin: 0;
 }
 
+.album-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100px;
+    background-size: cover;
+    background-position: center;
+    -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.05) 60%, rgba(0, 0, 0, 0.0) 100%);
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.15) 0%, rgba(0, 0, 0, 0.05) 60%, rgba(0, 0, 0, 0.0) 100%);
+    pointer-events: none;
+    z-index: 0;
+}
+
 .album-header {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin: 0 30px;
 }
 
 .album-type {
@@ -251,9 +270,12 @@ const handleTrackPlay = (track) => {
 }
 
 .track-list {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     gap: 4px;
+    margin: 0 30px;
 }
 
 .track-item {
