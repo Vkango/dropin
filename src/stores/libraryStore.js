@@ -9,6 +9,7 @@ const state = reactive({
   history: [],
   playlists: [],
   tags: [],
+  sortRules: [],
   total: 0,
   loading: false,
   scanning: false,
@@ -59,14 +60,15 @@ export function useLibraryStore() {
     state.loading = true
     state.error = null
     try {
-      const [trackResult, albumResult, artistResult, rootsResult, historyResult, playlistResult, tagResult] = await Promise.all([
+      const [trackResult, albumResult, artistResult, rootsResult, historyResult, playlistResult, tagResult, sortRuleResult] = await Promise.all([
         mediaApi.tracks(),
         mediaApi.albums(),
         mediaApi.artists(),
         mediaApi.roots(),
         mediaApi.history(),
         mediaApi.playlistList(),
-        mediaApi.tagList()
+        mediaApi.tagList(),
+        mediaApi.sortRuleList()
       ])
       state.tracks = trackResult.tracks || []
       state.total = trackResult.total || state.tracks.length
@@ -76,6 +78,7 @@ export function useLibraryStore() {
       state.history = historyResult.history || []
       state.playlists = playlistResult.playlists || []
       state.tags = tagResult.tags || []
+      state.sortRules = sortRuleResult.rules || []
       initialized.value = true
     } catch (error) {
       state.error = error
@@ -155,13 +158,59 @@ export function useLibraryStore() {
   }
 
   const playlistTracks = async (playlistId) => {
-    const result = await mediaApi.tracks({ playlistId })
+    const result = await mediaApi.playlistOrderGet(playlistId)
     const tracks = result.tracks || []
     await hydrateCovers(tracks)
     return tracks.map(toSong)
   }
 
+  const playlistOrder = async (playlistId) => {
+    const result = await mediaApi.playlistOrderGet(playlistId)
+    const tracks = result.tracks || []
+    await hydrateCovers(tracks)
+    return {
+      ...result,
+      tracks: tracks.map(toSong)
+    }
+  }
+
+  const previewPlaylistOrder = async (playlistId, sortRuleId = null, rule = null) => {
+    const result = await mediaApi.playlistOrderPreview(playlistId, sortRuleId, rule)
+    const tracks = result.tracks || []
+    await hydrateCovers(tracks)
+    return {
+      ...result,
+      tracks: tracks.map(toSong)
+    }
+  }
+
+  const savePlaylistOrder = async (playlistId, trackIds, sortRuleId = null) => {
+    const result = await mediaApi.playlistOrderSave(playlistId, trackIds, sortRuleId)
+    await refresh()
+    return result
+  }
+
+  const clonePlaylist = async (playlistId, name, description = null, trackIds = null) => {
+    const result = await mediaApi.playlistClone(playlistId, name, description, trackIds)
+    await refresh()
+    return result
+  }
+
+  const saveSortRule = async (sortRuleId, name, rule) => {
+    const result = await mediaApi.sortRuleSave(sortRuleId, name, rule)
+    await refresh()
+    return result
+  }
+
+  const removeSortRule = async (sortRuleId) => {
+    const result = await mediaApi.sortRuleRemove(sortRuleId)
+    await refresh()
+    return result
+  }
+
   const getPlaylistRule = async (playlistId) => mediaApi.playlistRuleGet(playlistId)
+
+  const getSortRule = async (sortRuleId) => mediaApi.sortRuleGet(sortRuleId)
 
   const evaluatePlaylist = async (playlistId, rule = null) => {
     const result = await mediaApi.playlistRuleEvaluate(playlistId, rule)
@@ -272,6 +321,7 @@ export function useLibraryStore() {
     roots: computed(() => state.roots),
     playlists: computed(() => state.playlists),
     tags: computed(() => state.tags),
+    sortRules: computed(() => state.sortRules),
     refresh,
     hydrateCovers,
     addRootAndScan,
@@ -283,7 +333,12 @@ export function useLibraryStore() {
     addToPlaylist,
     removeFromPlaylist,
     playlistTracks,
+    playlistOrder,
+    previewPlaylistOrder,
+    savePlaylistOrder,
+    clonePlaylist,
     getPlaylistRule,
+    getSortRule,
     evaluatePlaylist,
     savePlaylistRule,
     materializePlaylist,
@@ -293,6 +348,8 @@ export function useLibraryStore() {
     tagTrack,
     untagTrack,
     tracksByTag,
+    saveSortRule,
+    removeSortRule,
     installListeners,
     dispose,
     mediaApi

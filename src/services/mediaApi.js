@@ -31,6 +31,14 @@ const commands = {
   playlistRuleSave: 'media_playlist_rule_save',
   playlistRuleEvaluate: 'media_playlist_rule_evaluate',
   playlistRuleMaterialize: 'media_playlist_rule_materialize',
+  playlistOrderGet: 'media_playlist_order_get',
+  playlistOrderPreview: 'media_playlist_order_preview',
+  playlistOrderSave: 'media_playlist_order_save',
+  playlistClone: 'media_playlist_clone',
+  sortRuleList: 'media_sort_rule_list',
+  sortRuleGet: 'media_sort_rule_get',
+  sortRuleSave: 'media_sort_rule_save',
+  sortRuleRemove: 'media_sort_rule_remove',
   tagCreate: 'media_tag_create',
   tagRemove: 'media_tag_remove',
   tagList: 'media_tag_list',
@@ -71,6 +79,18 @@ export const mediaApi = {
   playlistRuleSave: (playlistId, rule) => invoke(commands.playlistRuleSave, { playlistId, rule }),
   playlistRuleEvaluate: (playlistId, rule = null) => invoke(commands.playlistRuleEvaluate, { playlistId, rule }),
   playlistRuleMaterialize: (playlistId, trackIds) => invoke(commands.playlistRuleMaterialize, { playlistId, trackIds }),
+  playlistOrderGet: (playlistId) => invoke(commands.playlistOrderGet, { playlistId }),
+  playlistOrderPreview: (playlistId, sortRuleId = null, rule = null) =>
+    invoke(commands.playlistOrderPreview, { playlistId, sortRuleId, rule }),
+  playlistOrderSave: (playlistId, trackIds, sortRuleId = null) =>
+    invoke(commands.playlistOrderSave, { playlistId, trackIds, sortRuleId }),
+  playlistClone: (playlistId, name, description = null, trackIds = null) =>
+    invoke(commands.playlistClone, { playlistId, name, description, trackIds }),
+  sortRuleList: () => invoke(commands.sortRuleList),
+  sortRuleGet: (sortRuleId) => invoke(commands.sortRuleGet, { sortRuleId }),
+  sortRuleSave: (sortRuleId, name, rule) =>
+    invoke(commands.sortRuleSave, { sortRuleId, name, rule }),
+  sortRuleRemove: (sortRuleId) => invoke(commands.sortRuleRemove, { sortRuleId }),
   tagCreate: (label) => invoke(commands.tagCreate, { label }),
   tagRemove: (tagId) => invoke(commands.tagRemove, { tagId }),
   tagList: () => invoke(commands.tagList),

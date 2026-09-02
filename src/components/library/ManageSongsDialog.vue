@@ -2,12 +2,22 @@
   <Dialog v-model="isOpen" :width="1540" height="min(820px, calc(100dvh - 28px))" max-height="calc(100dvh - 28px)"
     :aria-labelledby="'manage-songs-dialog-title'">
     <div class="manage-songs-dialog">
-      <div class="song-picker">
+      <div class="editor-tabs" role="tablist" :aria-label="t('playlistsPage.editorTabs')">
+        <button type="button" role="tab" :aria-selected="activeTab === 'songs'"
+          :class="{ active: activeTab === 'songs' }" @click="activeTab = 'songs'">
+          {{ t('playlistsPage.manageSongsTitle') }}
+        </button>
+        <button type="button" role="tab" :aria-selected="activeTab === 'order'"
+          :class="{ active: activeTab === 'order' }" @click="activeTab = 'order'">
+          {{ t('playlistsPage.manageOrderTitle') }}
+        </button>
+      </div>
+
+      <div v-if="activeTab === 'songs'" class="song-picker">
         <div class="picker-layout">
           <aside class="source-panel">
             <div class="picker-header">
               <div class="picker-header-row">
-                <h2 id="manage-songs-dialog-title">{{ t('playlistsPage.manageSongsTitle') }}</h2>
                 <div class="picker-mode" role="tablist" :aria-label="t('playlistsPage.modeLabel')">
                   <MotionButton type="button" role="tab" :aria-selected="mode === 'static'"
                     :class="{ active: mode === 'static' }" :while-hover="{ y: -1 }" :while-press="{ scale: 0.97 }"
@@ -137,7 +147,7 @@
                 <div class="content-toolbar result-toolbar">
                   <div>
                     <div class="section-label">{{ t('playlistsPage.previewCount', { count: dynamicPreviewSongs.length })
-                    }}</div>
+                      }}</div>
 
                   </div>
                   <MotionButton type="button" class="select-all-button" :disabled="!rule.steps.length"
@@ -159,7 +169,7 @@
                     <span class="song-copy">
                       <strong>{{ song.title }}</strong>
                       <small>{{ song.artist || t('player.unknownArtist') }}<span v-if="song.album"> · {{ song.album
-                      }}</span></small>
+                          }}</span></small>
                     </span>
                     <span class="preview-sources">{{ contributionLabel(song) }}</span>
                   </MotionButton>
@@ -184,6 +194,8 @@
           </div>
         </div>
       </div>
+      <ManageOrderPanel v-else :playlist-id="currentPlaylistId" :playlist-name="playlistName"
+        :playlist-type="initialMode" @close="close" @saved="handleOrderSaved" />
     </div>
   </Dialog>
 </template>
@@ -209,6 +221,7 @@ import { InfoIcon } from '@lucide/vue'
 import { RefreshCcwIcon } from '@lucide/vue'
 import AlphabetFilter from '@/components/ui/AlphabetFilter.vue'
 import GroupLabel from '@/components/library/GroupLabel.vue'
+import ManageOrderPanel from '@/components/library/ManageOrderPanel.vue'
 import { getAvailableInitials, groupByInitial } from '@/utils/alphabet.js'
 import { useAlphabetNavigation } from '@/utils/useAlphabetNavigation.js'
 
@@ -263,7 +276,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:open', 'update:modelValue', 'save'])
+const emit = defineEmits(['update:open', 'update:modelValue', 'save', 'order-saved'])
 const { t } = useI18n()
 const libraryStore = useLibraryStore()
 const MotionButton = motion.button
@@ -274,6 +287,8 @@ const isOpen = computed({
   get: () => props.open,
   set: (value) => emit('update:open', value)
 })
+
+const activeTab = ref('songs')
 
 const pickerSources = computed(() => props.sources.filter(
   (source) => !(source.kind === 'playlist' && source.id === props.currentPlaylistId)
@@ -286,6 +301,11 @@ const close = () => {
 const save = () => {
   if (props.saving || !props.valid) return
   emit('save')
+}
+
+const handleOrderSaved = () => {
+  emit('order-saved')
+  close()
 }
 
 const mode = ref(props.initialMode === 'dynamic' ? 'dynamic' : 'static')
@@ -570,6 +590,10 @@ onMounted(() => {
   if (mode.value === 'dynamic') refreshPreview()
 })
 
+watch(() => props.open, (open) => {
+  if (open) activeTab.value = 'songs'
+})
+
 onBeforeUnmount(() => {
   if (previewTimer) window.clearTimeout(previewTimer)
 })
@@ -584,6 +608,37 @@ onBeforeUnmount(() => {
   min-height: 0;
   overflow: hidden;
   color: rgb(var(--text-color));
+}
+
+.editor-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 10px 16px 0;
+  border-bottom: 1px solid rgba(var(--outline-color), 0.12);
+}
+
+.editor-tabs button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: rgba(var(--text-color), 0.5);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.editor-tabs button:hover,
+.editor-tabs button.active {
+  color: rgb(var(--text-color));
+}
+
+.editor-tabs button.active {
+  border-bottom-color: rgb(var(--primary-color));
 }
 
 /* Picker fills the dialog. */

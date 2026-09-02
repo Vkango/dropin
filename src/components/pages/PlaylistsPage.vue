@@ -20,7 +20,7 @@
     :existing-song-ids="songPickerContext.existingSongIds"
     :current-playlist-id="songPickerContext.playlist.id" :initial-mode="songPickerContext.initialMode"
     :initial-rule="songPickerContext.savedRule" :valid="isSongPickerValueValid" :saving="isSavingSongs"
-    @save="saveSongPicker" />
+    @save="saveSongPicker" @order-saved="handleOrderSaved" />
 
   <Dialog v-model="isModeConfirmDialogOpen" width="460" :aria-labelledby="'playlist-mode-confirm-title'"
     :aria-describedby="'playlist-mode-confirm-message'" :close-on-backdrop="false" @close="cancelModeChange">
@@ -210,18 +210,14 @@ const formatDuration = (songs = []) => {
   return `${hours}h ${minutes}m ${seconds}s`
 }
 
-const loadSelectedTracks = async (playlistId, playlistType = null) => {
+const loadSelectedTracks = async (playlistId) => {
   const requestId = ++tracksRequestId
   playlistSongs.value = []
 
   if (!playlistId) return
 
   try {
-    const playlist = props.playlists.find((item) => item.id === playlistId)
-    const type = playlistType || playlist?.type || 'static'
-    const songs = type === 'dynamic'
-      ? (await libraryStore.evaluatePlaylist(playlistId)).tracks || []
-      : await libraryStore.playlistTracks(playlistId)
+    const songs = (await libraryStore.playlistOrder(playlistId)).tracks || []
     if (requestId === tracksRequestId && props.selectedPlaylistId === playlistId) {
       playlistSongs.value = songs
     }
@@ -293,8 +289,23 @@ const openSongPicker = async () => {
 
 const saveSongPicker = () => {
   const context = songPickerContext.value
-  const value = songPickerValue.value
+  let value = songPickerValue.value
   if (!context || !isSongPickerValueValid.value || isSavingSongs.value) return
+
+  if (value.mode === 'static' && context.initialMode === 'static') {
+    const selectedIds = new Set(value.trackIds || [])
+    const currentIds = playlistSongs.value.map((song) => song.id)
+    const currentIdSet = new Set(currentIds)
+    const newlySelectedIds = (value.trackIds || []).filter((id) => !currentIdSet.has(id))
+    value = {
+      ...value,
+      trackIds: [
+        ...currentIds.filter((id) => selectedIds.has(id)),
+        ...newlySelectedIds
+      ]
+    }
+    songPickerValue.value = value
+  }
 
   if (value.mode !== context.initialMode) {
     pendingSongPickerValue.value = {
@@ -320,12 +331,11 @@ const persistSongPicker = async (value) => {
     let needsReload = true
     if (value.mode === 'dynamic') {
       await libraryStore.savePlaylistRule(context.playlist.id, value.rule)
-      playlistSongs.value = [...(value.tracks || [])]
-      needsReload = false
+      needsReload = true
     } else {
       await libraryStore.materializePlaylist(context.playlist.id, value.trackIds)
     }
-    if (needsReload) await loadSelectedTracks(context.playlist.id, value.mode)
+    if (needsReload) await loadSelectedTracks(context.playlist.id)
   } catch (error) {
     console.error('添加歌曲到播放列表失败:', error)
   } finally {
@@ -362,6 +372,10 @@ const playSong = (song) => {
     song,
     songs: [...playlistSongs.value]
   })
+}
+
+const handleOrderSaved = () => {
+  if (selectedPlaylist.value) void loadSelectedTracks(selectedPlaylist.value.id)
 }
 
 const renamePlaylist = () => {

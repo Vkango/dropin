@@ -158,6 +158,44 @@ struct PlaylistRule {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+struct SortRule {
+    version: u32,
+    #[serde(default)]
+    tag_weights: Vec<SortTagWeight>,
+    #[serde(default = "default_tag_direction")]
+    tag_direction: String,
+    #[serde(default)]
+    fields: Vec<SortField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+struct SortTagWeight {
+    tag_id: String,
+    weight: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+struct SortField {
+    field: String,
+    #[serde(default = "default_sort_direction")]
+    direction: String,
+}
+
+fn default_sort_direction() -> String {
+    "asc".into()
+}
+
+fn default_tag_direction() -> String {
+    "desc".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(deny_unknown_fields)]
 enum PlaylistRuleStep {
@@ -313,6 +351,14 @@ impl MediaRuntime {
             "media_playlist_rule_save" => self.playlist_rule_save(args),
             "media_playlist_rule_evaluate" => self.playlist_rule_evaluate(args),
             "media_playlist_rule_materialize" => self.playlist_rule_materialize(args),
+            "media_playlist_order_get" => self.playlist_order_get(args),
+            "media_playlist_order_preview" => self.playlist_order_preview(args),
+            "media_playlist_order_save" => self.playlist_order_save(args),
+            "media_playlist_clone" => self.playlist_clone(args),
+            "media_sort_rule_list" => self.sort_rule_list(args),
+            "media_sort_rule_get" => self.sort_rule_get(args),
+            "media_sort_rule_save" => self.sort_rule_save(args),
+            "media_sort_rule_remove" => self.sort_rule_remove(args),
             "media_tag_create" => self.tag_create(args),
             "media_tag_remove" => self.tag_remove(args),
             "media_tag_list" => self.tag_list(args),
@@ -1339,6 +1385,7 @@ impl MediaRuntime {
 
         let connection = self.connection("media_playlist_rule_save")?;
         ensure_playlist_exists(connection, &playlist_id, "media_playlist_rule_save")?;
+        let was_dynamic = playlist_is_dynamic(connection, &playlist_id, "media_playlist_rule_save")?;
         validate_playlist_rule(connection, &playlist_id, &rule, "media_playlist_rule_save")?;
         // Evaluate before writing so indirect references cannot introduce a cycle.
         evaluate_playlist_rule_ids(
@@ -1357,6 +1404,13 @@ impl MediaRuntime {
             params![playlist_id],
         )
         .map_err(|error| sqlite_error("media_playlist_rule_save", error))?;
+        if !was_dynamic {
+            tx.execute(
+                "DELETE FROM playlist_order_tracks WHERE playlist_id = ?1",
+                params![playlist_id],
+            )
+            .map_err(|error| sqlite_error("media_playlist_rule_save", error))?;
+        }
         tx.execute(
             "INSERT INTO playlist_rules(playlist_id, rule_json, updated_at) VALUES(?1, ?2, ?3)
              ON CONFLICT(playlist_id) DO UPDATE SET rule_json = excluded.rule_json, updated_at = excluded.updated_at",
@@ -1460,6 +1514,7 @@ impl MediaRuntime {
 
         let connection = self.connection("media_playlist_rule_materialize")?;
         ensure_playlist_exists(connection, &playlist_id, "media_playlist_rule_materialize")?;
+        let was_dynamic = playlist_is_dynamic(connection, &playlist_id, "media_playlist_rule_materialize")?;
         for track_id in &track_ids {
             let exists: bool = connection
                 .query_row(
@@ -1476,6 +1531,40 @@ impl MediaRuntime {
             }
         }
 
+        let existing_positions = if was_dynamic {
+            HashMap::new()
+        } else {
+            let mut statement = connection
+                .prepare(
+                    "SELECT track_id, position FROM playlist_tracks WHERE playlist_id = ?1",
+                )
+                .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+            let rows = statement
+                .query_map(params![playlist_id], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })
+                .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+            rows.collect::<Result<HashMap<String, i64>, _>>()
+                .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?
+        };
+        let mut next_position = existing_positions
+            .values()
+            .copied()
+            .max()
+            .map(|position| position.saturating_add(1))
+            .unwrap_or(0);
+        let positioned_track_ids = track_ids
+            .iter()
+            .map(|track_id| {
+                let position = existing_positions.get(track_id).copied().unwrap_or_else(|| {
+                    let position = next_position;
+                    next_position = next_position.saturating_add(1);
+                    position
+                });
+                (track_id, position)
+            })
+            .collect::<Vec<_>>();
+
         let tx = connection
             .transaction()
             .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
@@ -1489,10 +1578,15 @@ impl MediaRuntime {
             params![playlist_id],
         )
         .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
-        for (position, track_id) in track_ids.iter().enumerate() {
+        tx.execute(
+            "DELETE FROM playlist_order_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+        )
+        .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
+        for (track_id, position) in positioned_track_ids {
             tx.execute(
                 "INSERT INTO playlist_tracks(playlist_id, track_id, position) VALUES(?1, ?2, ?3)",
-                params![playlist_id, track_id, position as i64],
+                params![playlist_id, track_id, position],
             )
             .map_err(|error| sqlite_error("media_playlist_rule_materialize", error))?;
         }
@@ -1511,15 +1605,409 @@ impl MediaRuntime {
         }))
     }
 
+    fn sort_rule_list(&mut self, _args: Value) -> Result<Value, MediaError> {
+        let connection = self.connection("media_sort_rule_list")?;
+        let mut statement = connection
+            .prepare(
+                "SELECT id, name, rule_json, created_at, updated_at
+                 FROM sort_rules ORDER BY name COLLATE NOCASE, id",
+            )
+            .map_err(|error| sqlite_error("media_sort_rule_list", error))?;
+        let rows = statement
+            .query_map([], |row| {
+                let rule_json: String = row.get(2)?;
+                let rule: SortRule = serde_json::from_str(&rule_json).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        2,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
+                Ok(json!({
+                    "id": row.get::<_, String>(0)?,
+                    "name": row.get::<_, String>(1)?,
+                    "rule": rule,
+                    "createdAt": row.get::<_, i64>(3)?,
+                    "updatedAt": row.get::<_, i64>(4)?,
+                }))
+            })
+            .map_err(|error| sqlite_error("media_sort_rule_list", error))?;
+        let rules = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| sqlite_error("media_sort_rule_list", error))?;
+        Ok(json!({ "rules": rules }))
+    }
+
+    fn sort_rule_get(&mut self, args: Value) -> Result<Value, MediaError> {
+        let id = required_string(&args, "sortRuleId", "media_sort_rule_get")?;
+        let connection = self.connection("media_sort_rule_get")?;
+        let row: Option<(String, String, String, i64, i64)> = connection
+            .query_row(
+                "SELECT id, name, rule_json, created_at, updated_at FROM sort_rules WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .optional()
+            .map_err(|error| sqlite_error("media_sort_rule_get", error))?;
+        let Some((id, name, rule_json, created_at, updated_at)) = row else {
+            return Err(media_error("media_sort_rule_get", "sort rule does not exist"));
+        };
+        let rule = parse_sort_rule(
+            serde_json::from_str(&rule_json)
+                .map_err(|error| media_error("media_sort_rule_get", error.to_string()))?,
+            "media_sort_rule_get",
+        )?;
+        Ok(json!({ "id": id, "name": name, "rule": rule, "createdAt": created_at, "updatedAt": updated_at }))
+    }
+
+    fn sort_rule_save(&mut self, args: Value) -> Result<Value, MediaError> {
+        let name = required_string(&args, "name", "media_sort_rule_save")?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(media_error("media_sort_rule_save", "sort rule name is required"));
+        }
+        let rule_value = args
+            .get("rule")
+            .cloned()
+            .ok_or_else(|| media_error("media_sort_rule_save", "rule is required"))?;
+        let rule = parse_sort_rule(rule_value, "media_sort_rule_save")?;
+        let connection = self.connection("media_sort_rule_save")?;
+        validate_sort_rule(connection, &rule, "media_sort_rule_save")?;
+        let rule_json = serde_json::to_string(&rule)
+            .map_err(|error| media_error("media_sort_rule_save", error.to_string()))?;
+        let now = now_ms();
+        let requested_id = args
+            .get("sortRuleId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string);
+        let id = requested_id
+            .clone()
+            .unwrap_or_else(|| format!("sort-{}", stable_id(&format!("{name}\n{now}"))));
+        if requested_id.is_some() {
+            let updated = connection
+                .execute(
+                    "UPDATE sort_rules SET name = ?2, rule_json = ?3, updated_at = ?4 WHERE id = ?1",
+                    params![id, name, rule_json, now],
+                )
+                .map_err(|error| sqlite_error("media_sort_rule_save", error))?;
+            if updated == 0 {
+                return Err(media_error("media_sort_rule_save", "sort rule does not exist"));
+            }
+        } else {
+            connection
+                .execute(
+                    "INSERT INTO sort_rules(id, name, rule_json, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?4)",
+                    params![id, name, rule_json, now],
+                )
+                .map_err(|error| sqlite_error("media_sort_rule_save", error))?;
+        }
+        Ok(json!({ "id": id, "name": name, "rule": rule, "updatedAt": now }))
+    }
+
+    fn sort_rule_remove(&mut self, args: Value) -> Result<Value, MediaError> {
+        let id = required_string(&args, "sortRuleId", "media_sort_rule_remove")?;
+        let connection = self.connection("media_sort_rule_remove")?;
+        let removed = connection
+            .execute("DELETE FROM sort_rules WHERE id = ?1", params![id])
+            .map_err(|error| sqlite_error("media_sort_rule_remove", error))?;
+        Ok(json!({ "sortRuleId": id, "removed": removed > 0 }))
+    }
+
+    fn playlist_order_get(&mut self, args: Value) -> Result<Value, MediaError> {
+        let playlist_id = required_string(&args, "playlistId", "media_playlist_order_get")?;
+        let connection = self.connection("media_playlist_order_get")?;
+        ensure_playlist_exists(connection, &playlist_id, "media_playlist_order_get")?;
+        let dynamic = playlist_is_dynamic(connection, &playlist_id, "media_playlist_order_get")?;
+        let membership_ids = load_playlist_membership_ids(
+            connection,
+            &playlist_id,
+            "media_playlist_order_get",
+        )?;
+        let ordered_ids = if dynamic {
+            apply_dynamic_order_overlay(connection, &playlist_id, membership_ids, "media_playlist_order_get")?
+        } else {
+            membership_ids
+        };
+        let tracks = ordered_tracks(connection, &ordered_ids, "media_playlist_order_get")?;
+        let sort_rule_id = load_playlist_sort_rule_id(connection, &playlist_id, "media_playlist_order_get")?;
+        let has_manual_order = if dynamic {
+            has_dynamic_order_overlay(connection, &playlist_id, "media_playlist_order_get")?
+        } else {
+            connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM playlist_order_configs WHERE playlist_id = ?1)",
+                    params![playlist_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| sqlite_error("media_playlist_order_get", error))?
+        };
+        Ok(json!({
+            "playlistId": playlist_id,
+            "type": if dynamic { "dynamic" } else { "static" },
+            "trackIds": ordered_ids,
+            "tracks": tracks,
+            "sortRuleId": sort_rule_id,
+            "hasManualOrder": has_manual_order,
+        }))
+    }
+
+    fn playlist_order_preview(&mut self, args: Value) -> Result<Value, MediaError> {
+        let playlist_id = required_string(&args, "playlistId", "media_playlist_order_preview")?;
+        let supplied_rule = args.get("rule").filter(|value| !value.is_null()).cloned();
+        let sort_rule_id = args
+            .get("sortRuleId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty());
+        let connection = self.connection("media_playlist_order_preview")?;
+        ensure_playlist_exists(connection, &playlist_id, "media_playlist_order_preview")?;
+        let rule = match supplied_rule {
+            Some(value) => parse_sort_rule(value, "media_playlist_order_preview")?,
+            None => {
+                let id = sort_rule_id.ok_or_else(|| {
+                    media_error("media_playlist_order_preview", "sortRuleId or rule is required")
+                })?;
+                load_sort_rule(connection, id, "media_playlist_order_preview")?
+            }
+        };
+        validate_sort_rule(connection, &rule, "media_playlist_order_preview")?;
+        let membership_ids = load_playlist_membership_ids(
+            connection,
+            &playlist_id,
+            "media_playlist_order_preview",
+        )?;
+        let mut tracks = ordered_tracks(
+            connection,
+            &membership_ids,
+            "media_playlist_order_preview",
+        )?;
+        sort_tracks_by_rule(connection, &mut tracks, &rule, "media_playlist_order_preview")?;
+        Ok(json!({
+            "playlistId": playlist_id,
+            "trackIds": tracks.iter().map(|track| track.id.clone()).collect::<Vec<_>>(),
+            "tracks": tracks,
+            "rule": rule,
+            "sortRuleId": sort_rule_id,
+        }))
+    }
+
+    fn playlist_order_save(&mut self, args: Value) -> Result<Value, MediaError> {
+        let playlist_id = required_string(&args, "playlistId", "media_playlist_order_save")?;
+        let values = args
+            .get("trackIds")
+            .and_then(Value::as_array)
+            .ok_or_else(|| media_error("media_playlist_order_save", "trackIds is required"))?;
+        let mut track_ids = Vec::new();
+        for value in values {
+            let track_id = value.as_str().ok_or_else(|| {
+                media_error("media_playlist_order_save", "trackIds must contain strings")
+            })?;
+            if track_ids.iter().any(|existing| existing == track_id) {
+                return Err(media_error(
+                    "media_playlist_order_save",
+                    "trackIds must not contain duplicates",
+                ));
+            }
+            track_ids.push(track_id.to_string());
+        }
+        let connection = self.connection("media_playlist_order_save")?;
+        ensure_playlist_exists(connection, &playlist_id, "media_playlist_order_save")?;
+        let membership_ids = load_playlist_membership_ids(
+            connection,
+            &playlist_id,
+            "media_playlist_order_save",
+        )?;
+        let membership_set = membership_ids.iter().collect::<HashSet<_>>();
+        if membership_ids.len() != track_ids.len()
+            || track_ids.iter().any(|track_id| !membership_set.contains(track_id))
+        {
+            return Err(media_error(
+                "media_playlist_order_save",
+                "trackIds must exactly match the current playlist songs",
+            ));
+        }
+        let dynamic = playlist_is_dynamic(connection, &playlist_id, "media_playlist_order_save")?;
+        let sort_rule_id = args
+            .get("sortRuleId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(str::to_string);
+        if let Some(id) = &sort_rule_id {
+            let exists: bool = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sort_rules WHERE id = ?1)",
+                    params![id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| sqlite_error("media_playlist_order_save", error))?;
+            if !exists {
+                return Err(media_error("media_playlist_order_save", "sort rule does not exist"));
+            }
+        }
+        let tx = connection
+            .transaction()
+            .map_err(|error| sqlite_error("media_playlist_order_save", error))?;
+        if dynamic {
+            tx.execute(
+                "DELETE FROM playlist_order_tracks WHERE playlist_id = ?1",
+                params![playlist_id],
+            )
+            .map_err(|error| sqlite_error("media_playlist_order_save", error))?;
+            for (position, track_id) in track_ids.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO playlist_order_tracks(playlist_id, track_id, position) VALUES(?1, ?2, ?3)",
+                    params![playlist_id, track_id, position as i64],
+                )
+                .map_err(|error| sqlite_error("media_playlist_order_save", error))?;
+            }
+        } else {
+            for (position, track_id) in track_ids.iter().enumerate() {
+                tx.execute(
+                    "UPDATE playlist_tracks SET position = ?3 WHERE playlist_id = ?1 AND track_id = ?2",
+                    params![playlist_id, track_id, position as i64],
+                )
+                .map_err(|error| sqlite_error("media_playlist_order_save", error))?;
+            }
+        }
+        tx.execute(
+            "INSERT INTO playlist_order_configs(playlist_id, sort_rule_id, updated_at) VALUES(?1, ?2, ?3)
+             ON CONFLICT(playlist_id) DO UPDATE SET sort_rule_id = excluded.sort_rule_id, updated_at = excluded.updated_at",
+            params![playlist_id, sort_rule_id, now_ms()],
+        )
+        .map_err(|error| sqlite_error("media_playlist_order_save", error))?;
+        tx.execute(
+            "UPDATE playlists SET updated_at = ?2 WHERE id = ?1",
+            params![playlist_id, now_ms()],
+        )
+        .map_err(|error| sqlite_error("media_playlist_order_save", error))?;
+        tx.commit()
+            .map_err(|error| sqlite_error("media_playlist_order_save", error))?;
+        Ok(json!({ "playlistId": playlist_id, "type": if dynamic { "dynamic" } else { "static" }, "trackIds": track_ids, "sortRuleId": sort_rule_id }))
+    }
+
+    fn playlist_clone(&mut self, args: Value) -> Result<Value, MediaError> {
+        let source_id = required_string(&args, "playlistId", "media_playlist_clone")?;
+        let name = required_string(&args, "name", "media_playlist_clone")?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(media_error("media_playlist_clone", "playlist name is required"));
+        }
+        let connection = self.connection("media_playlist_clone")?;
+        ensure_playlist_exists(connection, &source_id, "media_playlist_clone")?;
+        let dynamic = playlist_is_dynamic(connection, &source_id, "media_playlist_clone")?;
+        let requested_order_ids = args
+            .get("trackIds")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            });
+        let membership_ids = load_playlist_membership_ids(connection, &source_id, "media_playlist_clone")?;
+        let membership_set = membership_ids.iter().collect::<HashSet<_>>();
+        let order_ids = if let Some(order_ids) = requested_order_ids {
+            let unique_ids = order_ids.iter().collect::<HashSet<_>>();
+            if order_ids.len() != membership_ids.len()
+                || unique_ids.len() != order_ids.len()
+                || order_ids.iter().any(|track_id| !membership_set.contains(track_id))
+            {
+                return Err(media_error(
+                    "media_playlist_clone",
+                    "trackIds must exactly match the current playlist songs",
+                ));
+            }
+            order_ids
+        } else if dynamic {
+            apply_dynamic_order_overlay(
+                connection,
+                &source_id,
+                membership_ids,
+                "media_playlist_clone",
+            )?
+        } else {
+            membership_ids
+        };
+        let source_meta: (Option<String>, Option<String>) = connection
+            .query_row(
+                "SELECT description, cover_track_id FROM playlists WHERE id = ?1",
+                params![source_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .map_err(|error| sqlite_error("media_playlist_clone", error))?;
+        let description = args
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or(source_meta.0);
+        let new_id = format!("pl-{}", stable_id(&format!("clone\n{}\n{}", source_id, now_ms())));
+        let sort_rule_id = load_playlist_sort_rule_id(connection, &source_id, "media_playlist_clone")?;
+        let source_rule = load_saved_playlist_rule(connection, &source_id, "media_playlist_clone")?;
+        let tx = connection
+            .transaction()
+            .map_err(|error| sqlite_error("media_playlist_clone", error))?;
+        tx.execute(
+            "INSERT INTO playlists(id, name, description, cover_track_id, created_at, updated_at) VALUES(?1, ?2, ?3, ?4, ?5, ?5)",
+            params![new_id, name, description, source_meta.1, now_ms()],
+        )
+        .map_err(|error| sqlite_error("media_playlist_clone", error))?;
+        if dynamic {
+            if let Some(rule) = source_rule {
+                tx.execute(
+                    "INSERT INTO playlist_rules(playlist_id, rule_json, updated_at) VALUES(?1, ?2, ?3)",
+                    params![new_id, serde_json::to_string(&rule).map_err(|error| media_error("media_playlist_clone", error.to_string()))?, now_ms()],
+                )
+                .map_err(|error| sqlite_error("media_playlist_clone", error))?;
+            }
+            for (position, track_id) in order_ids.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO playlist_order_tracks(playlist_id, track_id, position) VALUES(?1, ?2, ?3)",
+                    params![new_id, track_id, position as i64],
+                )
+                .map_err(|error| sqlite_error("media_playlist_clone", error))?;
+            }
+        } else {
+            for (position, track_id) in order_ids.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO playlist_tracks(playlist_id, track_id, position) VALUES(?1, ?2, ?3)",
+                    params![new_id, track_id, position as i64],
+                )
+                .map_err(|error| sqlite_error("media_playlist_clone", error))?;
+            }
+        }
+        tx.execute(
+            "INSERT INTO playlist_order_configs(playlist_id, sort_rule_id, updated_at) VALUES(?1, ?2, ?3)",
+            params![new_id, sort_rule_id, now_ms()],
+        )
+        .map_err(|error| sqlite_error("media_playlist_clone", error))?;
+        tx.commit()
+            .map_err(|error| sqlite_error("media_playlist_clone", error))?;
+        Ok(json!({
+            "id": new_id,
+            "name": name,
+            "description": description.unwrap_or_default(),
+            "type": if dynamic { "dynamic" } else { "static" },
+            "trackCount": order_ids.len(),
+        }))
+    }
+
     fn playlist_add_track(&mut self, args: Value) -> Result<Value, MediaError> {
         let playlist_id = required_string(&args, "playlistId", "media_playlist_add_track")?;
         let track_id = required_string(&args, "trackId", "media_playlist_add_track")?;
-        let position = args
-            .get("position")
-            .and_then(Value::as_i64)
-            .unwrap_or(i64::MAX);
+        let requested_position = args.get("position").and_then(Value::as_i64);
         let connection = self.connection("media_playlist_add_track")?;
         ensure_static_playlist(connection, &playlist_id, "media_playlist_add_track")?;
+        let position = match requested_position {
+            Some(position) => position,
+            None => connection
+                .query_row(
+                    "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_tracks WHERE playlist_id = ?1",
+                    params![playlist_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|error| sqlite_error("media_playlist_add_track", error))?,
+        };
         connection
             .execute(
                 "INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position) VALUES(?1, ?2, ?3)",
@@ -1634,6 +2122,327 @@ impl MediaRuntime {
 fn parse_playlist_rule(value: Value, operation: &str) -> Result<PlaylistRule, MediaError> {
     serde_json::from_value(value)
         .map_err(|error| media_error(operation, format!("invalid playlist rule: {error}")))
+}
+
+fn parse_sort_rule(value: Value, operation: &str) -> Result<SortRule, MediaError> {
+    serde_json::from_value(value)
+        .map_err(|error| media_error(operation, format!("invalid sort rule: {error}")))
+}
+
+fn validate_sort_rule(
+    connection: &Connection,
+    rule: &SortRule,
+    operation: &str,
+) -> Result<(), MediaError> {
+    if rule.version != 1 {
+        return Err(media_error(
+            operation,
+            format!("unsupported sort rule version: {}", rule.version),
+        ));
+    }
+    if !matches!(rule.tag_direction.as_str(), "asc" | "desc") {
+        return Err(media_error(operation, "tag direction must be asc or desc"));
+    }
+    if rule.tag_weights.len() > 64 || rule.fields.len() > 32 {
+        return Err(media_error(operation, "sort rule contains too many conditions"));
+    }
+    let mut tag_ids = HashSet::new();
+    for tag in &rule.tag_weights {
+        if tag.tag_id.trim().is_empty() || tag.weight < 0 || tag.weight > 1_000_000 {
+            return Err(media_error(operation, "sort rule contains an invalid tag weight"));
+        }
+        if !tag_ids.insert(&tag.tag_id) {
+            return Err(media_error(operation, "sort rule contains a duplicate tag"));
+        }
+        let exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM tags WHERE id = ?1)",
+                params![tag.tag_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| sqlite_error(operation, error))?;
+        if !exists {
+            return Err(media_error(
+                operation,
+                format!("sort rule tag does not exist: {}", tag.tag_id),
+            ));
+        }
+    }
+    let mut fields = HashSet::new();
+    for field in &rule.fields {
+        if !matches!(field.direction.as_str(), "asc" | "desc") {
+            return Err(media_error(operation, "sort field direction must be asc or desc"));
+        }
+        if !matches!(
+            field.field.as_str(),
+            "title"
+                | "artist"
+                | "album"
+                | "albumArtist"
+                | "composer"
+                | "year"
+                | "discNumber"
+                | "trackNumber"
+                | "durationMs"
+                | "addedAt"
+                | "lastPlayedAt"
+        ) {
+            return Err(media_error(
+                operation,
+                format!("unsupported sort field: {}", field.field),
+            ));
+        }
+        if !fields.insert(&field.field) {
+            return Err(media_error(operation, "sort rule contains a duplicate field"));
+        }
+    }
+    Ok(())
+}
+
+fn load_sort_rule(
+    connection: &Connection,
+    sort_rule_id: &str,
+    operation: &str,
+) -> Result<SortRule, MediaError> {
+    let payload: Option<String> = connection
+        .query_row(
+            "SELECT rule_json FROM sort_rules WHERE id = ?1",
+            params![sort_rule_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| sqlite_error(operation, error))?;
+    let payload = payload.ok_or_else(|| media_error(operation, "sort rule does not exist"))?;
+    parse_sort_rule(
+        serde_json::from_str(&payload)
+            .map_err(|error| media_error(operation, error.to_string()))?,
+        operation,
+    )
+}
+
+fn playlist_is_dynamic(
+    connection: &Connection,
+    playlist_id: &str,
+    operation: &str,
+) -> Result<bool, MediaError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlist_rules WHERE playlist_id = ?1)",
+            params![playlist_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| sqlite_error(operation, error))
+}
+
+fn load_playlist_sort_rule_id(
+    connection: &Connection,
+    playlist_id: &str,
+    operation: &str,
+) -> Result<Option<String>, MediaError> {
+    connection
+        .query_row(
+            "SELECT sort_rule_id FROM playlist_order_configs WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| sqlite_error(operation, error))
+}
+
+fn load_playlist_membership_ids(
+    connection: &Connection,
+    playlist_id: &str,
+    operation: &str,
+) -> Result<Vec<String>, MediaError> {
+    if let Some(rule) = load_saved_playlist_rule(connection, playlist_id, operation)? {
+        let evaluated = evaluate_playlist_rule_ids(
+            connection,
+            playlist_id,
+            &rule,
+            &mut Vec::new(),
+            operation,
+        )?;
+        return Ok(evaluated.into_iter().map(|track| track.id).collect());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT pt.track_id FROM playlist_tracks pt
+             INNER JOIN tracks t ON t.id = pt.track_id
+             WHERE pt.playlist_id = ?1 AND t.missing = 0
+             ORDER BY pt.position, pt.track_id",
+        )
+        .map_err(|error| sqlite_error(operation, error))?;
+    let rows = statement
+        .query_map(params![playlist_id], |row| row.get(0))
+        .map_err(|error| sqlite_error(operation, error))?;
+    rows.collect::<Result<Vec<String>, _>>()
+        .map_err(|error| sqlite_error(operation, error))
+}
+
+fn has_dynamic_order_overlay(
+    connection: &Connection,
+    playlist_id: &str,
+    operation: &str,
+) -> Result<bool, MediaError> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlist_order_tracks WHERE playlist_id = ?1)",
+            params![playlist_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| sqlite_error(operation, error))
+}
+
+fn apply_dynamic_order_overlay(
+    connection: &Connection,
+    playlist_id: &str,
+    membership_ids: Vec<String>,
+    operation: &str,
+) -> Result<Vec<String>, MediaError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT track_id FROM playlist_order_tracks WHERE playlist_id = ?1 ORDER BY position, track_id",
+        )
+        .map_err(|error| sqlite_error(operation, error))?;
+    let rows = statement
+        .query_map(params![playlist_id], |row| row.get(0))
+        .map_err(|error| sqlite_error(operation, error))?;
+    let saved = rows
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(|error| sqlite_error(operation, error))?;
+    if saved.is_empty() {
+        return Ok(membership_ids);
+    }
+    let membership_set = membership_ids.iter().collect::<HashSet<_>>();
+    let saved_set = saved.iter().collect::<HashSet<_>>();
+    let mut result = membership_ids
+        .iter()
+        .filter(|track_id| !saved_set.contains(track_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    result.extend(saved.into_iter().filter(|track_id| membership_set.contains(track_id)));
+    Ok(result)
+}
+
+fn ordered_tracks(
+    connection: &Connection,
+    track_ids: &[String],
+    operation: &str,
+) -> Result<Vec<MediaTrack>, MediaError> {
+    let tracks = load_tracks_by_ids(connection, track_ids, operation)?;
+    let track_map = tracks
+        .into_iter()
+        .map(|track| (track.id.clone(), track))
+        .collect::<HashMap<_, _>>();
+    Ok(track_ids
+        .iter()
+        .filter_map(|track_id| track_map.get(track_id).cloned())
+        .collect())
+}
+
+fn compare_optional<T: Ord>(left: Option<T>, right: Option<T>, descending: bool) -> std::cmp::Ordering {
+    match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (Some(left), Some(right)) => {
+            if descending { right.cmp(&left) } else { left.cmp(&right) }
+        }
+    }
+}
+
+fn compare_text(left: &str, right: &str, descending: bool) -> std::cmp::Ordering {
+    let ordering = left.to_lowercase().cmp(&right.to_lowercase());
+    if descending { ordering.reverse() } else { ordering }
+}
+
+fn compare_sort_field(left: &MediaTrack, right: &MediaTrack, field: &SortField) -> std::cmp::Ordering {
+    let descending = field.direction == "desc";
+    match field.field.as_str() {
+        "title" => compare_text(&left.title, &right.title, descending),
+        "artist" => compare_text(&left.artist, &right.artist, descending),
+        "album" => compare_text(&left.album, &right.album, descending),
+        "albumArtist" => compare_optional_text(left.album_artist.as_deref(), right.album_artist.as_deref(), descending),
+        "composer" => compare_optional_text(left.composer.as_deref(), right.composer.as_deref(), descending),
+        "year" => compare_optional(left.year, right.year, descending),
+        "discNumber" => compare_optional(left.disc_number, right.disc_number, descending),
+        "trackNumber" => compare_optional(left.track_number, right.track_number, descending),
+        "durationMs" => compare_optional(Some(left.duration_ms), Some(right.duration_ms), descending),
+        "addedAt" => compare_optional(left.added_at, right.added_at, descending),
+        "lastPlayedAt" => compare_optional(left.last_played_at, right.last_played_at, descending),
+        _ => std::cmp::Ordering::Equal,
+    }
+}
+
+fn compare_optional_text(
+    left: Option<&str>,
+    right: Option<&str>,
+    descending: bool,
+) -> std::cmp::Ordering {
+    match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (Some(left), Some(right)) => compare_text(left, right, descending),
+    }
+}
+
+fn sort_tracks_by_rule(
+    connection: &Connection,
+    tracks: &mut [MediaTrack],
+    rule: &SortRule,
+    operation: &str,
+) -> Result<(), MediaError> {
+    let tag_weights = rule
+        .tag_weights
+        .iter()
+        .map(|tag| (tag.tag_id.as_str(), tag.weight))
+        .collect::<HashMap<_, _>>();
+    let mut tag_scores = HashMap::<String, i64>::new();
+    if !tag_weights.is_empty() {
+        let tag_ids = tag_weights.keys().collect::<Vec<_>>();
+        let placeholders = (1..=tag_ids.len())
+            .map(|index| format!("?{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT track_id, tag_id FROM track_tags WHERE tag_id IN ({placeholders})"
+        );
+        let mut statement = connection
+            .prepare(&sql)
+            .map_err(|error| sqlite_error(operation, error))?;
+        let rows = statement
+            .query_map(params_from_iter(tag_ids.iter().copied()), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| sqlite_error(operation, error))?;
+        for row in rows {
+            let (track_id, tag_id) = row.map_err(|error| sqlite_error(operation, error))?;
+            if let Some(weight) = tag_weights.get(tag_id.as_str()) {
+                *tag_scores.entry(track_id).or_default() += *weight;
+            }
+        }
+    }
+    tracks.sort_by(|left, right| {
+        let left_score = tag_scores.get(&left.id).copied().unwrap_or(0);
+        let right_score = tag_scores.get(&right.id).copied().unwrap_or(0);
+        let tag_order = if rule.tag_direction == "desc" {
+            right_score.cmp(&left_score)
+        } else {
+            left_score.cmp(&right_score)
+        };
+        if tag_order != std::cmp::Ordering::Equal {
+            return tag_order;
+        }
+        for field in &rule.fields {
+            let ordering = compare_sort_field(left, right, field);
+            if ordering != std::cmp::Ordering::Equal {
+                return ordering;
+            }
+        }
+        std::cmp::Ordering::Equal
+    });
+    Ok(())
 }
 
 fn ensure_playlist_exists(
@@ -2155,13 +2964,16 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
         CREATE TABLE IF NOT EXISTS playlists(id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, cover_track_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS playlist_tracks(playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, position INTEGER NOT NULL, PRIMARY KEY(playlist_id, track_id));
         CREATE TABLE IF NOT EXISTS playlist_rules(playlist_id TEXT PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE, rule_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS sort_rules(id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, rule_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS playlist_order_configs(playlist_id TEXT PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE, sort_rule_id TEXT REFERENCES sort_rules(id) ON DELETE SET NULL, updated_at INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS playlist_order_tracks(playlist_id TEXT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE, position INTEGER NOT NULL, PRIMARY KEY(playlist_id, track_id));
         CREATE TABLE IF NOT EXISTS albums(id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT, year INTEGER, cover_id TEXT, updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS artists(id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, cover_id TEXT, updated_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS covers(id TEXT PRIMARY KEY, path TEXT NOT NULL, mime_type TEXT NOT NULL, byte_length INTEGER NOT NULL, created_at INTEGER NOT NULL, last_accessed_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS url_cache(url TEXT PRIMARY KEY, local_path TEXT NOT NULL, etag TEXT, last_modified TEXT, content_type TEXT, content_length INTEGER, fetched_at INTEGER NOT NULL, last_accessed_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS scan_jobs(id TEXT PRIMARY KEY, state TEXT NOT NULL, root_ids_json TEXT NOT NULL, scanned INTEGER NOT NULL DEFAULT 0, imported INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, started_at INTEGER NOT NULL, finished_at INTEGER, error TEXT);
         CREATE TABLE IF NOT EXISTS playback_history(id INTEGER PRIMARY KEY AUTOINCREMENT, track_id TEXT NOT NULL, played_at INTEGER NOT NULL, position_ms INTEGER NOT NULL DEFAULT 0);
-        PRAGMA user_version = 3;",
+        PRAGMA user_version = 4;",
     )
 }
 
@@ -3140,6 +3952,88 @@ pub fn media_playlist_rule_materialize(
 }
 
 #[tauri::command]
+pub fn media_playlist_order_get(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+) -> Result<Value, MediaError> {
+    service.call("media_playlist_order_get", json!({ "playlistId": playlist_id }))
+}
+
+#[tauri::command]
+pub fn media_playlist_order_preview(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+    sort_rule_id: Option<String>,
+    rule: Option<Value>,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_order_preview",
+        json!({ "playlistId": playlist_id, "sortRuleId": sort_rule_id, "rule": rule }),
+    )
+}
+
+#[tauri::command]
+pub fn media_playlist_order_save(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+    track_ids: Vec<String>,
+    sort_rule_id: Option<String>,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_order_save",
+        json!({ "playlistId": playlist_id, "trackIds": track_ids, "sortRuleId": sort_rule_id }),
+    )
+}
+
+#[tauri::command]
+pub fn media_playlist_clone(
+    service: State<'_, MediaService>,
+    playlist_id: String,
+    name: String,
+    description: Option<String>,
+    track_ids: Option<Vec<String>>,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_playlist_clone",
+        json!({ "playlistId": playlist_id, "name": name, "description": description, "trackIds": track_ids }),
+    )
+}
+
+#[tauri::command]
+pub fn media_sort_rule_list(service: State<'_, MediaService>) -> Result<Value, MediaError> {
+    service.call("media_sort_rule_list", json!({}))
+}
+
+#[tauri::command]
+pub fn media_sort_rule_get(
+    service: State<'_, MediaService>,
+    sort_rule_id: String,
+) -> Result<Value, MediaError> {
+    service.call("media_sort_rule_get", json!({ "sortRuleId": sort_rule_id }))
+}
+
+#[tauri::command]
+pub fn media_sort_rule_save(
+    service: State<'_, MediaService>,
+    sort_rule_id: Option<String>,
+    name: String,
+    rule: Value,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_sort_rule_save",
+        json!({ "sortRuleId": sort_rule_id, "name": name, "rule": rule }),
+    )
+}
+
+#[tauri::command]
+pub fn media_sort_rule_remove(
+    service: State<'_, MediaService>,
+    sort_rule_id: String,
+) -> Result<Value, MediaError> {
+    service.call("media_sort_rule_remove", json!({ "sortRuleId": sort_rule_id }))
+}
+
+#[tauri::command]
 pub fn media_tag_create(
     service: State<'_, MediaService>,
     label: String,
@@ -3244,6 +4138,16 @@ mod tests {
             )
             .expect("rules table count");
         assert_eq!(rules_table_count, 1);
+        for table in ["sort_rules", "playlist_order_configs", "playlist_order_tracks"] {
+            let table_count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    params![table],
+                    |row| row.get(0),
+                )
+                .expect("arrangement table count");
+            assert_eq!(table_count, 1);
+        }
     }
 
     fn test_source(kind: &str, id: Option<&str>) -> PlaylistRuleStep {
@@ -3482,6 +4386,172 @@ mod tests {
             test_source("tag", Some("tag-one")),
         ]);
         assert!(validate_playlist_rule(&connection, "target", &random_not_final, "test").is_err());
+    }
+
+    #[test]
+    fn sort_rule_sums_tag_weights_then_applies_metadata_chain() {
+        let connection = rule_test_connection();
+        connection
+            .execute(
+                "UPDATE tracks SET year = CASE id WHEN 'track-a' THEN 2022 WHEN 'track-b' THEN 2021 WHEN 'track-c' THEN 2020 ELSE NULL END",
+                [],
+            )
+            .expect("years");
+        connection
+            .execute(
+                "INSERT INTO tags(id, label, created_at) VALUES('tag-two', 'Tag two', 1)",
+                [],
+            )
+            .expect("second tag");
+        connection
+            .execute(
+                "INSERT INTO track_tags(track_id, tag_id) VALUES('track-a', 'tag-two')",
+                [],
+            )
+            .expect("second track tag");
+        let rule = SortRule {
+            version: 1,
+            tag_weights: vec![
+                SortTagWeight { tag_id: "tag-one".into(), weight: 100 },
+                SortTagWeight { tag_id: "tag-two".into(), weight: 50 },
+            ],
+            tag_direction: "desc".into(),
+            fields: vec![SortField { field: "year".into(), direction: "asc".into() }],
+        };
+        validate_sort_rule(&connection, &rule, "test").expect("valid sort rule");
+        let ids = vec!["track-b", "track-c", "track-d", "track-a"];
+        let mut tracks = ordered_tracks(
+            &connection,
+            &ids.iter().map(|id| (*id).to_string()).collect::<Vec<_>>(),
+            "test",
+        )
+        .expect("tracks");
+        sort_tracks_by_rule(&connection, &mut tracks, &rule, "test").expect("sort");
+        assert_eq!(
+            tracks.iter().map(|track| track.id.as_str()).collect::<Vec<_>>(),
+            vec!["track-a", "track-b", "track-c", "track-d"]
+        );
+    }
+
+    #[test]
+    fn sort_rule_keeps_missing_metadata_last() {
+        let connection = rule_test_connection();
+        connection
+            .execute("UPDATE tracks SET year = CASE id WHEN 'track-a' THEN 2022 WHEN 'track-b' THEN 2021 ELSE NULL END", [])
+            .expect("years");
+        let rule = SortRule {
+            version: 1,
+            tag_weights: Vec::new(),
+            tag_direction: "desc".into(),
+            fields: vec![SortField { field: "year".into(), direction: "asc".into() }],
+        };
+        let ids = vec!["track-a", "track-d", "track-b", "track-c"];
+        let mut tracks = ordered_tracks(
+            &connection,
+            &ids.iter().map(|id| (*id).to_string()).collect::<Vec<_>>(),
+            "test",
+        )
+        .expect("tracks");
+        sort_tracks_by_rule(&connection, &mut tracks, &rule, "test").expect("sort");
+        assert_eq!(
+            tracks.iter().map(|track| track.id.as_str()).collect::<Vec<_>>(),
+            vec!["track-b", "track-a", "track-d", "track-c"]
+        );
+    }
+
+    #[test]
+    fn static_order_uses_positions_and_dynamic_overlay_tracks_membership_changes() {
+        let connection = rule_test_connection();
+        connection
+            .execute(
+                "UPDATE playlist_tracks SET position = CASE track_id WHEN 'track-a' THEN 1 WHEN 'track-b' THEN 0 END
+                 WHERE playlist_id = 'playlist-one'",
+                [],
+            )
+            .expect("reorder static playlist");
+        assert_eq!(
+            load_playlist_membership_ids(&connection, "playlist-one", "test").expect("static order"),
+            vec!["track-b", "track-a"]
+        );
+
+        let dynamic_rule = test_rule(vec![test_source("library", None)]);
+        connection
+            .execute(
+                "INSERT INTO playlist_rules(playlist_id, rule_json, updated_at) VALUES('target', ?1, 1)",
+                params![serde_json::to_string(&dynamic_rule).expect("dynamic rule json")],
+            )
+            .expect("dynamic rule");
+        connection
+            .execute(
+                "INSERT INTO playlist_order_tracks(playlist_id, track_id, position)
+                 VALUES('target', 'track-b', 0), ('target', 'track-a', 1)",
+                [],
+            )
+            .expect("dynamic overlay");
+
+        let membership = load_playlist_membership_ids(&connection, "target", "test")
+            .expect("dynamic membership");
+        assert_eq!(
+            apply_dynamic_order_overlay(&connection, "target", membership, "test")
+                .expect("dynamic order"),
+            vec!["track-c", "track-d", "track-b", "track-a"]
+        );
+
+        let narrowed_rule = test_rule(vec![test_source("tag", Some("tag-one"))]);
+        connection
+            .execute(
+                "UPDATE playlist_rules SET rule_json = ?1 WHERE playlist_id = 'target'",
+                params![serde_json::to_string(&narrowed_rule).expect("narrowed rule json")],
+            )
+            .expect("narrow dynamic rule");
+        let membership = load_playlist_membership_ids(&connection, "target", "test")
+            .expect("narrowed membership");
+        assert_eq!(
+            apply_dynamic_order_overlay(&connection, "target", membership, "test")
+                .expect("filtered dynamic order"),
+            vec!["track-b", "track-a"]
+        );
+    }
+
+    #[test]
+    fn deleting_sort_rule_detaches_playlist_reference_without_changing_order_data() {
+        let connection = rule_test_connection();
+        let rule = SortRule {
+            version: 1,
+            tag_weights: Vec::new(),
+            tag_direction: "desc".into(),
+            fields: vec![SortField { field: "title".into(), direction: "asc".into() }],
+        };
+        connection
+            .execute(
+                "INSERT INTO sort_rules(id, name, rule_json, created_at, updated_at)
+                 VALUES('sort-one', 'Sort one', ?1, 1, 1)",
+                params![serde_json::to_string(&rule).expect("sort rule json")],
+            )
+            .expect("sort rule");
+        connection
+            .execute(
+                "INSERT INTO playlist_order_configs(playlist_id, sort_rule_id, updated_at)
+                 VALUES('playlist-one', 'sort-one', 1)",
+                [],
+            )
+            .expect("playlist sort rule reference");
+        connection
+            .execute("DELETE FROM sort_rules WHERE id = 'sort-one'", [])
+            .expect("delete sort rule");
+
+        let detached: Option<String> = connection
+            .query_row(
+                "SELECT sort_rule_id FROM playlist_order_configs WHERE playlist_id = 'playlist-one'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("detached reference");
+        assert!(detached.is_none());
+        assert_eq!(
+            load_playlist_membership_ids(&connection, "playlist-one", "test").expect("order data"),
+            vec!["track-a", "track-b"]
+        );
     }
 
     #[test]
