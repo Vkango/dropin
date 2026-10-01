@@ -22,9 +22,16 @@
     },
     "tag": {
       "createTitle": "新建标签",
-      "createMessage": "用标签给音乐做一点私人标记。",
-      "createPlaceholder": "例如：BPM 128、轻柔、采样感",
-      "createConfirm": "添加"
+      "createMessage": "给标签取一个名字，选择歌曲来源，再写下它的故事。",
+      "createPlaceholder": "例如：夜跑、通勤、采样感",
+      "createConfirm": "创建",
+      "nameLabel": "标签名称",
+      "providerLabel": "歌曲来源",
+      "providerNone": "亲手选集",
+      "wikiLabel": "Wiki · Markdown",
+      "wikiPlaceholder": "介绍这个标签。关联插件时会填入插件的 Wiki，你可以继续修改。",
+      "wikiLoading": "正在读取插件的 Wiki…",
+      "wikiLoadFailed": "未能读取插件的 Wiki。你仍可以自行填写并创建标签。"
     }
   },
   "sidebar": {
@@ -108,12 +115,35 @@
     "goodMorning": "早上好",
     "goodAfternoon": "下午好",
     "goodEvening": "晚上好",
-    "recentlyPlayed": "最近播放",
-    "recommended": "为您推荐",
-    "seeAll": "查看全部",
-    "bannerDescription": "这东西一次能吃一袋我丢",
-    "emptyRecentlyPlayed": "暂无播放记录",
-    "emptyRecommended": "暂无推荐"
+    "command": {
+      "idleHint": "输入 / 使用指令，或直接输入关键词搜索全库",
+      "placeholder": "输入指令或搜索…（/help 查看全部指令）",
+      "saveHint": "Enter 保存为播放列表",
+      "playHint": "Enter 播放第一首",
+      "saveAsPlaylist": "保存为播放列表",
+      "saveMessage": "将当前 {count} 首结果保存为新的播放列表。",
+      "savedTitle": "播放列表已创建",
+      "savedTip": "已将 {count} 首歌曲加入「{name}」。",
+      "saveFailed": "创建播放列表失败",
+      "emptyResult": "没有匹配的歌曲",
+      "unknown": "未知指令：/{name}，输入 /help 查看可用指令",
+      "missingArg": "缺少参数，用法：{usage}",
+      "argName": "名称",
+      "argCount": "数量",
+      "argKeyword": "关键词",
+      "helpTitle": "可用指令",
+      "helpDesc": "查看全部指令",
+      "artistDesc": "查看艺术家的全部歌曲",
+      "albumDesc": "查看专辑的全部歌曲",
+      "tagDesc": "查看标签下的全部歌曲",
+      "randomDesc": "随机抽选歌曲",
+      "randomTitle": "随机 {count} 首",
+      "recentDesc": "最近播放过的歌曲",
+      "recentTitle": "最近播放",
+      "allDesc": "整个音乐库",
+      "allTitle": "全部歌曲",
+      "playDesc": "搜索歌曲，按回车播放第一首"
+    }
   },
   "library": {
     "title": "库",
@@ -204,6 +234,23 @@
     "ruleName": "规则名称",
     "ruleNamePlaceholder": "例如：先新后旧、情绪递进",
     "tagWeights": "Tags 权重",
+    "tagSortTerms": "Tag 排序项",
+    "noTagSortTerms": "未设置 Tag 排序项",
+    "tagProvider": "Tag 提供者",
+    "tagKey": "Tag 键名",
+    "tagKeyPlaceholder": "例如：bpm、mood",
+    "tagOperator": "比较方式",
+    "tagValue": "值",
+    "tagValueTo": "上限值",
+    "tagOperators": {
+      "eq": "等于",
+      "contains": "包含",
+      "gt": "大于",
+      "gte": "不小于",
+      "lt": "小于",
+      "lte": "不大于",
+      "between": "介于"
+    },
     "tagCondition": "Tag 条件",
     "tagWeight": "Tag 权重",
     "tagScoreDirection": "Tag 总分方向",
@@ -229,6 +276,8 @@
     "fieldLastPlayedAt": "最近播放",
     "saveRule": "保存规则",
     "generateOrder": "生成顺序",
+    "generatingOrder": "正在生成顺序",
+    "saving": "正在保存",
     "currentOrder": "当前顺序",
     "orderCount": "共 {count} 首歌",
     "unsavedOrder": "有未保存调整",
@@ -310,7 +359,32 @@
     "statusAvailable": "可用",
     "statusEnabled": "已启用",
     "statusFaulted": "运行错误",
-    "empty": "没有找到插件"
+    "empty": "没有找到插件",
+    "tabOverview": "概览",
+    "tabWiki": "Wiki",
+    "tabPermissions": "权限",
+    "author": "作者",
+    "noWiki": "这个插件尚未提供 Wiki。"
+  },
+  "tagProvider": {
+    "cancel": "取消分析",
+    "stale": "数值可能已过期，点击刷新更新",
+    "unavailable": "来源不可用",
+    "empty": "还没有 Tag 结果",
+    "refreshHint": "点击刷新分析曲库并生成 Tag 值。",
+    "analysisFailed": "Tag 分析失败",
+    "addSongs": "添加歌曲",
+    "addSongsTitle": "管理歌曲 · {name}",
+    "removeSong": "移除",
+    "emptyManual": "这里还没有歌曲",
+    "manualDescription": "由你亲手集缀的旋律。",
+    "manageSongs": "管理歌曲",
+    "wiki": "Wiki",
+    "wikiEmpty": "这个标签尚未写下 Wiki。",
+    "wikiOriginal": "Original",
+    "wikiPluginProvided": "Plugin Provided",
+    "wikiEdit": "编辑 Wiki",
+    "wikiSave": "保存"
   },
   "pluginPermissions": {
     "ui": {
@@ -333,6 +407,18 @@
       "read": {
         "label": "读取音乐库",
         "description": "查看曲库、专辑、艺术家和播放列表数据。"
+      },
+      "audio": {
+        "read": {
+          "label": "读取音频用于分析",
+          "description": "解码曲库中短段音频以供 Tag 分析。"
+        }
+      }
+    },
+    "tag": {
+      "provider": {
+        "label": "提供 Tag",
+        "description": "为曲库中的歌曲生成并写入 Tag 值。"
       }
     },
     "notification": {
@@ -870,6 +956,10 @@
     "importing": "正在导入",
     "importDone": "导入完成",
     "importFailed": "导入失败",
+    "tagAnalysisFinished": "「{name}」分析完成",
+    "tagAnalysisFinishedTip": "结果已更新，可前往标签页查看。",
+    "tagAnalysisFailed": "「{name}」分析失败",
+    "tagAnalysisCancelled": "「{name}」分析已取消",
     "scanStarted": "正在扫描文件夹…",
     "scanProgress": "已导入 {imported} / 已扫描 {scanned}（跳过 {skipped}，失败 {failed}）",
     "scanFinished": "导入完成：{imported} 首，跳过 {skipped}，失败 {failed}",

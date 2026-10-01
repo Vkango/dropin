@@ -22,9 +22,16 @@
     },
     "tag": {
       "createTitle": "新添印记",
-      "createMessage": "以一印记，记此曲之性情。",
-      "createPlaceholder": "如：BPM 128、柔和、采样之趣",
-      "createConfirm": "添之"
+      "createMessage": "为印记立名，择诸曲所出，书其缘起。",
+      "createPlaceholder": "如：夜行、通勤、采样之趣",
+      "createConfirm": "立之",
+      "nameLabel": "印记之名",
+      "providerLabel": "诸曲所出",
+      "providerNone": "亲手选集",
+      "wikiLabel": "曲笺 · Markdown",
+      "wikiPlaceholder": "书此印记之意；若系插件，先取其曲笺，仍可自订。",
+      "wikiLoading": "正取插件曲笺…",
+      "wikiLoadFailed": "未得插件曲笺，仍可自书而立之。"
     }
   },
   "sidebar": {
@@ -108,12 +115,35 @@
     "goodMorning": "晨安，阁下",
     "goodAfternoon": "日安，阁下",
     "goodEvening": "暮安，阁下",
-    "recentlyPlayed": "近日所奏",
-    "recommended": "为君荐曲",
-    "seeAll": "览其全貌",
-    "bannerDescription": "此物甚妙，一袋可尽，嗟乎！",
-    "emptyRecentlyPlayed": "未曾奏曲",
-    "emptyRecommended": "无曲可荐"
+    "command": {
+      "idleHint": "键入 / 以行指令，或直书关键词以搜全库",
+      "placeholder": "书指令或检索…（/help 观诸指令）",
+      "saveHint": "按回车存为名录",
+      "playHint": "回车即奏首曲",
+      "saveAsPlaylist": "存为待奏名录",
+      "saveMessage": "以此 {count} 曲立一新名录。",
+      "savedTitle": "名录已立",
+      "savedTip": "已纳 {count} 曲入「{name}」。",
+      "saveFailed": "立名录未成",
+      "emptyResult": "无曲可寻",
+      "unknown": "未知指令：/{name}，键入 /help 以观诸指令",
+      "missingArg": "缺其参数，当书：{usage}",
+      "argName": "名号",
+      "argCount": "曲数",
+      "argKeyword": "关键词",
+      "helpTitle": "可用之指令",
+      "helpDesc": "遍观诸指令",
+      "artistDesc": "观乐师之诸曲",
+      "albumDesc": "观曲谱之诸曲",
+      "tagDesc": "观印记下之诸曲",
+      "randomDesc": "随机抽曲",
+      "randomTitle": "随机 {count} 曲",
+      "recentDesc": "近日所奏之曲",
+      "recentTitle": "近日所奏",
+      "allDesc": "阁中全库",
+      "allTitle": "库中诸曲",
+      "playDesc": "寻曲，回车即奏首曲"
+    }
   },
   "library": {
     "title": "藏经阁",
@@ -204,6 +234,23 @@
     "ruleName": "曲律之名",
     "ruleNamePlaceholder": "如：先新后旧、情绪递进",
     "tagWeights": "标签权重",
+    "tagSortTerms": "标签排次项",
+    "noTagSortTerms": "尚无标签排次项",
+    "tagProvider": "标签供给者",
+    "tagKey": "标签键名",
+    "tagKeyPlaceholder": "如：bpm、mood",
+    "tagOperator": "比较之法",
+    "tagValue": "值",
+    "tagValueTo": "上限之值",
+    "tagOperators": {
+      "eq": "等于",
+      "contains": "含之",
+      "gt": "大于",
+      "gte": "不小于",
+      "lt": "小于",
+      "lte": "不大于",
+      "between": "介于"
+    },
     "tagCondition": "标签条件",
     "tagWeight": "标签权重",
     "tagScoreDirection": "标签总分方向",
@@ -229,6 +276,8 @@
     "fieldLastPlayedAt": "近次所奏",
     "saveRule": "存此曲律",
     "generateOrder": "生成次序",
+    "generatingOrder": "正生成次序",
+    "saving": "正存之",
     "currentOrder": "当前次序",
     "orderCount": "共 {count} 曲",
     "unsavedOrder": "有未存之改动",
@@ -310,7 +359,32 @@
     "statusAvailable": "可用之技",
     "statusEnabled": "已启用",
     "statusFaulted": "运行有误",
-    "empty": "遍寻不得，空空如也"
+    "empty": "遍寻不得，空空如也",
+    "tabOverview": "概览",
+    "tabWiki": "曲笺",
+    "tabPermissions": "权限",
+    "author": "作者",
+    "noWiki": "此插件尚无曲笺。"
+  },
+  "tagProvider": {
+    "cancel": "罢此推演",
+    "stale": "数值恐已陈旧，宜刷新更之",
+    "unavailable": "来源不可用",
+    "empty": "尚无标签之果",
+    "refreshHint": "点击刷新，推演乐库以生标签之值。",
+    "analysisFailed": "标签推演未成",
+    "addSongs": "增补歌曲",
+    "addSongsTitle": "编理诸曲 · {name}",
+    "removeSong": "移除",
+    "emptyManual": "此处尚无歌曲",
+    "manualDescription": "诸曲亲手集缀，旋律自成一卷。",
+    "manageSongs": "编理诸曲",
+    "wiki": "曲笺",
+    "wikiEmpty": "此印记尚无曲笺。",
+    "wikiOriginal": "Original",
+    "wikiPluginProvided": "Plugin Provided",
+    "wikiEdit": "改 Wiki",
+    "wikiSave": "存之"
   },
   "pluginPermissions": {
     "ui": {
@@ -333,6 +407,18 @@
       "read": {
         "label": "阅览乐库",
         "description": "可观曲目、曲谱、乐师与待奏名录。"
+      },
+      "audio": {
+        "read": {
+          "label": "读取音频以供推演",
+          "description": "解码乐库中短段音频，以供标签推演之用。"
+        }
+      }
+    },
+    "tag": {
+      "provider": {
+        "label": "供给标签",
+        "description": "为乐库诸曲生成并书写标签之值。"
       }
     },
     "notification": {
@@ -869,6 +955,10 @@
     "importing": "正在导入",
     "importDone": "导入既毕",
     "importFailed": "导入有失",
+    "tagAnalysisFinished": "「{name}」推演已成",
+    "tagAnalysisFinishedTip": "果已更新，可往标签页观之。",
+    "tagAnalysisFailed": "「{name}」推演未成",
+    "tagAnalysisCancelled": "「{name}」推演已罢",
     "scanStarted": "正在遍历曲目录…",
     "scanProgress": "已导入 {imported} / 已遍历 {scanned}（略 {skipped}，失 {failed}）",
     "scanFinished": "导入既毕：{imported} 曲，略 {skipped}，失 {failed}",

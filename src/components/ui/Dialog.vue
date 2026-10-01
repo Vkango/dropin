@@ -373,6 +373,26 @@ onBeforeUnmount(unlockPage)
   outline: none;
 }
 
+.dialog-textarea {
+  min-height: 0;
+  padding: 10px 14px;
+  line-height: 1.55;
+  font-size: 12px;
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  resize: vertical;
+}
+
+.dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialog-field-label {
+  color: rgba(var(--text-color), 0.6);
+  font-size: 12px;
+}
+
 .dialog-input::placeholder {
   color: rgba(var(--text-color), 0.34);
 }

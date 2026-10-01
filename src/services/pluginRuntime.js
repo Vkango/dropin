@@ -2,13 +2,15 @@ import { computed, reactive, readonly } from 'vue'
 import { pluginApi } from './pluginApi.js'
 
 export function createPluginRuntime() {
-  const state = reactive({ plugins: [], loading: false, error: '' })
+  const state = reactive({ plugins: [], providers: [], loading: false, error: '' })
 
   const refresh = async () => {
     state.loading = true
     state.error = ''
     try {
       state.plugins = await pluginApi.list()
+      const providerResult = await pluginApi.tagProviders()
+      state.providers = providerResult?.providers || []
       return state.plugins
     } catch (error) {
       state.error = error?.message || String(error)
@@ -23,6 +25,8 @@ export function createPluginRuntime() {
     const index = state.plugins.findIndex((item) => item.id === id)
     if (index >= 0) state.plugins[index] = plugin
     else state.plugins.push(plugin)
+    const providerResult = await pluginApi.tagProviders()
+    state.providers = providerResult?.providers || []
     return plugin
   }
 
@@ -31,6 +35,8 @@ export function createPluginRuntime() {
     if (!path) return null
     const plugin = await pluginApi.install(path)
     state.plugins.push(plugin)
+    const providerResult = await pluginApi.tagProviders()
+    state.providers = providerResult?.providers || []
     return plugin
   }
 
@@ -41,6 +47,7 @@ export function createPluginRuntime() {
   const uninstall = async (id) => {
     await pluginApi.uninstall(id)
     state.plugins = state.plugins.filter((plugin) => plugin.id !== id)
+    await refresh().catch(() => undefined)
   }
 
   const categories = computed(() => {
@@ -65,6 +72,12 @@ export function createPluginRuntime() {
     uninstall,
     setError,
     call: pluginApi.call,
-    uiUrl: pluginApi.uiUrl
+    uiUrl: pluginApi.uiUrl,
+    tagProviders: pluginApi.tagProviders,
+    refreshTagProvider: pluginApi.tagProviderRefresh,
+    cancelTagProvider: pluginApi.tagProviderCancel,
+    tagProviderResults: pluginApi.tagProviderResults,
+    tagProviderWiki: pluginApi.tagProviderWiki,
+    pluginWiki: pluginApi.pluginWiki
   }
 }

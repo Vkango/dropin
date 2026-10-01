@@ -13,6 +13,7 @@ const initialRank = new Map([
   [OTHER_INITIAL, 0],
   ...ALPHABET.map((letter, index) => [letter, index + 1])
 ])
+const collator = new Intl.Collator('zh-Hans-CN', { numeric: true, sensitivity: 'base' })
 
 const textValue = (value) => String(value ?? '').trim()
 
@@ -45,10 +46,7 @@ export const getPinyinSortKey = (value) => {
 export const compareByPinyin = (left, right) => {
   const leftKey = getPinyinSortKey(left)
   const rightKey = getPinyinSortKey(right)
-  return leftKey.localeCompare(rightKey, 'zh-Hans-CN', {
-    numeric: true,
-    sensitivity: 'base'
-  })
+  return collator.compare(leftKey, rightKey)
 }
 
 export const filterByInitial = (items, selectedInitial, getLabel) => {
@@ -57,12 +55,11 @@ export const filterByInitial = (items, selectedInitial, getLabel) => {
 }
 
 export const sortByInitial = (items, getLabel) => {
-  return [...items].sort((left, right) => {
-    const leftInitial = getInitial(getLabel(left))
-    const rightInitial = getInitial(getLabel(right))
-    const initialDifference = (initialRank.get(leftInitial) ?? 0) - (initialRank.get(rightInitial) ?? 0)
-    return initialDifference || compareByPinyin(getLabel(left), getLabel(right))
-  })
+  return items.map(item => {
+    const label = getLabel(item)
+    return { item, rank: initialRank.get(getInitial(label)) ?? 0, key: getPinyinSortKey(label) }
+  }).sort((left, right) => left.rank - right.rank || collator.compare(left.key, right.key))
+    .map(entry => entry.item)
 }
 
 export const groupByInitial = (items, getLabel) => {

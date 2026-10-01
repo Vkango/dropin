@@ -45,6 +45,23 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_decorum::init())
+        .register_asynchronous_uri_scheme_protocol("dropin-cover", |context, request, responder| {
+            let service = context.app_handle().state::<media_library::MediaService>().inner().clone();
+            let id = request.uri().path().trim_start_matches('/').strip_prefix("localhost/")
+                .unwrap_or_else(|| request.uri().path().trim_start_matches('/')).to_owned();
+            tauri::async_runtime::spawn_blocking(move || {
+                let response = match service.thumbnail_bytes(&id) {
+                    Ok(bytes) => tauri::http::Response::builder()
+                        .header("Content-Type", "image/jpeg")
+                        .header("Access-Control-Allow-Origin", "*")
+                        .header("Cache-Control", "public, max-age=31536000, immutable")
+                        .body(bytes).unwrap(),
+                    Err(_) => tauri::http::Response::builder().status(404)
+                        .header("Cache-Control", "no-store").body(Vec::new()).unwrap(),
+                };
+                responder.respond(response);
+            });
+        })
         .register_uri_scheme_protocol("dropin-plugin", move |_context, request| {
             let mut path = request.uri().path().to_string();
             // WebView implementations differ on whether the custom-scheme host
@@ -150,8 +167,8 @@ pub fn run() {
             media_library::media_library_artists,
             media_library::media_library_refresh_track,
             media_library::media_library_remove_track,
-            media_library::media_cover_get,
             media_library::media_cover_path,
+            media_library::media_tag_wiki_save,
             media_library::media_playback_history,
             media_library::media_playback_record,
             media_library::media_pick_folder,
@@ -179,6 +196,7 @@ pub fn run() {
             media_library::media_tag_list,
             media_library::media_track_tag,
             media_library::media_track_untag,
+            media_library::tag_provider_results,
             settings::app_settings_read,
             settings::app_settings_write,
             settings::data_dir_read,
@@ -197,6 +215,11 @@ pub fn run() {
             plugin_manager::plugin_call,
             plugin_manager::plugin_update_host_state,
             plugin_manager::plugin_get_ui_url
+            ,plugin_manager::tag_provider_list
+            ,plugin_manager::tag_provider_refresh
+            ,plugin_manager::tag_provider_cancel
+            ,plugin_manager::tag_provider_wiki
+            ,plugin_manager::plugin_wiki
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

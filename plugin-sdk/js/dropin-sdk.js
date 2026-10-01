@@ -66,7 +66,15 @@ export function createDropinPluginClient(target = window.parent) {
       play: (args = {}) => call('player.play', args),
       pause: (args = {}) => call('player.pause', args)
     },
-    library: { list: (args = {}) => call('library.list', args) },
+    library: {
+      list: (args = {}) => call('library.list', args),
+      catalog: {
+        list: (args = {}) => call('library.catalog.list', args)
+      },
+      audio: {
+        read: (args = {}) => call('library.audio.read', args)
+      }
+    },
     notification: { show: showNotification },
     storage: {
       get: (key) => call('storage.get', { key }),

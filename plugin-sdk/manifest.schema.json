@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["schemaVersion", "id", "name", "version", "apiVersion", "backend", "ui"],
+  "required": ["schemaVersion", "id", "name", "version", "apiVersion", "backend"],
   "properties": {
     "schemaVersion": { "const": 1 },
     "id": { "type": "string", "pattern": "^[a-z0-9._-]{1,128}$" },
@@ -14,10 +14,22 @@
     "backend": { "type": "string" },
     "ui": { "type": "string" },
     "icon": { "type": "string" },
+    "tagProvider": {
+      "type": "object",
+      "description": "Declares this plugin as a tag provider. Requires the tag.provider, library.read, and library.audio.read permissions.",
+      "required": ["key", "name", "valueType"],
+      "properties": {
+        "key": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,128}$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "help": { "type": "string", "maxLength": 4096 },
+        "valueType": { "enum": ["number", "text", "enum", "boolean"] },
+        "supportsSegments": { "type": "boolean", "default": false }
+      }
+    },
     "permissions": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "enum": ["ui.panel", "player.read", "player.control", "library.read", "notification.show", "storage.plugin"] }
+      "items": { "enum": ["ui.panel", "player.read", "player.control", "library.read", "library.audio.read", "tag.provider", "notification.show", "storage.plugin"] }
     },
     "background": {
       "type": "object",
@@ -25,5 +37,17 @@
         "tickIntervalMs": { "type": "integer", "minimum": 1000, "maximum": 60000 }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["tagProvider"] },
+      "then": {
+        "allOf": [
+          { "properties": { "permissions": { "contains": { "const": "tag.provider" } } } },
+          { "properties": { "permissions": { "contains": { "const": "library.read" } } } },
+          { "properties": { "permissions": { "contains": { "const": "library.audio.read" } } } }
+        ]
+      }
+    }
+  ]
 }

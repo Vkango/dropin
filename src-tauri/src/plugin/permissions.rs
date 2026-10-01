@@ -6,6 +6,8 @@ pub const UI_PANEL: &str = "ui.panel";
 pub const PLAYER_READ: &str = "player.read";
 pub const PLAYER_CONTROL: &str = "player.control";
 pub const LIBRARY_READ: &str = "library.read";
+pub const LIBRARY_AUDIO_READ: &str = "library.audio.read";
+pub const TAG_PROVIDER: &str = "tag.provider";
 pub const NOTIFICATION_SHOW: &str = "notification.show";
 pub const STORAGE_PLUGIN: &str = "storage.plugin";
 
@@ -14,6 +16,8 @@ pub const ALLOWED_PERMISSIONS: &[&str] = &[
     PLAYER_READ,
     PLAYER_CONTROL,
     LIBRARY_READ,
+    LIBRARY_AUDIO_READ,
+    TAG_PROVIDER,
     NOTIFICATION_SHOW,
     STORAGE_PLUGIN,
 ];

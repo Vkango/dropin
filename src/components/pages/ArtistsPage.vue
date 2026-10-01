@@ -58,7 +58,7 @@
                                         <MotionTransition variant="cover" mode="out-in">
                                             <MotionImg :key="artist.avatar || artist.cover"
                                                 :src="artist.avatar || artist.cover" :alt="artist.name"
-                                                :variants="imageVariants" />
+                                                :variants="imageVariants" loading="lazy" decoding="async" />
                                         </MotionTransition>
                                         <MotionDiv class="artist-overlay" :variants="overlayVariants">
                                             <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }"
@@ -100,7 +100,7 @@
                             <MotionDiv v-for="artist in group.items" :key="artist.id" class="artist-row" initial="rest"
                                 while-hover="hover" :variants="rowVariants" @click="$emit('artist-select', artist)">
                                 <div class="row-avatar">
-                                    <img :src="artist.avatar || artist.cover" :alt="artist.name" />
+                                    <img :src="artist.avatar || artist.cover" :alt="artist.name" loading="lazy" decoding="async" />
                                 </div>
                                 <div class="row-name">
                                     <div class="name">{{ artist.name }}</div>

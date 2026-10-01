@@ -131,6 +131,27 @@ pub mod host {
         call("player.pause", json!({}))
     }
 
+    pub fn library_catalog_list(args: Value) -> PluginResult {
+        call("library.catalog.list", args)
+    }
+
+    pub fn library_audio_read(track_id: &str, start_ms: u64, end_ms: u64) -> PluginResult {
+        library_audio_read_ex(track_id, start_ms, end_ms, None)
+    }
+
+    pub fn library_audio_read_ex(
+        track_id: &str,
+        start_ms: u64,
+        end_ms: u64,
+        max_samples: Option<u32>,
+    ) -> PluginResult {
+        let mut args = json!({ "trackId": track_id, "startMs": start_ms, "endMs": end_ms });
+        if let Some(max_samples) = max_samples {
+            args["maxSamples"] = json!(max_samples);
+        }
+        call("library.audio.read", args)
+    }
+
     pub fn notification_show(title: &str, body: &str, duration_ms: u64) -> PluginResult {
         call(
             "notification.show",

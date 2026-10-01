@@ -9,6 +9,7 @@ import PlaylistsPage from './components/pages/PlaylistsPage.vue'
 import SoundEffectsPage from './components/pages/SoundEffectsPage.vue'
 import PluginsPage from './components/pages/PluginsPage.vue'
 import PluginPage from './components/pages/PluginPage.vue'
+import TagProviderPage from './components/pages/TagProviderPage.vue'
 import SettingsPage from './components/pages/SettingsPage.vue'
 import DetailPanel from './components/library/DetailPanel.vue'
 import PlayerSurface from './components/layout/PlayerSurface.vue'
@@ -32,7 +33,7 @@ import { cloneForBridge } from './utils/cloneForBridge.js'
 import { smtcApi, listenToSmtcEvents } from './services/smtcApi.js'
 import { useLibraryStore } from './stores/libraryStore.js'
 import { useAppSettingsStore } from './stores/appSettingsStore.js'
-import { useI18n } from './i18n/index.js'
+import { getLocale, useI18n } from './i18n/index.js'
 import { activateLocale } from './stores/i18nStore.js'
 import { animateElement, APPLE_SPRING, INSTANT_MOTION, SOFT_SPRING } from './utils/motion.js'
 
@@ -41,7 +42,10 @@ const settingsStore = useAppSettingsStore()
 const effectsRuntime = createBassEffectsRuntime(settingsStore)
 const playbackRuntime = createBassPlaybackRuntime(settingsStore)
 const pluginRuntime = createPluginRuntime()
-const enabledPlugins = computed(() => pluginRuntime.state.plugins.filter((plugin) => plugin.enabled))
+const enabledPlugins = computed(() => pluginRuntime.state.plugins.filter((plugin) => plugin.enabled && plugin.ui))
+const tagProviders = computed(() => pluginRuntime.state.providers || [])
+const associatableProviders = computed(() => tagProviders.value
+  .filter((provider) => provider.pluginId && provider.sourceAvailable && !String(provider.key || '').startsWith('manual.')))
 const { t } = useI18n()
 
 // 当前页面状态
@@ -72,6 +76,11 @@ const isSidebarDrawerOpen = ref(false)
 const isCreateTagDialogOpen = ref(false)
 const isCreatePlaylistDialogOpen = ref(false)
 const createTagValue = ref('')
+const createTagProviderKey = ref('')
+const createTagWiki = ref('')
+const fetchingTagWiki = ref(false)
+const createTagError = ref('')
+let createTagWikiRequest = 0
 const createPlaylistValue = ref('')
 const isCreatingTag = ref(false)
 const isCreatingPlaylist = ref(false)
@@ -308,7 +317,7 @@ watch(
 )
 
 // 数据集合
-const albumsData = reactive([])
+const albumsData = ref([])
 
 // 主内容区左边距：跟随侧边栏宽度（抽屉模式下为 0）
 const mainContentStyle = computed(() =>
@@ -316,12 +325,7 @@ const mainContentStyle = computed(() =>
 )
 const sidebarWidthStyle = computed(() => ({ width: `${sidebarWidth.value}px` }))
 
-const artistsData = reactive([])
-
-const homePageData = reactive({
-  recentlyPlayed: [],
-  recommendedPlaylists: []
-})
+const artistsData = ref([])
 
 const formatLibraryDuration = (tracks) => {
   const durationMs = tracks.reduce((total, track) => total + (Number(track.durationMs) || 0), 0)
@@ -339,21 +343,9 @@ const syncLibraryState = () => {
   const songs = libraryStore.tracks.value
   musicLibrary.totalSongs = libraryStore.state.total
   musicLibrary.totalDuration = formatLibraryDuration(tracks)
-  musicLibrary.songs.splice(0, musicLibrary.songs.length, ...songs)
-  albumsData.splice(0, albumsData.length, ...libraryStore.albums.value)
-  artistsData.splice(0, artistsData.length, ...libraryStore.artists.value)
-  homePageData.recentlyPlayed.splice(0, homePageData.recentlyPlayed.length, ...songs.slice(0, 6))
-  homePageData.recommendedPlaylists.splice(
-    0,
-    homePageData.recommendedPlaylists.length,
-    ...libraryStore.albums.value.slice(0, 4).map((album) => ({
-      id: album.id,
-      name: album.title,
-      description: album.artist || '本地音乐专辑',
-      cover: album.cover,
-      trackCount: album.trackCount
-    }))
-  )
+  musicLibrary.songs = songs
+  albumsData.value = libraryStore.albums.value
+  artistsData.value = libraryStore.artists.value
   if (songs.length && (!activeChannelId.value || currentSong.value.title === t('player.noSongSelected'))) {
     currentSong.value = { ...songs[0] }
     totalTime.value = songs[0].duration || '00:00'
@@ -363,7 +355,7 @@ const syncLibraryState = () => {
 watch(
   [libraryStore.tracks, libraryStore.albums, libraryStore.artists],
   syncLibraryState,
-  { deep: true }
+  { deep: false }
 )
 
 // 页面切换逻辑
@@ -431,6 +423,7 @@ const bindScrollSources = async () => {
 
 // 当前页面组件
 const currentPageComponent = computed(() => {
+  if (currentPage.value.startsWith('tag:')) return TagProviderPage
   if (currentPage.value.startsWith('plugin:')) return PluginPage
   return pageComponents[currentPage.value] || HomePage
 })
@@ -453,6 +446,12 @@ const handleNavItemClick = (item) => {
 
 const handleSelectPlugin = (plugin) => {
   navigateToPage(`plugin:${plugin.id}`)
+  if (isSidebarDrawer.value) closeSidebarDrawer()
+}
+
+const handleSelectTagProvider = (provider) => {
+  if (!provider?.key) return
+  navigateToPage(`tag:${provider.key}`)
   if (isSidebarDrawer.value) closeSidebarDrawer()
 }
 
@@ -507,6 +506,47 @@ const handleScanNotify = (name, payload) => {
 }
 
 const handlePluginEvent = (name, payload) => {
+  if (name.startsWith('tag/analysis-')) {
+    if (name === 'tag/analysis-finished' || name === 'tag/analysis-error') {
+      const providerKey = typeof payload?.providerKey === 'string' ? payload.providerKey : ''
+      if (currentPage.value !== `tag:${providerKey}` && notificationRef.value) {
+        const provider = tagProviders.value.find((item) => item.key === providerKey)
+        const providerName = provider?.name || providerKey
+        if (name === 'tag/analysis-finished') {
+          void notificationRef.value.addNotification(
+            t('notification.tagAnalysisFinished', { name: providerName }),
+            t('notification.source'),
+            Tip,
+            null,
+            { Tip: t('notification.tagAnalysisFinishedTip') },
+            8000
+          )
+        } else if (payload?.state === 'cancelled') {
+          void notificationRef.value.addNotification(
+            t('notification.tagAnalysisCancelled', { name: providerName }),
+            t('notification.source'),
+            Tip,
+            null,
+            { Tip: '' },
+            8000
+          )
+        } else {
+          const message = payload?.error?.message || payload?.error || t('tagProvider.analysisFailed')
+          void notificationRef.value.addNotification(
+            t('notification.tagAnalysisFailed', { name: providerName }),
+            t('notification.source'),
+            Tip,
+            null,
+            { Tip: String(message) },
+            8000
+          )
+        }
+      }
+      void pluginRuntime.refresh().catch(() => undefined)
+      void libraryStore.refresh().catch(() => undefined)
+    }
+    return
+  }
   if (name !== 'plugin/notification' || !notificationRef.value) return
   const title = typeof payload?.title === 'string' && payload.title.trim()
     ? payload.title.trim()
@@ -790,9 +830,13 @@ const playSong = async (song, queue = null) => {
   }
 }
 
-const handleSongPlay = (song) => {
+const handleSongPlay = (payload) => {
   shufflePlayedIds.clear()
-  playSong(song)
+  if (payload?.song) {
+    playSong(payload.song, payload.songs)
+  } else {
+    playSong(payload)
+  }
 }
 
 const handleAlbumSelect = (album) => {
@@ -946,14 +990,14 @@ const closeArtistDrawerAlbum = () => {
 // 全屏播放器内点击歌手名：按名称打开歌手抽屉
 const handleFullscreenArtistSelect = (artistName) => {
   if (!artistName) return
-  const artist = artistsData.find((item) => item.name === artistName)
+  const artist = artistsData.value.find((item) => item.name === artistName)
   openArtistDrawer(artist || { name: artistName, id: `artist-${artistName}`, cover: currentSong.value?.cover })
 }
 
 // 全屏播放器内点击专辑名：按名称打开专辑详情卡（叠于抽屉之上）
 const handleFullscreenAlbumSelect = (albumTitle) => {
   if (!albumTitle) return
-  const album = albumsData.find((item) => item.title === albumTitle)
+  const album = albumsData.value.find((item) => item.title === albumTitle)
   const tracks = (musicLibrary.songs || []).filter((song) => song.album === albumTitle)
   artistDrawerAlbum.value = album || { title: albumTitle, artist: currentSong.value?.artist }
   artistDrawerAlbumDetail.value = {
@@ -1174,19 +1218,60 @@ const handleProgressCommit = (percent) => {
 }
 
 const handleAddTag = () => {
+  createTagWikiRequest += 1
   createTagValue.value = ''
+  createTagProviderKey.value = ''
+  createTagWiki.value = ''
+  createTagError.value = ''
+  fetchingTagWiki.value = false
   isCreateTagDialogOpen.value = true
 }
 
+const handleCreateTagProviderChange = async () => {
+  const providerKey = createTagProviderKey.value
+  const request = ++createTagWikiRequest
+  createTagWiki.value = ''
+  createTagError.value = ''
+  fetchingTagWiki.value = false
+  if (!providerKey) return
+  fetchingTagWiki.value = true
+  try {
+    const result = await pluginRuntime.tagProviderWiki(providerKey, getLocale())
+    if (request === createTagWikiRequest) createTagWiki.value = String(result?.wiki || '')
+  } catch (error) {
+    if (request === createTagWikiRequest) {
+      createTagError.value = t('dialog.tag.wikiLoadFailed')
+    }
+  } finally {
+    if (request === createTagWikiRequest) fetchingTagWiki.value = false
+  }
+}
+
+watch(isCreateTagDialogOpen, (open) => {
+  if (!open) {
+    createTagWikiRequest += 1
+    fetchingTagWiki.value = false
+  }
+})
+
 const submitCreateTag = async () => {
   const label = createTagValue.value.trim()
-  if (!label || isCreatingTag.value) return
+  if (!label || isCreatingTag.value || fetchingTagWiki.value) return
   isCreatingTag.value = true
+  createTagError.value = ''
   try {
-    await libraryStore.createTag(label)
+    const result = await libraryStore.createTag(
+      label,
+      createTagProviderKey.value || null,
+      createTagWiki.value.trim() || null
+    )
+    await pluginRuntime.refresh().catch(() => undefined)
     isCreateTagDialogOpen.value = false
+    if (result?.key) {
+      navigateToPage(`tag:${result.key}`)
+    }
   } catch (error) {
-    console.error('创建标签失败:', error)
+    createTagError.value = error?.message || String(error)
   } finally {
     isCreatingTag.value = false
   }
@@ -1340,23 +1425,31 @@ const handleSidebarResizeStart = (event) => {
 const getPageProps = () => {
   switch (currentPage.value) {
     case 'home':
-      return homePageData
+      return {}
     case 'library':
       return { musicLibrary }
     case 'albums':
-      return { albums: albumsData, songs: musicLibrary.songs }
+      return { albums: albumsData.value, songs: musicLibrary.songs }
     case 'artists':
-      return { artists: artistsData }
+      return { artists: artistsData.value }
     case 'playlists':
       return {
         playlists: libraryStore.playlists.value,
-        selectedPlaylistId: selectedPlaylistId.value
+        selectedPlaylistId: selectedPlaylistId.value,
+        tagProviders: tagProviders.value
       }
     case 'effects':
       return { effectsRuntime, playbackRuntime }
     case 'plugins':
       return { pluginRuntime }
     default:
+      if (currentPage.value.startsWith('tag:')) {
+        const key = currentPage.value.slice('tag:'.length)
+        return {
+          provider: tagProviders.value.find((item) => item.key === key) || null,
+          pluginRuntime
+        }
+      }
       if (currentPage.value.startsWith('plugin:')) {
         const id = currentPage.value.slice('plugin:'.length)
         return {
@@ -1452,7 +1545,6 @@ onMounted(async () => {
   await bindScrollSources()
   await libraryStore.installListeners(handleScanNotify)
   await libraryStore.refresh()
-  await libraryStore.hydrateCovers()
   syncLibraryState()
 })
 
@@ -1497,11 +1589,12 @@ onBeforeUnmount(() => {
     <div v-if="!isSidebarDrawer" class="sidebar-shell" :style="sidebarWidthStyle">
       <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
         :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
+        :tag-providers="tagProviders"
         :selected-playlist-id="selectedPlaylistId"
         :installed-plugins="enabledPlugins"
         @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
         @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin"
-        @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" @select-plugin="handleSelectPlugin" />
+        @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" @select-tag-provider="handleSelectTagProvider" @select-plugin="handleSelectPlugin" />
 
       <div class="sidebar-resize-handle" title="拖动调整侧边栏宽度" @pointerdown="handleSidebarResizeStart" />
     </div>
@@ -1519,12 +1612,13 @@ onBeforeUnmount(() => {
             :exit="{ x: '-100%', opacity: 0.4 }" :transition="sidebarDrawerTransition">
             <Sidebar :sidebar-items="sidebarItems" :current-page="currentPage" :search-query="searchQuery"
               :is-dark="isDarkTheme" :playlists="libraryStore.playlists.value" :tags="libraryStore.tags.value"
+              :tag-providers="tagProviders"
               :selected-playlist-id="selectedPlaylistId"
               :installed-plugins="enabledPlugins"
               :is-drawer="true"
               @search-update="handleSearchUpdate" @nav-item-click="handleNavItemClick"
               @add-tag="handleAddTag" @add-playlist="handleAddPlaylist" @add-plugin="handleAddPlugin"
-              @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" @select-plugin="handleSelectPlugin"
+              @select-playlist="handleSelectPlaylist" @select-tag="handleSelectTag" @select-tag-provider="handleSelectTagProvider" @select-plugin="handleSelectPlugin"
               @collapse="closeSidebarDrawer" />
           </MotionDiv>
         </MotionDiv>
@@ -1585,8 +1679,9 @@ onBeforeUnmount(() => {
       @play-all="handleArtistDrawerAlbumPlayAll" @track-play="handleArtistDrawerAlbumTrackPlay"
       @artist-jump="closeArtistDrawerAlbum" />
 
-    <Dialog v-model="isCreateTagDialogOpen" :aria-labelledby="'create-tag-dialog-title'">
-      <form class="dialog-content" @submit.prevent="submitCreateTag">
+    <Dialog v-model="isCreateTagDialogOpen" :close-on-backdrop="!isCreatingTag" :close-on-escape="!isCreatingTag"
+      :aria-labelledby="'create-tag-dialog-title'">
+      <form class="dialog-content create-tag-dialog" @submit.prevent="submitCreateTag">
         <header class="dialog-header">
           <div>
             <h2 id="create-tag-dialog-title">{{ t('dialog.tag.createTitle') }}</h2>
@@ -1594,14 +1689,33 @@ onBeforeUnmount(() => {
         </header>
         <p class="dialog-message">{{ t('dialog.tag.createMessage') }}</p>
         <input v-model="createTagValue" class="dialog-input" type="text"
-          :placeholder="t('dialog.tag.createPlaceholder')" :disabled="isCreatingTag" autofocus />
+          :placeholder="t('dialog.tag.createPlaceholder')" :aria-label="t('dialog.tag.nameLabel')"
+          :disabled="isCreatingTag" autofocus />
+        <label class="dialog-field">
+          <span class="dialog-field-label">{{ t('dialog.tag.providerLabel') }}</span>
+          <select v-model="createTagProviderKey" class="dialog-input" :disabled="isCreatingTag"
+            @change="handleCreateTagProviderChange">
+            <option value="">{{ t('dialog.tag.providerNone') }}</option>
+            <option v-for="provider in associatableProviders" :key="provider.key" :value="provider.key">
+              {{ provider.name }}
+            </option>
+          </select>
+        </label>
+        <label class="dialog-field">
+          <span class="dialog-field-label">{{ t('dialog.tag.wikiLabel') }}</span>
+          <textarea v-model="createTagWiki" class="dialog-input dialog-textarea" rows="6"
+            maxlength="32768" :aria-busy="fetchingTagWiki"
+            :placeholder="t('dialog.tag.wikiPlaceholder')" :disabled="isCreatingTag || fetchingTagWiki"></textarea>
+          <small v-if="fetchingTagWiki" role="status">{{ t('dialog.tag.wikiLoading') }}</small>
+        </label>
+        <p v-if="createTagError" class="create-tag-error" role="alert">{{ createTagError }}</p>
         <footer class="dialog-actions">
           <button type="button" class="dialog-button secondary" :disabled="isCreatingTag"
             @click="isCreateTagDialogOpen = false">
             {{ t('dialog.actions.cancel') }}
           </button>
           <button type="submit" class="dialog-button primary"
-            :disabled="isCreatingTag || !createTagValue.trim()">
+            :disabled="isCreatingTag || fetchingTagWiki || !createTagValue.trim()">
             {{ t('dialog.tag.createConfirm') }}
           </button>
         </footer>
@@ -1804,6 +1918,9 @@ body {
 </style>
 
 <style scoped>
+.create-tag-dialog { min-height: 0; overflow-y: auto; }
+.create-tag-error { margin: 0; color: #e05b5b; font-size: 12px; }
+
 .music-player {
   display: block;
   position: relative;

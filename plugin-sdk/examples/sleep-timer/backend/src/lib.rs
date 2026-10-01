@@ -34,12 +34,24 @@ fn handle(request: Request) -> PluginResult {
         .strip_prefix("backend.")
         .unwrap_or(&request.method)
     {
+        "wiki" => wiki_entry(request.args),
         "start" => start_timer(request.args),
         "cancel" => cancel_timer(),
         "state" => read_state(request.args),
         "tick" => tick(request.args),
         method => Err(format!("unknown sleep timer method: {method}")),
     }
+}
+
+fn wiki_entry(args: Value) -> PluginResult {
+    let locale = args.get("locale").and_then(Value::as_str).unwrap_or("en-US");
+    let messages = match locale {
+        "zh-CLASSICAL" => include_str!("../../i18n/zh-CLASSICAL.json"),
+        language if language.to_ascii_lowercase().starts_with("zh") => include_str!("../../i18n/zh-CN.json"),
+        _ => include_str!("../../i18n/en-US.json"),
+    };
+    let messages: Value = serde_json::from_str(messages).map_err(|error| error.to_string())?;
+    Ok(json!({ "wiki": messages.get("wiki").and_then(Value::as_str).unwrap_or("") }))
 }
 
 fn start_timer(args: Value) -> PluginResult {

@@ -1,5 +1,7 @@
 import { computed, reactive, ref } from 'vue'
-import { mediaApi, listenToMediaEvents, coverDataUrl } from '../services/mediaApi.js'
+import { mediaApi, listenToMediaEvents } from '../services/mediaApi.js'
+
+let refreshPromise = null
 
 const state = reactive({
   tracks: [],
@@ -16,7 +18,6 @@ const state = reactive({
   scanJob: null,
   scanProgress: null,
   error: null,
-  covers: new Map(),
   unlisten: null
 })
 
@@ -33,7 +34,7 @@ const durationText = (durationMs = 0) => {
 const toSong = (track) => ({
   ...track,
   duration: durationText(track.durationMs),
-  cover: track.coverId ? state.covers.get(track.coverId) || '/assets/cover.jpg' : '/assets/cover.jpg',
+  cover: mediaApi.coverUrl(track.coverId),
   url: track.path || track.url || '',
   sourcePath: track.path || null
 })
@@ -41,14 +42,14 @@ const toSong = (track) => ({
 const toAlbum = (album) => ({
   ...album,
   year: album.year == null ? '' : String(album.year),
-  cover: album.coverId ? state.covers.get(album.coverId) || '/assets/cover.jpg' : '/assets/cover.jpg',
+  cover: mediaApi.coverUrl(album.coverId),
   addedDate: ''
 })
 
 const toArtist = (artist) => ({
   ...artist,
-  cover: artist.coverId ? state.covers.get(artist.coverId) || '/assets/cover.jpg' : '/assets/cover.jpg',
-  avatar: artist.coverId ? state.covers.get(artist.coverId) || '/assets/cover.jpg' : '/assets/cover.jpg',
+  cover: mediaApi.coverUrl(artist.coverId),
+  avatar: mediaApi.coverUrl(artist.coverId),
   followers: artist.followers || 0,
   isFollowing: Boolean(artist.isFollowing)
 })
@@ -56,7 +57,7 @@ const toArtist = (artist) => ({
 export function useLibraryStore() {
   const initialized = ref(false)
 
-  const refresh = async () => {
+  const refreshLibrary = async () => {
     state.loading = true
     state.error = null
     try {
@@ -87,22 +88,9 @@ export function useLibraryStore() {
     }
   }
 
-  const loadCover = async (coverId) => {
-    if (!coverId || state.covers.has(coverId)) return state.covers.get(coverId) || ''
-    try {
-      const payload = await mediaApi.cover(coverId)
-      const url = coverDataUrl(payload)
-      state.covers.set(coverId, url)
-      return url
-    } catch (error) {
-      state.error = error
-      return ''
-    }
-  }
-
-  const hydrateCovers = async (tracks = state.tracks) => {
-    await Promise.all([...new Set(tracks.map((track) => track.coverId).filter(Boolean))].map(loadCover))
-    state.tracks = state.tracks.slice()
+  const refresh = () => {
+    if (!refreshPromise) refreshPromise = refreshLibrary().finally(() => { refreshPromise = null })
+    return refreshPromise
   }
 
   const addRootAndScan = async (path) => {
@@ -160,14 +148,12 @@ export function useLibraryStore() {
   const playlistTracks = async (playlistId) => {
     const result = await mediaApi.playlistOrderGet(playlistId)
     const tracks = result.tracks || []
-    await hydrateCovers(tracks)
     return tracks.map(toSong)
   }
 
   const playlistOrder = async (playlistId) => {
     const result = await mediaApi.playlistOrderGet(playlistId)
     const tracks = result.tracks || []
-    await hydrateCovers(tracks)
     return {
       ...result,
       tracks: tracks.map(toSong)
@@ -177,7 +163,6 @@ export function useLibraryStore() {
   const previewPlaylistOrder = async (playlistId, sortRuleId = null, rule = null) => {
     const result = await mediaApi.playlistOrderPreview(playlistId, sortRuleId, rule)
     const tracks = result.tracks || []
-    await hydrateCovers(tracks)
     return {
       ...result,
       tracks: tracks.map(toSong)
@@ -215,7 +200,6 @@ export function useLibraryStore() {
   const evaluatePlaylist = async (playlistId, rule = null) => {
     const result = await mediaApi.playlistRuleEvaluate(playlistId, rule)
     const tracks = result.tracks || []
-    await hydrateCovers(tracks)
     const contributionsByTrackId = new Map(
       (result.contributions || []).map((item) => [
         item.trackId,
@@ -255,8 +239,8 @@ export function useLibraryStore() {
     return []
   }
 
-  const createTag = async (label) => {
-    const result = await mediaApi.tagCreate(label)
+  const createTag = async (label, providerKey = null, wiki = null) => {
+    const result = await mediaApi.tagCreate(label, providerKey, wiki)
     await refresh()
     return result
   }
@@ -282,7 +266,6 @@ export function useLibraryStore() {
   const tracksByTag = async (tagId) => {
     const result = await mediaApi.tracks({ tagId })
     const tracks = result.tracks || []
-    await hydrateCovers(tracks)
     return tracks.map(toSong)
   }
 
@@ -295,10 +278,8 @@ export function useLibraryStore() {
         state.scanning = false
         state.scanJob = null
         await refresh()
-        await hydrateCovers()
       } else if (name === 'media/track-updated' || name === 'media/metadata-updated') {
         await refresh()
-        await hydrateCovers()
       } else if (name === 'media/error') {
         state.error = payload?.error || payload
       }
@@ -323,7 +304,6 @@ export function useLibraryStore() {
     tags: computed(() => state.tags),
     sortRules: computed(() => state.sortRules),
     refresh,
-    hydrateCovers,
     addRootAndScan,
     scan,
     openPlayback,

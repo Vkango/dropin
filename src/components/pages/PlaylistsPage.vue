@@ -18,6 +18,7 @@
     v-model="songPickerValue" :playlist-name="songPickerContext.playlist.name"
     :songs="libraryStore.tracks.value" :sources="playlistSources"
     :existing-song-ids="songPickerContext.existingSongIds"
+    :tag-providers="tagProviders"
     :current-playlist-id="songPickerContext.playlist.id" :initial-mode="songPickerContext.initialMode"
     :initial-rule="songPickerContext.savedRule" :valid="isSongPickerValueValid" :saving="isSavingSongs"
     @save="saveSongPicker" @order-saved="handleOrderSaved" />
@@ -100,6 +101,10 @@ const props = defineProps({
   selectedPlaylistId: {
     type: String,
     default: ''
+  },
+  tagProviders: {
+    type: Array,
+    default: () => []
   }
 })
 

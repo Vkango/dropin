@@ -30,6 +30,33 @@
 
       <div class="rule-section">
         <div class="rule-section-heading">
+          <span>{{ t('playlistsPage.tagSortTerms') }}</span>
+          <button type="button" class="text-button" :disabled="!availableTagTerms.length" @click="addTagTerm">
+            <Plus :size="13" />{{ t('playlistsPage.addCondition') }}
+          </button>
+        </div>
+        <div v-if="ruleDraft.tagTerms.length" class="rule-lines">
+          <div v-for="(item, index) in ruleDraft.tagTerms" :key="`tag-term-${index}`" class="rule-line tag-term-line">
+            <select v-model="item.providerKey" :aria-label="t('playlistsPage.tagProvider')" @change="normalizeTagTerm(index)">
+              <option v-for="provider in props.tagProviders" :key="provider.key" :value="provider.key">{{ provider.name }}</option>
+            </select>
+            <input v-model.trim="item.key" type="text" :placeholder="t('playlistsPage.tagKey')"
+              :aria-label="t('playlistsPage.tagKey')" />
+            <select v-model="item.direction" :aria-label="t('playlistsPage.sortDirection')">
+              <option value="asc">{{ t('playlistsPage.ascending') }}</option>
+              <option value="desc">{{ t('playlistsPage.descending') }}</option>
+            </select>
+            <button type="button" class="icon-button" :aria-label="t('playlistsPage.removeCondition')"
+              @click="removeTagTerm(index)">
+              <Trash2 :size="14" />
+            </button>
+          </div>
+        </div>
+        <p v-else class="empty-rule-line">{{ t('playlistsPage.noTagSortTerms') }}</p>
+      </div>
+
+      <div class="rule-section">
+        <div class="rule-section-heading">
           <span>{{ t('playlistsPage.tagWeights') }}</span>
           <button type="button" class="text-button" :disabled="!availableTags.length" @click="addTagWeight">
             <Plus :size="13" />{{ t('playlistsPage.addCondition') }}
@@ -110,15 +137,15 @@
         <h3>{{ t('playlistsPage.emptyPlaylist') }}</h3>
         <p>{{ t('playlistsPage.addSongsHint') }}</p>
       </div>
-      <ol v-else class="order-list" @dragover.prevent>
-        <li v-for="(song, index) in workingSongs" :key="song.id" class="order-row"
+      <VirtualList v-else class="order-list" tag="ol" :items="workingSongs" :item-height="64" v-slot="{ item: song, index }" @dragover.prevent>
+        <li class="order-row"
           :class="{ dragging: draggingIndex === index }" draggable="true" @dragstart="startDrag(index, $event)"
           @dragend="endDrag" @drop="dropSong(index, $event)">
           <span class="order-index">{{ index + 1 }}</span>
           <button type="button" class="drag-handle" :aria-label="t('playlistsPage.dragSong', { name: song.title })">
             <GripVertical :size="16" />
           </button>
-          <img class="order-cover" :src="song.cover || '/assets/cover.jpg'" :alt="song.title" />
+          <img class="order-cover" :src="song.cover || '/assets/cover.jpg'" :alt="song.title" loading="lazy" decoding="async" />
           <span class="order-song-copy">
             <strong>{{ song.title }}</strong>
             <small>{{ song.artist || t('player.unknownArtist') }}<span v-if="song.album"> · {{ song.album
@@ -136,7 +163,7 @@
             </button>
           </div>
         </li>
-      </ol>
+      </VirtualList>
 
       <footer class="order-footer">
         <button type="button" class="close-action" :disabled="isSaving" @click="$emit('close')">
@@ -187,14 +214,17 @@ import {
   Trash2
 } from '@lucide/vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import VirtualList from '@/components/ui/VirtualList.vue'
 import { useI18n } from '@/i18n/index.js'
 import { useLibraryStore } from '@/stores/libraryStore.js'
+import { defaultTagKey } from '@/utils/tagProvider.js'
 import { InfoIcon } from '@lucide/vue'
 
 const props = defineProps({
   playlistId: { type: String, default: '' },
   playlistName: { type: String, default: '' },
-  playlistType: { type: String, default: 'static' }
+  playlistType: { type: String, default: 'static' },
+  tagProviders: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['close', 'saved'])
@@ -205,6 +235,7 @@ const defaultRule = () => ({
   version: 1,
   tagWeights: [],
   tagDirection: 'desc',
+  tagTerms: [],
   fields: [
     { field: 'year', direction: 'asc' },
     { field: 'album', direction: 'asc' },
@@ -214,7 +245,16 @@ const defaultRule = () => ({
   ]
 })
 
-const cloneRule = (rule) => JSON.parse(JSON.stringify(rule || defaultRule()))
+const cloneRule = (rule) => {
+  const source = rule && typeof rule === 'object' ? rule : {}
+  return JSON.parse(JSON.stringify({
+    ...defaultRule(),
+    ...source,
+    tagWeights: Array.isArray(source.tagWeights) ? source.tagWeights : [],
+    tagTerms: Array.isArray(source.tagTerms) ? source.tagTerms : [],
+    fields: Array.isArray(source.fields) ? source.fields : defaultRule().fields
+  }))
+}
 const isLoading = ref(true)
 const isPreviewing = ref(false)
 const isSaving = ref(false)
@@ -237,6 +277,9 @@ const sortRules = computed(() => libraryStore.sortRules.value || [])
 const tags = computed(() => libraryStore.tags.value || [])
 const availableTags = computed(() => tags.value.filter((tag) =>
   !ruleDraft.value.tagWeights.some((item) => item.tagId === tag.id)
+))
+const availableTagTerms = computed(() => props.tagProviders.filter((provider) =>
+  provider?.key
 ))
 const fieldOptions = computed(() => [
   { value: 'title', label: t('playlistsPage.fieldTitle') },
@@ -309,6 +352,21 @@ const addTagWeight = () => {
     weight: Math.max(0, 100 - ruleDraft.value.tagWeights.length * 10)
   })
 }
+
+const addTagTerm = () => {
+  const provider = availableTagTerms.value[0]
+  if (!provider) return
+  ruleDraft.value.tagTerms.push({ providerKey: provider.key, key: defaultTagKey(provider), direction: 'asc' })
+}
+
+const normalizeTagTerm = (index) => {
+  const item = ruleDraft.value.tagTerms[index]
+  if (!item) return
+  const provider = props.tagProviders.find((candidate) => candidate.key === item.providerKey)
+  if (provider) item.key = defaultTagKey(provider)
+}
+
+const removeTagTerm = (index) => ruleDraft.value.tagTerms.splice(index, 1)
 
 const removeTagWeight = (index) => ruleDraft.value.tagWeights.splice(index, 1)
 
@@ -644,6 +702,16 @@ watch(() => props.playlistId, loadOrder)
   text-align: center;
 }
 
+.tag-term-line {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) 66px 26px;
+}
+
+.tag-term-line input {
+  width: auto;
+  padding: 0 5px;
+  text-align: left;
+}
+
 .rule-line select,
 .direction-field select {
   min-height: 30px;
@@ -721,7 +789,7 @@ watch(() => props.playlistId, loadOrder)
 }
 
 .order-list {
-  display: grid;
+  display: block;
   align-content: start;
   gap: 3px;
   min-width: 0;
@@ -733,6 +801,8 @@ watch(() => props.playlistId, loadOrder)
 }
 
 .order-row {
+  height: 64px;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: 28px 26px 40px minmax(0, 1fr) 54px auto;
   align-items: center;

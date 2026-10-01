@@ -67,6 +67,40 @@
                 </MotionButton>
               </div>
 
+              <div v-if="props.tagProviders.length" class="tag-query-editor">
+                <div class="operator-heading">{{ t('playlistsPage.tagCondition') }}</div>
+                <select v-model="tagQueryProviderKey" class="rule-input" :aria-label="t('playlistsPage.tagProvider')"
+                  @change="handleTagProviderChange">
+                  <option v-for="provider in props.tagProviders" :key="provider.key" :value="provider.key">
+                    {{ provider.name }}
+                  </option>
+                </select>
+                <input v-model.trim="tagQueryKey" class="rule-input" type="text"
+                  :placeholder="t('playlistsPage.tagKeyPlaceholder')" :aria-label="t('playlistsPage.tagKey')" />
+                <select v-model="tagQueryOp" class="rule-input" :aria-label="t('playlistsPage.tagOperator')">
+                  <option v-for="operator in tagQueryOperators" :key="operator.op" :value="operator.op">
+                    {{ operator.label }}
+                  </option>
+                </select>
+                <div class="tag-query-values">
+                  <select v-if="selectedTagProvider?.valueType === 'boolean'" v-model="tagQueryValue"
+                    class="rule-input" :aria-label="t('playlistsPage.tagValue')">
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                  <input v-else v-model="tagQueryValue" class="rule-input" :type="tagQueryInputType"
+                    :step="tagQueryInputType === 'number' ? 'any' : undefined"
+                    :placeholder="t('playlistsPage.tagValue')" :aria-label="t('playlistsPage.tagValue')" />
+                  <input v-if="tagQueryOp === 'between'" v-model="tagQueryValueTo" class="rule-input"
+                    :type="tagQueryInputType" :step="tagQueryInputType === 'number' ? 'any' : undefined"
+                    :placeholder="t('playlistsPage.tagValueTo')" :aria-label="t('playlistsPage.tagValueTo')" />
+                </div>
+                <button type="button" class="tag-query-add" :disabled="!tagQueryValid"
+                  @click="appendTagQuery">
+                  {{ t('playlistsPage.addCondition') }}
+                </button>
+              </div>
+
             </template>
           </aside>
 
@@ -94,14 +128,15 @@
                   <div v-else-if="staticVisibleSongs.length" class="picker-list">
                     <template v-for="group in groupedStaticSongs" :key="group.initial">
                       <GroupLabel :label="group.initial" @click="handleStaticGroupLabelClick(group.initial)" />
-                      <label v-for="song in group.items" :key="song.id" class="picker-row"
-                        :class="{ selected: staticSelectedIds.includes(song.id) }">
+                      <VirtualList :items="group.items" :item-height="66" v-slot="{ item: song }">
+                      <label class="picker-row"
+                        :class="{ selected: staticSelection.has(song.id) }">
                         <span class="picker-check">
                           <input v-model="staticSelectedIds" type="checkbox" :value="song.id" />
                           <span aria-hidden="true"></span>
                         </span>
                         <div class="col-info">
-                          <img :src="song.cover" :alt="song.title" class="song-cover" />
+                          <img :src="song.cover" :alt="song.title" class="song-cover" loading="lazy" decoding="async" />
                           <div class="song-details">
                             <div class="song-title">{{ song.title }}</div>
                             <div class="song-artist">{{ song.artist || t('player.unknownArtist') }}</div>
@@ -110,6 +145,7 @@
                         <div class="col-album">{{ song.album }}</div>
                         <div class="col-duration">{{ song.duration }}</div>
                       </label>
+                      </VirtualList>
                     </template>
                   </div>
                   <div v-else class="picker-empty">
@@ -160,12 +196,12 @@
                 <div v-if="isPreviewing" class="picker-empty">
                   <p>{{ t('playlistsPage.previewing') }}</p>
                 </div>
-                <div v-else-if="dynamicPreviewSongs.length" class="picker-list preview-list">
-                  <MotionButton v-for="song in dynamicPreviewSongs" :key="song.id" type="button" class="preview-row"
+                <VirtualList v-else-if="dynamicPreviewSongs.length" class="picker-list preview-list" :items="dynamicPreviewSongs" :item-height="66" v-slot="{ item: song }">
+                  <MotionButton type="button" class="preview-row"
                     :class="{ highlighted: highlightedSongId === song.id }" :while-press="{ scale: 0.99 }"
                     :transition="microTransition"
                     @click="highlightedSongId = highlightedSongId === song.id ? '' : song.id">
-                    <img :src="song.cover" :alt="song.title" class="song-cover" />
+                    <img :src="song.cover" :alt="song.title" class="song-cover" loading="lazy" decoding="async" />
                     <span class="song-copy">
                       <strong>{{ song.title }}</strong>
                       <small>{{ song.artist || t('player.unknownArtist') }}<span v-if="song.album"> · {{ song.album
@@ -173,7 +209,7 @@
                     </span>
                     <span class="preview-sources">{{ contributionLabel(song) }}</span>
                   </MotionButton>
-                </div>
+                </VirtualList>
                 <div v-else class="picker-empty">
                   <h3>{{ t('playlistsPage.emptyPreview') }}</h3>
 
@@ -195,7 +231,7 @@
         </div>
       </div>
       <ManageOrderPanel v-else :playlist-id="currentPlaylistId" :playlist-name="playlistName"
-        :playlist-type="initialMode" @close="close" @saved="handleOrderSaved" />
+        :playlist-type="initialMode" :tag-providers="props.tagProviders" @close="close" @saved="handleOrderSaved" />
     </div>
   </Dialog>
 </template>
@@ -205,9 +241,11 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Check, Search, X } from '@lucide/vue'
 import { motion, useReducedMotion } from 'motion-v'
 import Dialog from '@/components/ui/Dialog.vue'
+import VirtualList from '@/components/ui/VirtualList.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { useI18n } from '@/i18n/index.js'
 import { useLibraryStore } from '@/stores/libraryStore.js'
+import { defaultTagKey } from '@/utils/tagProvider.js'
 import { INSTANT_MOTION, MICRO_SPRING } from '@/utils/motion.js'
 import {
   clonePlaylistRule,
@@ -215,7 +253,9 @@ import {
   isPlaylistRuleValid,
   operatorStep,
   sourceKey,
-  sourceStep
+  sourceStep,
+  TAG_QUERY_OPERATORS,
+  tagQueryStep
 } from '@/utils/playlistRule.js'
 import { InfoIcon } from '@lucide/vue'
 import { RefreshCcwIcon } from '@lucide/vue'
@@ -243,6 +283,10 @@ const props = defineProps({
     default: () => []
   },
   sources: {
+    type: Array,
+    default: () => []
+  },
+  tagProviders: {
     type: Array,
     default: () => []
   },
@@ -321,6 +365,11 @@ const isPreviewing = ref(false)
 const dynamicPreviewSongs = ref(Array.isArray(props.modelValue?.tracks) ? [...props.modelValue.tracks] : [])
 const previewPending = ref(mode.value === 'dynamic')
 const highlightedSongId = ref('')
+const tagQueryProviderKey = ref(props.tagProviders[0]?.key || '')
+const tagQueryKey = ref(defaultTagKey(props.tagProviders[0]))
+const tagQueryOp = ref('eq')
+const tagQueryValue = ref('')
+const tagQueryValueTo = ref('')
 let sourceRequestId = 0
 let previewRequestId = 0
 let previewTimer = 0
@@ -332,6 +381,31 @@ const operators = computed(() => [
   { op: 'subtract', glyph: '⊖', label: t('playlistsPage.subtract') },
   { op: 'randomChoose', glyph: '✦', label: t('playlistsPage.randomChoose') }
 ])
+
+const tagQueryOperators = computed(() => TAG_QUERY_OPERATORS.map((op) => ({
+  op,
+  label: t(`playlistsPage.tagOperators.${op}`)
+})).filter(({ op }) => {
+  const type = props.tagProviders.find((provider) => provider.key === tagQueryProviderKey.value)?.valueType
+  if (type === 'number') return true
+  if (type === 'boolean') return op === 'eq'
+  return op === 'eq' || op === 'contains'
+}))
+const selectedTagProvider = computed(() => props.tagProviders.find(
+  (provider) => provider.key === tagQueryProviderKey.value
+) || null)
+const tagQueryInputType = computed(() => selectedTagProvider.value?.valueType === 'number' ? 'number' : 'text')
+const tagQueryValid = computed(() => {
+  const value = tagQueryValue.value
+  const upper = tagQueryValueTo.value
+  const numberValuesValid = selectedTagProvider.value?.valueType !== 'number'
+    || (Number.isFinite(Number(value))
+      && (tagQueryOp.value !== 'between' || Number.isFinite(Number(upper))))
+  return mode.value === 'dynamic'
+    && Boolean(tagQueryProviderKey.value && tagQueryKey.value && value !== '' && value !== null)
+    && numberValuesValid
+    && (tagQueryOp.value !== 'between' || (upper !== '' && upper !== null))
+})
 
 const selectedSource = computed(() => pickerSources.value.find((source) => source.key === selectedSourceKey.value) || null)
 const sourceSongMap = computed(() => {
@@ -354,7 +428,6 @@ const staticVisibleSongs = computed(() => {
   const seen = new Set()
   return merged
     .filter((song) => (seen.has(song.id) ? false : (seen.add(song.id), true)))
-    .slice(0, 100)
 })
 const staticGroupedSongs = computed(() => groupByInitial(
   staticVisibleSongs.value,
@@ -370,9 +443,10 @@ const {
   handleAlphabetSelect: handleStaticAlphabetSelect,
   handleGroupLabelClick: handleStaticGroupLabelClick
 } = useAlphabetNavigation(staticListRef, staticAvailableInitials, staticScrollRef)
+const staticSelection = computed(() => new Set(staticSelectedIds.value))
 const allVisibleStaticSongsSelected = computed(() =>
   staticVisibleSongs.value.length > 0
-  && staticVisibleSongs.value.every((song) => staticSelectedIds.value.includes(song.id))
+  && staticVisibleSongs.value.every((song) => staticSelection.value.has(song.id))
 )
 const ruleSourceKeys = computed(() => rule.value.steps
   .filter((step) => step.type === 'source')
@@ -405,6 +479,11 @@ const stepLabel = (step) => {
   if (step.type === 'operator') {
     const operator = operators.value.find((item) => item.op === step.op)
     return operator?.label || step.op
+  }
+  if (step.type === 'tagQuery') {
+    const provider = props.tagProviders.find((item) => item.key === step.providerKey)
+    const values = step.op === 'between' ? `${step.value}–${step.valueTo}` : step.value
+    return `${provider?.name || step.providerKey}: ${step.key} ${step.op} ${values}`
   }
   return pickerSources.value.find((source) => source.key === sourceKey(step))?.name || step.kind
 }
@@ -463,6 +542,45 @@ const selectSource = (source) => {
   void loadSourceSongs(source)
 }
 
+const handleTagProviderChange = () => {
+  tagQueryKey.value = defaultTagKey(selectedTagProvider.value)
+  if (selectedTagProvider.value?.valueType === 'boolean' && !['true', 'false'].includes(tagQueryValue.value)) {
+    tagQueryValue.value = 'true'
+  } else if (selectedTagProvider.value?.valueType !== 'boolean' && ['true', 'false'].includes(tagQueryValue.value)) {
+    tagQueryValue.value = ''
+  }
+}
+
+const normalizedTagQueryValue = (value) => selectedTagProvider.value?.valueType === 'number'
+  ? Number(value)
+  : selectedTagProvider.value?.valueType === 'boolean'
+    ? value === true || value === 'true'
+    : value
+
+const appendTagQuery = () => {
+  if (!tagQueryValid.value || (!rule.value.steps.length && mode.value !== 'dynamic')) return
+  const last = rule.value.steps.at(-1)
+  if (last && last.type !== 'operator') return
+  rule.value.steps.push(tagQueryStep({
+    providerKey: tagQueryProviderKey.value,
+    key: tagQueryKey.value,
+    op: tagQueryOp.value,
+    value: normalizedTagQueryValue(tagQueryValue.value),
+    valueTo: tagQueryOp.value === 'between' ? normalizedTagQueryValue(tagQueryValueTo.value) : null
+  }))
+  emitValue()
+  schedulePreview()
+}
+
+watch(() => props.tagProviders, (providers) => {
+  if (!providers.some((provider) => provider.key === tagQueryProviderKey.value)) {
+    tagQueryProviderKey.value = providers[0]?.key || ''
+  }
+  if (!tagQueryOperators.value.some((operator) => operator.op === tagQueryOp.value)) {
+    tagQueryOp.value = tagQueryOperators.value[0]?.op || 'eq'
+  }
+}, { deep: true, immediate: true })
+
 const setMode = (nextMode) => {
   if (mode.value === nextMode) return
   const previousMode = mode.value
@@ -482,7 +600,7 @@ const setMode = (nextMode) => {
 const canAppendOperator = (op) => {
   if (mode.value !== 'dynamic' || !rule.value.steps.length) return false
   const last = rule.value.steps.at(-1)
-  if (last.type !== 'source') return false
+  if (!['source', 'tagQuery'].includes(last.type)) return false
   return op !== 'randomChoose' || !rule.value.steps.some((step) => step.type === 'operator' && step.op === 'randomChoose')
 }
 
@@ -497,13 +615,13 @@ const removeRuleStep = (index) => {
   if (index < 0 || index >= rule.value.steps.length) return
   const step = rule.value.steps[index]
   const removeAt = new Set([index])
-  if (step.type === 'source') {
+  if (['source', 'tagQuery'].includes(step.type)) {
     if (index === 0 && rule.value.steps[index + 1]?.type === 'operator') {
       removeAt.add(index + 1)
     } else if (rule.value.steps[index - 1]?.type === 'operator') {
       removeAt.add(index - 1)
     }
-  } else if (step.op !== 'randomChoose' && rule.value.steps[index + 1]?.type === 'source') {
+  } else if (step.op !== 'randomChoose' && ['source', 'tagQuery'].includes(rule.value.steps[index + 1]?.type)) {
     removeAt.add(index + 1)
   }
   rule.value.steps = rule.value.steps.filter((_, stepIndex) => !removeAt.has(stepIndex))
@@ -835,6 +953,57 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.tag-query-editor {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 9px;
+  border: 1px solid rgba(var(--primary-color), 0.14);
+  border-radius: 10px;
+  background: rgba(var(--primary-color), 0.045);
+}
+
+.rule-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(var(--outline-color), 0.16);
+  border-radius: 7px;
+  outline: 0;
+  color: rgb(var(--text-color));
+  background: rgba(var(--global-inverse-color), 0.07);
+  font: inherit;
+  font-size: 11px;
+}
+
+.rule-input:focus {
+  border-color: rgba(var(--primary-color), 0.55);
+}
+
+.tag-query-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tag-query-add {
+  min-height: 30px;
+  border: 1px solid rgba(var(--primary-color), 0.22);
+  border-radius: 7px;
+  color: rgb(var(--primary-color));
+  background: rgba(var(--primary-color), 0.1);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.tag-query-add:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
 .operator-button {
   display: flex;
   align-items: center;
@@ -1030,13 +1199,16 @@ onBeforeUnmount(() => {
 }
 
 .picker-list {
-  display: grid;
+  display: block;
   gap: 2px;
   min-width: 0;
 }
 
 .picker-row,
 .preview-row {
+  width: 100%;
+  height: 66px;
+  box-sizing: border-box;
   min-width: 0;
   border: 1px solid transparent;
   border-radius: 9px;

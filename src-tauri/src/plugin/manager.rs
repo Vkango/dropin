@@ -2,13 +2,12 @@ use crate::{
     core::bass_bridge::BassService,
     core::paths::AppPaths,
     media::media_library::MediaService,
-    plugin::manifest::PluginManifest,
+    plugin::manifest::{PluginManifest, TagProviderManifest},
     plugin::permissions::{
-        PermissionState, API_VERSION, LIBRARY_READ, NOTIFICATION_SHOW, PLAYER_CONTROL, PLAYER_READ,
-        STORAGE_PLUGIN, UI_PANEL,
+        PermissionState, API_VERSION, LIBRARY_AUDIO_READ, LIBRARY_READ, NOTIFICATION_SHOW,
+        PLAYER_CONTROL, PLAYER_READ, STORAGE_PLUGIN, TAG_PROVIDER, UI_PANEL,
     },
 };
-use base64::Engine as _;
 use rfd::FileDialog;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -17,7 +16,7 @@ use std::{
     fs::{self, File},
     io::{Read, Seek},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, RwLock},
+    sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, RwLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, State};
@@ -32,8 +31,12 @@ const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const WASM_MEMORY_BYTES: usize = 32 * 1024 * 1024;
 const WASM_FUEL: u64 = 2_000_000;
+const TAG_ANALYSIS_FUEL: u64 = 20_000_000;
 const STATE_VERSION: u32 = 2;
 const EVENT_PLUGIN_NOTIFICATION: &str = "plugin/notification";
+const EVENT_TAG_ANALYSIS_PROGRESS: &str = "tag/analysis-progress";
+const EVENT_TAG_ANALYSIS_FINISHED: &str = "tag/analysis-finished";
+const EVENT_TAG_ANALYSIS_ERROR: &str = "tag/analysis-error";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -59,8 +62,10 @@ pub struct PluginInfo {
     pub author: String,
     pub description: String,
     pub categories: Vec<String>,
+    pub ui: Option<String>,
+    pub tag_provider: Option<TagProviderManifest>,
     pub icon: Option<String>,
-    pub icon_data_url: Option<String>,
+    pub icon_url: Option<String>,
     pub permissions: PermissionState,
     pub installed: bool,
     pub enabled: bool,
@@ -72,6 +77,7 @@ pub struct PluginInfo {
 struct PluginAccess {
     id: String,
     name: String,
+    is_tag_provider: bool,
     declared_permissions: Vec<String>,
     granted_permissions: Vec<String>,
 }
@@ -81,6 +87,7 @@ impl PluginAccess {
         Self {
             id: plugin.manifest.id.clone(),
             name: plugin.manifest.name.clone(),
+            is_tag_provider: plugin.manifest.tag_provider.is_some(),
             declared_permissions: plugin.manifest.permissions.clone(),
             granted_permissions: plugin.state.granted_permissions.clone(),
         }
@@ -130,6 +137,7 @@ pub struct PluginManager {
     paths: AppPaths,
     runtime: Arc<Mutex<Runtime>>,
     host_state: Arc<RwLock<Value>>,
+    analysis_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
 }
 
 impl PluginManager {
@@ -146,6 +154,7 @@ impl PluginManager {
                 plugins: HashMap::new(),
             })),
             host_state: Arc::new(RwLock::new(json!({}))),
+            analysis_flags: Arc::new(Mutex::new(HashMap::new())),
         };
         manager.load_installed();
         manager
@@ -209,6 +218,310 @@ impl PluginManager {
         Ok(result)
     }
 
+    fn provider_values(&self) -> Result<Vec<Value>, String> {
+        let runtime = self
+            .runtime
+            .lock()
+            .map_err(|_| "plugin runtime poisoned".to_string())?;
+        let mut providers = runtime
+            .plugins
+            .values()
+            .filter_map(|plugin| {
+                let provider = plugin.manifest.tag_provider.as_ref()?;
+                Some(json!({
+                    "key": provider.key,
+                    "name": provider.name,
+                    "help": provider.help,
+                    "valueType": provider.value_type,
+                    "supportsSegments": provider.supports_segments,
+                    "pluginId": plugin.manifest.id,
+                    "sourceVersion": plugin.manifest.version,
+                    "enabled": plugin.state.enabled && !plugin.state.faulted,
+                }))
+            })
+            .collect::<Vec<_>>();
+        providers.sort_by(|left, right| {
+            let left_key = left.get("key").and_then(Value::as_str).unwrap_or_default();
+            let right_key = right.get("key").and_then(Value::as_str).unwrap_or_default();
+            left_key.cmp(right_key).then_with(|| {
+                let left_enabled = left.get("enabled").and_then(Value::as_bool).unwrap_or(false);
+                let right_enabled = right.get("enabled").and_then(Value::as_bool).unwrap_or(false);
+                right_enabled.cmp(&left_enabled).then_with(|| {
+                    left.get("pluginId").and_then(Value::as_str).unwrap_or_default()
+                        .cmp(right.get("pluginId").and_then(Value::as_str).unwrap_or_default())
+                })
+            })
+        });
+        let mut seen_keys = std::collections::HashSet::new();
+        providers.retain(|provider| {
+            seen_keys.insert(
+                provider
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            )
+        });
+        Ok(providers)
+    }
+
+    pub fn sync_tag_providers(&self, media: &MediaService) -> Result<Value, String> {
+        media
+            .call(
+                "media_tag_provider_reconcile",
+                json!({ "providers": self.provider_values()? }),
+            )
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn tag_provider_list(&self, media: &MediaService) -> Result<Value, String> {
+        self.sync_tag_providers(media)?;
+        media
+            .call("media_tag_provider_list", json!({}))
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn tag_provider_refresh(
+        &self,
+        provider_key: String,
+        media: &MediaService,
+        bass: &BassService,
+        app: &AppHandle,
+    ) -> Result<Value, String> {
+        self.sync_tag_providers(media)?;
+        let rows = media
+            .call("media_tag_provider_list", json!({}))
+            .map_err(|error| error.to_string())?
+            .get("providers")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let provider = rows
+            .iter()
+            .find(|provider| provider.get("key").and_then(Value::as_str) == Some(provider_key.as_str()))
+            .cloned()
+            .ok_or_else(|| "tag provider does not exist".to_string())?;
+        if !provider.get("enabled").and_then(Value::as_bool).unwrap_or(false) {
+            return Err("tag provider is not enabled".into());
+        }
+        let plugin_id = provider
+            .get("pluginId")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| "tag provider has no plugin source".to_string())?
+            .to_string();
+        if !self.is_plugin_running(&plugin_id) {
+            return Err("the plugin backing this tag provider is not enabled".into());
+        }
+        let source_key = provider
+            .get("sourceProviderKey")
+            .and_then(Value::as_str)
+            .unwrap_or(&provider_key)
+            .to_string();
+        let source_version = self
+            .provider_values()?
+            .iter()
+            .find(|candidate| candidate.get("key").and_then(Value::as_str) == Some(source_key.as_str())
+                && candidate.get("pluginId").and_then(Value::as_str) == Some(plugin_id.as_str()))
+            .and_then(|candidate| candidate.get("sourceVersion").and_then(Value::as_str))
+            .unwrap_or("")
+            .to_string();
+        let count = media
+            .call("media_tag_catalog_list", json!({ "limit": 1, "offset": 0 }))
+            .map_err(|error| error.to_string())?
+            .get("total")
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            .max(0) as usize;
+        let job = media
+            .call("media_tag_analysis_start", json!({ "providerKey": provider_key, "total": count }))
+            .map_err(|error| error.to_string())?;
+        let job_id = job
+            .get("jobId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "analysis job did not return an id".to_string())?
+            .to_string();
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.analysis_flags
+            .lock()
+            .map_err(|_| "plugin runtime poisoned".to_string())?
+            .insert(job_id.clone(), cancel.clone());
+        let manager = self.clone();
+        let media = media.clone();
+        let bass = bass.clone();
+        let app = app.clone();
+        let key_for_worker = provider_key.clone();
+        let plugin_for_worker = plugin_id.clone();
+        std::thread::spawn(move || {
+            let mut offset = 0usize;
+            let mut failed = None;
+            while offset < count {
+                if cancel.load(Ordering::Acquire) {
+                    let _ = media.call("media_tag_analysis_finish", json!({ "jobId": job_id, "state": "cancelled" }));
+                    let _ = app.emit(EVENT_TAG_ANALYSIS_ERROR, json!({ "jobId": job_id, "providerKey": key_for_worker, "state": "cancelled" }));
+                    manager.remove_analysis_flag(&job_id);
+                    return;
+                }
+                let catalog = match media.call("media_tag_catalog_list", json!({ "limit": 1, "offset": offset })) {
+                    Ok(value) => value,
+                    Err(error) => { failed = Some(error.to_string()); break; }
+                };
+                let Some(track) = catalog
+                    .get("tracks")
+                    .and_then(Value::as_array)
+                    .and_then(|tracks| tracks.first())
+                    .cloned()
+                else {
+                    break;
+                };
+                let response = match manager.call(
+                    plugin_for_worker.clone(),
+                    "backend.tag.analyze".into(),
+                    json!({ "providerKey": source_key, "trackIndex": offset, "track": track }),
+                    &bass,
+                    &media,
+                    &app,
+                ) {
+                    Ok(value) => value,
+                    Err(error) => { failed = Some(error); break; }
+                };
+                let response = if response.get("ok").and_then(Value::as_bool) == Some(true) {
+                    response.get("result").cloned().unwrap_or_else(|| json!({}))
+                } else {
+                    response
+                };
+                let results = response.get("results").cloned().unwrap_or_else(|| json!([]));
+                if results.as_array().is_some_and(|values| !values.is_empty()) {
+                    if let Err(error) = media.call("media_tag_results_write", json!({
+                        "providerKey": key_for_worker,
+                        "pluginId": plugin_for_worker,
+                        "sourceVersion": source_version,
+                        "results": results,
+                    })) {
+                        failed = Some(error.to_string());
+                        break;
+                    }
+                }
+                offset = offset.saturating_add(1);
+                let _ = media.call("media_tag_analysis_progress", json!({ "jobId": job_id, "completed": offset }));
+                let _ = app.emit(EVENT_TAG_ANALYSIS_PROGRESS, json!({ "jobId": job_id, "providerKey": key_for_worker, "completed": offset, "total": count }));
+            }
+            if let Some(error) = failed {
+                let _ = media.call("media_tag_analysis_finish", json!({ "jobId": job_id, "state": "failed", "error": error }));
+                let _ = app.emit(EVENT_TAG_ANALYSIS_ERROR, json!({ "jobId": job_id, "providerKey": key_for_worker, "error": error }));
+            } else {
+                let _ = media.call("media_tag_analysis_finish", json!({ "jobId": job_id, "state": "finished" }));
+                let _ = app.emit(EVENT_TAG_ANALYSIS_FINISHED, json!({ "jobId": job_id, "providerKey": key_for_worker }));
+            }
+            manager.remove_analysis_flag(&job_id);
+        });
+        Ok(job)
+    }
+
+    fn remove_analysis_flag(&self, job_id: &str) {
+        if let Ok(mut flags) = self.analysis_flags.lock() {
+            flags.remove(job_id);
+        }
+    }
+
+    pub fn tag_provider_cancel(&self, job_id: String, media: &MediaService) -> Result<Value, String> {
+        let cancelled = self
+            .analysis_flags
+            .lock()
+            .map_err(|_| "plugin runtime poisoned".to_string())?
+            .get(&job_id)
+            .map(|flag| { flag.store(true, Ordering::Release); true })
+            .unwrap_or(false);
+        let result = media
+            .call("media_tag_provider_cancel", json!({ "jobId": job_id }))
+            .map_err(|error| error.to_string())?;
+        Ok(json!({ "cancelled": cancelled || result.get("cancelled").and_then(Value::as_bool).unwrap_or(false), "jobId": job_id }))
+    }
+
+    pub fn is_plugin_running(&self, plugin_id: &str) -> bool {
+        self.runtime
+            .lock()
+            .map(|runtime| {
+                runtime
+                    .plugins
+                    .get(plugin_id)
+                    .map(|plugin| plugin.state.enabled && !plugin.state.faulted && plugin.wasm.is_some())
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn tag_provider_wiki(
+        &self,
+        provider_key: String,
+        locale: String,
+        provided: bool,
+        media: &MediaService,
+    ) -> Result<Value, String> {
+        let rows = media
+            .call("media_tag_provider_list", json!({}))
+            .map_err(|error| error.to_string())?
+            .get("providers")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let provider = rows
+            .iter()
+            .find(|provider| provider.get("key").and_then(Value::as_str) == Some(provider_key.as_str()));
+        let Some(provider) = provider else {
+            return Ok(json!({ "wiki": "" }));
+        };
+        // A user-created tag owns its Wiki, including an intentionally empty one.
+        if !provided && provider.get("tagId").and_then(Value::as_str).is_some() {
+            return Ok(json!({ "wiki": provider.get("wiki").and_then(Value::as_str).unwrap_or(""), "source": "stored" }));
+        }
+        let Some(plugin_id) = provider.get("pluginId").and_then(Value::as_str).filter(|value| !value.trim().is_empty()) else {
+            return Ok(json!({ "wiki": "" }));
+        };
+        let source_key = provider.get("sourceProviderKey").and_then(Value::as_str).unwrap_or(&provider_key);
+        let result = self.read_plugin_wiki(plugin_id, "backend.tag.wiki", json!({ "providerKey": source_key, "locale": locale }))?;
+        Ok(json!({ "wiki": result.get("wiki").and_then(Value::as_str).unwrap_or(""), "source": "plugin" }))
+    }
+
+    pub fn plugin_wiki(
+        &self,
+        plugin_id: String,
+        locale: String,
+    ) -> Result<Value, String> {
+        let result = self.read_plugin_wiki(&plugin_id, "backend.wiki", json!({ "locale": locale }))?;
+        Ok(json!({ "wiki": result.get("wiki").and_then(Value::as_str).unwrap_or("") }))
+    }
+
+    fn read_plugin_wiki(&self, id: &str, method: &str, args: Value) -> Result<Value, String> {
+        let (engine, mut isolated) = {
+            let runtime = self.runtime.lock().map_err(|_| "plugin runtime poisoned".to_string())?;
+            let plugin = runtime.plugins.get(id).ok_or_else(|| "plugin is not installed".to_string())?;
+            (runtime.engine.clone(), InstalledPlugin {
+                manifest: plugin.manifest.clone(),
+                root: plugin.root.clone(),
+                state: PersistedPlugin::default(),
+                wasm: None,
+                last_background_tick_ms: 0,
+            })
+        };
+        // Documentation is available before enabling a plugin or granting permissions.
+        // Use a separate instance without host access so reading it cannot change a
+        // running plugin's state, use its permissions, or fault its backend.
+        start_wasm(&engine, &mut isolated)?;
+        let request = json!({ "method": method, "args": args }).to_string();
+        let response = call_wasm(&mut isolated, request.as_bytes(), None, WASM_FUEL);
+        stop_wasm(&mut isolated);
+        let response = response?;
+        if response.get("ok").and_then(Value::as_bool) == Some(false)
+            && response.get("error").and_then(Value::as_str).is_some_and(|error| {
+                error.starts_with("unknown ") || error.starts_with("unsupported ")
+            })
+        {
+            return Ok(json!({ "wiki": "" }));
+        }
+        unwrap_plugin_response(response)
+    }
+
     pub fn pick_package(&self) -> Option<String> {
         FileDialog::new()
             .add_filter("Dropin plugin", &["dropin"])
@@ -238,10 +551,13 @@ impl PluginManager {
             let manifest: PluginManifest =
                 serde_json::from_str(&contents).map_err(|error| error.to_string())?;
             manifest.validate()?;
-            if !manifest.backend_path(&temporary).is_file()
-                || !manifest.ui_path(&temporary).is_file()
-            {
-                return Err("plugin backend or UI entry is missing".into());
+            if !manifest.backend_path(&temporary).is_file() {
+                return Err("plugin backend entry is missing".into());
+            }
+            if let Some(ui) = manifest.ui_path(&temporary) {
+                if !ui.is_file() {
+                    return Err("plugin UI entry is missing".into());
+                }
             }
             let mut runtime = self
                 .runtime
@@ -307,6 +623,23 @@ impl PluginManager {
             .lock()
             .map_err(|_| "plugin runtime poisoned".to_string())?;
         let engine = runtime.engine.clone();
+        if enabled {
+            let requested_key = runtime
+                .plugins
+                .get(&id)
+                .and_then(|plugin| plugin.manifest.tag_provider.as_ref())
+                .map(|provider| provider.key.clone());
+            if let Some(requested_key) = requested_key {
+                let conflict = runtime.plugins.values().any(|plugin| {
+                    plugin.manifest.id != id
+                        && plugin.state.enabled
+                        && plugin.manifest.tag_provider.as_ref().is_some_and(|provider| provider.key == requested_key)
+                });
+                if conflict {
+                    return Err(format!("tag provider key is already enabled: {requested_key}"));
+                }
+            }
+        }
         let info = {
             let plugin = runtime
                 .plugins
@@ -413,12 +746,22 @@ impl PluginManager {
         if !method.starts_with("backend.") {
             return dispatch_host_api(&access, &method, args, &host);
         }
-        if !access_permission(&access, UI_PANEL) {
-            return permission_error(UI_PANEL);
+        let permission = if method.starts_with("backend.tag.") {
+            TAG_PROVIDER
+        } else {
+            UI_PANEL
+        };
+        if !access_permission(&access, permission) {
+            return permission_error(permission);
         }
         let request = json!({ "method": method, "args": args }).to_string();
+        let fuel = if method.starts_with("backend.tag.analyze") {
+            TAG_ANALYSIS_FUEL
+        } else {
+            WASM_FUEL
+        };
         let wasm_context = WasmHostContext { access, host };
-        match call_wasm(plugin, request.as_bytes(), wasm_context) {
+        match call_wasm(plugin, request.as_bytes(), Some(wasm_context), fuel) {
             Ok(value) => Ok(value),
             Err(error) => {
                 stop_wasm(plugin);
@@ -476,7 +819,7 @@ impl PluginManager {
                 access,
                 host: host.clone(),
             };
-            if let Err(error) = call_wasm(plugin, request.as_bytes(), wasm_context) {
+            if let Err(error) = call_wasm(plugin, request.as_bytes(), Some(wasm_context), WASM_FUEL) {
                 stop_wasm(plugin);
                 plugin.state.enabled = false;
                 plugin.state.faulted = true;
@@ -502,7 +845,12 @@ impl PluginManager {
         if !plugin.state.enabled || plugin.state.faulted || !plugin_permission(plugin, UI_PANEL) {
             return Err("plugin UI permission is not granted".into());
         }
-        let path = format!("/{}/{}", plugin.manifest.id, plugin.manifest.ui);
+        let ui = plugin
+            .manifest
+            .ui
+            .as_deref()
+            .ok_or_else(|| "plugin does not provide a UI".to_string())?;
+        let path = format!("/{}/{}", plugin.manifest.id, ui);
         if cfg!(any(target_os = "windows", target_os = "android")) {
             Ok(format!("http://dropin-plugin.localhost{path}"))
         } else {
@@ -621,16 +969,17 @@ fn stop_wasm(plugin: &mut InstalledPlugin) {
 fn call_wasm(
     plugin: &mut InstalledPlugin,
     request: &[u8],
-    host_context: WasmHostContext,
+    host_context: Option<WasmHostContext>,
+    fuel: u64,
 ) -> Result<Value, String> {
     let wasm = plugin
         .wasm
         .as_mut()
         .ok_or_else(|| "plugin backend is not running".to_string())?;
     wasm.store
-        .set_fuel(WASM_FUEL)
+        .set_fuel(fuel)
         .map_err(|error| error.to_string())?;
-    wasm.store.data_mut().host_context = Some(host_context);
+    wasm.store.data_mut().host_context = host_context;
 
     let result = (|| {
         let memory = wasm
@@ -772,6 +1121,18 @@ fn unix_time_ms() -> u64 {
         .unwrap_or(0)
 }
 
+fn unwrap_plugin_response(response: Value) -> Result<Value, String> {
+    if response.get("ok").and_then(Value::as_bool) == Some(true) {
+        Ok(response.get("result").cloned().unwrap_or_else(|| json!({})))
+    } else {
+        Err(response
+            .get("error")
+            .and_then(Value::as_str)
+            .unwrap_or("plugin call failed")
+            .to_string())
+    }
+}
+
 fn dispatch_host_api(
     access: &PluginAccess,
     method: &str,
@@ -791,16 +1152,42 @@ fn dispatch_host_api(
             .map(|state| state.clone())
             .map_err(|_| "plugin host state poisoned".to_string()),
         "player.play" | "player.pause" => player_control_call(method, args, host),
-        "library.list" => host
-            .media
-            .call("media_library_tracks", args)
-            .map_err(|error| error.to_string()),
+        "library.list" => {
+            if access.is_tag_provider {
+                return Err("tag providers must use library.catalog.list and cannot read playlist sources".into());
+            }
+            host.media
+                .call("media_library_tracks", args)
+                .map_err(|error| error.to_string())
+        }
+        "library.catalog.list" => {
+            let catalog = host
+                .media
+                .call("media_tag_catalog_list", args)
+                .map_err(|error| error.to_string())?;
+            Ok(sanitize_catalog(catalog))
+        }
+        "library.audio.read" => read_library_audio(args, host),
         "notification.show" => notification_show(access, args, &host.app),
         "storage.get" | "storage.set" | "storage.remove" => {
             storage_call(&host.paths, &access.id, method, args)
         }
         _ => Err(format!("unsupported plugin method: {method}")),
     }
+}
+
+fn sanitize_catalog(mut catalog: Value) -> Value {
+    if let Some(tracks) = catalog.get_mut("tracks").and_then(Value::as_array_mut) {
+        for track in tracks {
+            if let Some(object) = track.as_object_mut() {
+                object.remove("path");
+                object.remove("url");
+                object.remove("source");
+                object.remove("fileHash");
+            }
+        }
+    }
+    catalog
 }
 
 fn player_control_call(method: &str, args: Value, host: &HostApiContext) -> Result<Value, String> {
@@ -828,6 +1215,42 @@ fn player_control_call(method: &str, args: Value, host: &HostApiContext) -> Resu
     host.bass
         .call_operation(operation, payload)
         .map_err(|error| error.to_string())
+}
+
+fn read_library_audio(args: Value, host: &HostApiContext) -> Result<Value, String> {
+    let track_id = args
+        .get("trackId")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "trackId is required".to_string())?;
+    let start_ms = args.get("startMs").and_then(Value::as_u64).unwrap_or(0);
+    let end_ms = args.get("endMs").and_then(Value::as_u64).unwrap_or(start_ms.saturating_add(10_000));
+    if end_ms < start_ms || end_ms.saturating_sub(start_ms) > 60_000 {
+        return Err("audio read range must be between 0 and 60000 ms".into());
+    }
+    let max_samples = args.get("maxSamples").and_then(Value::as_u64).unwrap_or(48_000).clamp(1, 80_000);
+    let source = host
+        .media
+        .call("media_track_source", json!({ "trackId": track_id }))
+        .map_err(|error| error.to_string())?;
+    let path = source
+        .get("analysisPath")
+        .or_else(|| source.get("path"))
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| "track audio is not available for analysis".to_string())?;
+    let result = host
+        .bass
+        .call_operation(
+            "bass_analysis_read",
+            json!({ "path": path, "startMs": start_ms, "endMs": end_ms, "maxSamples": max_samples }),
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(json!({ "trackId": track_id, "startMs": start_ms, "endMs": end_ms,
+        "sampleRate": result.get("sampleRate").cloned().unwrap_or(json!(0)),
+        "channels": result.get("channels").cloned().unwrap_or(json!(0)),
+        "samples": result.get("samples").cloned().unwrap_or_else(|| json!([])),
+    }))
 }
 
 fn notification_show(access: &PluginAccess, args: Value, app: &AppHandle) -> Result<Value, String> {
@@ -878,6 +1301,10 @@ fn required_permission(method: &str) -> Option<&'static str> {
         Some(PLAYER_READ)
     } else if method.starts_with("player.") {
         Some(PLAYER_CONTROL)
+    } else if method == "library.catalog.list" {
+        Some(LIBRARY_READ)
+    } else if method == "library.audio.read" {
+        Some(LIBRARY_AUDIO_READ)
     } else if method.starts_with("library.") {
         Some(LIBRARY_READ)
     } else if method == "notification.show" {
@@ -973,8 +1400,10 @@ fn plugin_info(plugin: &InstalledPlugin) -> PluginInfo {
         author: plugin.manifest.author.clone(),
         description: plugin.manifest.description.clone(),
         categories: plugin.manifest.categories.clone(),
+        ui: plugin.manifest.ui.clone(),
+        tag_provider: plugin.manifest.tag_provider.clone(),
         icon: plugin.manifest.icon.clone(),
-        icon_data_url: plugin_icon_data_url(plugin),
+        icon_url: plugin_icon_url(plugin),
         permissions: PermissionState::new(
             plugin.manifest.permissions.clone(),
             plugin.state.granted_permissions.clone(),
@@ -986,19 +1415,18 @@ fn plugin_info(plugin: &InstalledPlugin) -> PluginInfo {
     }
 }
 
-fn plugin_icon_data_url(plugin: &InstalledPlugin) -> Option<String> {
+fn plugin_icon_url(plugin: &InstalledPlugin) -> Option<String> {
     let relative = plugin.manifest.icon.as_deref()?;
     let path = plugin.root.join(relative);
     let metadata = fs::metadata(&path).ok()?;
     if !metadata.is_file() || metadata.len() > 1024 * 1024 {
         return None;
     }
-    let bytes = fs::read(path).ok()?;
-    let mime = mime_for(Path::new(relative));
-    Some(format!(
-        "data:{mime};base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    ))
+    let path = format!("/{}/{}", plugin.manifest.id, relative);
+    #[cfg(any(target_os = "windows", target_os = "android"))]
+    { Some(format!("http://dropin-plugin.localhost{path}")) }
+    #[cfg(not(any(target_os = "windows", target_os = "android")))]
+    { Some(format!("dropin-plugin://localhost{path}")) }
 }
 
 fn extract_archive<R: Read + Seek>(
@@ -1101,7 +1529,11 @@ fn mime_for(path: &Path) -> String {
 }
 
 #[tauri::command]
-pub fn plugin_list(manager: State<'_, PluginManager>) -> Result<Vec<PluginInfo>, String> {
+pub fn plugin_list(
+    manager: State<'_, PluginManager>,
+    media: State<'_, MediaService>,
+) -> Result<Vec<PluginInfo>, String> {
+    manager.sync_tag_providers(&media)?;
     manager.list()
 }
 
@@ -1113,24 +1545,45 @@ pub fn plugin_pick_package(manager: State<'_, PluginManager>) -> Option<String> 
 #[tauri::command]
 pub fn plugin_install(
     manager: State<'_, PluginManager>,
+    media: State<'_, MediaService>,
     path: String,
 ) -> Result<PluginInfo, String> {
-    manager.install(path)
+    let plugin = manager.install(path)?;
+    manager.sync_tag_providers(&media)?;
+    Ok(plugin)
 }
 
 #[tauri::command]
-pub fn plugin_uninstall(manager: State<'_, PluginManager>, id: String) -> Result<Value, String> {
-    manager.uninstall(id)
+pub fn plugin_uninstall(
+    manager: State<'_, PluginManager>,
+    media: State<'_, MediaService>,
+    id: String,
+) -> Result<Value, String> {
+    let result = manager.uninstall(id)?;
+    manager.sync_tag_providers(&media)?;
+    Ok(result)
 }
 
 #[tauri::command]
-pub fn plugin_enable(manager: State<'_, PluginManager>, id: String) -> Result<PluginInfo, String> {
-    manager.set_enabled(id, true)
+pub fn plugin_enable(
+    manager: State<'_, PluginManager>,
+    media: State<'_, MediaService>,
+    id: String,
+) -> Result<PluginInfo, String> {
+    let plugin = manager.set_enabled(id, true)?;
+    manager.sync_tag_providers(&media)?;
+    Ok(plugin)
 }
 
 #[tauri::command]
-pub fn plugin_disable(manager: State<'_, PluginManager>, id: String) -> Result<PluginInfo, String> {
-    manager.set_enabled(id, false)
+pub fn plugin_disable(
+    manager: State<'_, PluginManager>,
+    media: State<'_, MediaService>,
+    id: String,
+) -> Result<PluginInfo, String> {
+    let plugin = manager.set_enabled(id, false)?;
+    manager.sync_tag_providers(&media)?;
+    Ok(plugin)
 }
 
 #[tauri::command]
@@ -1174,4 +1627,112 @@ pub fn plugin_update_host_state(
 #[tauri::command]
 pub fn plugin_get_ui_url(manager: State<'_, PluginManager>, id: String) -> Result<String, String> {
     manager.ui_url(id)
+}
+
+#[tauri::command]
+pub fn tag_provider_list(
+    manager: State<'_, PluginManager>,
+    media: State<'_, MediaService>,
+) -> Result<Value, String> {
+    manager.tag_provider_list(&media)
+}
+
+#[tauri::command]
+pub fn tag_provider_refresh(
+    manager: State<'_, PluginManager>,
+    bass: State<'_, BassService>,
+    media: State<'_, MediaService>,
+    app: AppHandle,
+    provider_key: String,
+) -> Result<Value, String> {
+    manager.tag_provider_refresh(provider_key, &media, &bass, &app)
+}
+
+#[tauri::command]
+pub fn tag_provider_cancel(
+    manager: State<'_, PluginManager>,
+    media: State<'_, MediaService>,
+    job_id: String,
+) -> Result<Value, String> {
+    manager.tag_provider_cancel(job_id, &media)
+}
+
+#[tauri::command]
+pub fn tag_provider_wiki(
+    manager: State<'_, PluginManager>,
+    media: State<'_, MediaService>,
+    provider_key: String,
+    locale: Option<String>,
+    provided: Option<bool>,
+) -> Result<Value, String> {
+    manager.tag_provider_wiki(provider_key, locale.unwrap_or_default(), provided.unwrap_or(false), &media)
+}
+
+#[tauri::command]
+pub fn plugin_wiki(
+    manager: State<'_, PluginManager>,
+    plugin_id: String,
+    locale: Option<String>,
+) -> Result<Value, String> {
+    manager.plugin_wiki(plugin_id, locale.unwrap_or_default())
+}
+
+#[cfg(test)]
+mod wiki_tests {
+    use super::*;
+
+    fn manager_with_examples() -> PluginManager {
+        let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../plugin-sdk/examples");
+        let manager = PluginManager::new(crate::core::paths::resolve(None));
+        {
+            let mut runtime = manager.runtime.lock().expect("runtime");
+            for name in ["tag-provider", "sleep-timer"] {
+                let root = examples.join(name);
+                let manifest: PluginManifest = serde_json::from_str(&fs::read_to_string(root.join("plugin.json")).expect("manifest file"))
+                    .expect("manifest");
+                runtime.plugins.insert(manifest.id.clone(), InstalledPlugin {
+                    manifest, root, state: PersistedPlugin::default(), wasm: None, last_background_tick_ms: 0,
+                });
+            }
+        }
+        manager
+    }
+
+    #[test]
+    fn disabled_headless_and_ui_plugins_supply_localized_wikis_without_permissions() {
+        let manager = manager_with_examples();
+        for id in ["com.dropin.tag-energy", "com.dropin.sleep-timer"] {
+            assert!(!manager.is_plugin_running(id));
+            for locale in ["en-US", "zh-CN", "zh-CLASSICAL"] {
+                let wiki = manager.plugin_wiki(id.into(), locale.into()).expect("plugin wiki");
+                assert!(wiki["wiki"].as_str().is_some_and(|value| !value.is_empty()));
+            }
+            let runtime = manager.runtime.lock().expect("runtime");
+            let plugin = runtime.plugins.get(id).expect("installed plugin");
+            assert!(!plugin.state.enabled && !plugin.state.faulted);
+            assert!(plugin.wasm.is_none() && plugin.state.granted_permissions.is_empty());
+        }
+        let wiki = manager.read_plugin_wiki("com.dropin.tag-energy", "backend.tag.wiki", json!({ "providerKey": "energy", "locale": "zh-CN" }))
+            .expect("tag wiki");
+        assert!(wiki["wiki"].as_str().expect("markdown").contains("Energy 是什么"));
+        let fallback = manager.plugin_wiki("com.dropin.tag-energy".into(), "fr-FR".into()).expect("fallback");
+        assert!(fallback["wiki"].as_str().expect("markdown").contains("What is Energy"));
+    }
+
+    #[test]
+    fn wiki_instances_are_isolated_and_optional_methods_do_not_fault_plugins() {
+        let manager = manager_with_examples();
+        let id = "com.dropin.sleep-timer";
+        let started = manager.read_plugin_wiki(id, "backend.start", json!({ "nowMs": 1000, "durationMs": 5000 }))
+            .expect("isolated timer start");
+        assert_eq!(started["active"], true);
+        let fresh = manager.read_plugin_wiki(id, "backend.state", json!({ "nowMs": 1000 })).expect("fresh instance");
+        assert_eq!(fresh["active"], false);
+        let missing = manager.read_plugin_wiki(id, "backend.tag.wiki", json!({})).expect("optional wiki");
+        assert_eq!(missing["wiki"], "");
+        let inaccessible = manager.read_plugin_wiki("com.dropin.tag-energy", "backend.tag.analyze", json!({ "track": { "id": "track-a" } }))
+            .expect("host access denied and track skipped");
+        assert_eq!(inaccessible["results"], json!([]));
+        assert!(!manager.is_plugin_running(id));
+    }
 }

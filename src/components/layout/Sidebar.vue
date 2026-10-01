@@ -32,19 +32,17 @@
                             :transition="microTransition" @click.stop="$emit('add-tag')">+</MotionButton>
                     </div>
                     <div v-if="sections.tags" class="section-content">
-                        <MotionDiv v-for="tag in tags" :key="tag.id" class="nav-item" :while-hover="{ y: -1 }"
-                            :transition="microTransition" @click="$emit('select-tag', tag)">
+                        <MotionDiv v-for="provider in myTagProviders" :key="provider.key" class="nav-item"
+                            :class="{ active: `tag:${provider.key}` === currentPage }" :while-hover="{ y: -1 }"
+                            :transition="microTransition" @click="$emit('select-tag-provider', provider)">
+                            <MotionDiv v-if="`tag:${provider.key}` === currentPage" class="active-nav-indicator"
+                                layout-id="sidebar-active-indicator" :initial="{ opacity: 0, scale: 0.92 }"
+                                :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.92 }"
+                                :transition="activeIndicatorTransition" aria-hidden="true" />
                             <span class="section-icon">
-                                <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
+                                <Icon src="/assets/bookmark.svg" :color="iconColor" />
                             </span>
-                            <span class="nav-label">{{ tag.label }}</span>
-                        </MotionDiv>
-                        <MotionDiv class="nav-item" :while-hover="{ y: -1 }" :transition="microTransition"
-                            @click="$emit('select-tag', null)">
-                            <span class="section-icon">
-                                <Icon src="/assets/bookmark-item.svg" :color="iconColor" />
-                            </span>
-                            <span class="nav-label">{{ t('sidebar.untagged') }}</span>
+                            <span class="nav-label">{{ provider.name }}</span>
                         </MotionDiv>
                     </div>
                 </div>
@@ -100,7 +98,7 @@
                                 :animate="{ opacity: 1, scale: 1 }" :exit="{ opacity: 0, scale: 0.92 }"
                                 :transition="activeIndicatorTransition" aria-hidden="true" />
                             <span class="section-icon">
-                                <img v-if="plugin.iconDataUrl" :src="plugin.iconDataUrl" alt="" />
+                                <img v-if="plugin.iconUrl" :src="plugin.iconUrl" alt="" loading="lazy" decoding="async" />
                                 <Icon v-else src="/assets/plugin.svg" :color="iconColor" />
                             </span>
                             <span class="nav-label">{{ plugin.name }}</span>
@@ -175,6 +173,10 @@ const props = defineProps({
         type: Array,
         default: () => []
     },
+    tagProviders: {
+        type: Array,
+        default: () => []
+    },
     installedPlugins: {
         type: Array,
         default: () => []
@@ -193,6 +195,7 @@ const emit = defineEmits([
     'add-plugin',
     'select-playlist',
     'select-tag',
+    'select-tag-provider',
     'select-plugin',
     'collapse'
 ])
@@ -203,6 +206,7 @@ const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
 const activeIndicatorTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : APPLE_SPRING)
 const iconColor = computed(() => props.isDark ? 'rgba(255, 255, 255)' : 'rgba(0, 0, 0)')
+const myTagProviders = computed(() => props.tagProviders.filter((provider) => provider.tagId))
 const settingsItem = computed(() => ({ id: 'settings', icon: 'setting.svg', label: t('sidebar.settings') }))
 const sections = reactive({
     tags: true,

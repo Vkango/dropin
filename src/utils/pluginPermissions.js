@@ -3,6 +3,8 @@ export const PLUGIN_PERMISSION_KEYS = [
   'player.read',
   'player.control',
   'library.read',
+  'library.audio.read',
+  'tag.provider',
   'notification.show',
   'storage.plugin'
 ]
@@ -29,4 +31,3 @@ export const pluginPermissionMeta = (permission, t) => {
     description: resolveText(t, 'pluginPermissions.' + key + '.description', key)
   }
 }
-

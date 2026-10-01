@@ -22,9 +22,16 @@
     },
     "tag": {
       "createTitle": "New tag",
-      "createMessage": "Use a tag to mark music in your own way.",
-      "createPlaceholder": "Try BPM 128, Soft, Sample-heavy",
-      "createConfirm": "Add"
+      "createMessage": "Give your tag a name, choose how to collect songs, and write its story.",
+      "createPlaceholder": "Try Night Run, Commute, Sample-heavy",
+      "createConfirm": "Create",
+      "nameLabel": "Tag name",
+      "providerLabel": "Song source",
+      "providerNone": "Handpicked collection",
+      "wikiLabel": "Wiki · Markdown",
+      "wikiPlaceholder": "Tell the story of this tag. A plugin can provide a starting point for you to edit.",
+      "wikiLoading": "Loading the plugin’s Wiki…",
+      "wikiLoadFailed": "Could not load the plugin’s Wiki. You can write your own and create the tag."
     }
   },
   "sidebar": {
@@ -108,12 +115,35 @@
     "goodMorning": "Good morning",
     "goodAfternoon": "Good afternoon",
     "goodEvening": "Good evening",
-    "recentlyPlayed": "Recently Played",
-    "recommended": "Recommended for You",
-    "seeAll": "See all",
-    "bannerDescription": "This thing eats a whole bag at once, no way",
-    "emptyRecentlyPlayed": "No recent plays",
-    "emptyRecommended": "No recommendations"
+    "command": {
+      "idleHint": "Type / for commands, or search your whole library directly",
+      "placeholder": "Type a command or search… (/help for all commands)",
+      "saveHint": "Enter to save as playlist",
+      "playHint": "Enter to play the first match",
+      "saveAsPlaylist": "Save as playlist",
+      "saveMessage": "Save these {count} results as a new playlist.",
+      "savedTitle": "Playlist created",
+      "savedTip": "Added {count} songs to \"{name}\".",
+      "saveFailed": "Failed to create playlist",
+      "emptyResult": "No matching songs",
+      "unknown": "Unknown command: /{name}. Type /help to list commands",
+      "missingArg": "Missing argument, usage: {usage}",
+      "argName": "name",
+      "argCount": "count",
+      "argKeyword": "keyword",
+      "helpTitle": "Available commands",
+      "helpDesc": "List all commands",
+      "artistDesc": "All songs by an artist",
+      "albumDesc": "All songs in an album",
+      "tagDesc": "All songs with a tag",
+      "randomDesc": "Pick random songs",
+      "randomTitle": "Random {count} songs",
+      "recentDesc": "Recently played songs",
+      "recentTitle": "Recently played",
+      "allDesc": "Your entire library",
+      "allTitle": "All songs",
+      "playDesc": "Search songs; Enter plays the first match"
+    }
   },
   "library": {
     "title": "Library",
@@ -204,6 +234,23 @@
     "ruleName": "Rule name",
     "ruleNamePlaceholder": "Try Newest first or Energy arc",
     "tagWeights": "Tag weights",
+    "tagSortTerms": "Tag sort terms",
+    "noTagSortTerms": "No Tag sort terms",
+    "tagProvider": "Tag provider",
+    "tagKey": "Tag key",
+    "tagKeyPlaceholder": "e.g. bpm, mood",
+    "tagOperator": "Comparison",
+    "tagValue": "Value",
+    "tagValueTo": "Upper bound",
+    "tagOperators": {
+      "eq": "equals",
+      "contains": "contains",
+      "gt": "greater than",
+      "gte": "at least",
+      "lt": "less than",
+      "lte": "at most",
+      "between": "between"
+    },
     "tagCondition": "Tag condition",
     "tagWeight": "Tag weight",
     "tagScoreDirection": "Tag score direction",
@@ -229,6 +276,8 @@
     "fieldLastPlayedAt": "Last played",
     "saveRule": "Save rule",
     "generateOrder": "Generate order",
+    "generatingOrder": "Generating order",
+    "saving": "Saving",
     "currentOrder": "Current order",
     "orderCount": "{count} songs",
     "unsavedOrder": "Unsaved changes",
@@ -310,7 +359,32 @@
     "statusAvailable": "Available",
     "statusEnabled": "Enabled",
     "statusFaulted": "Faulted",
-    "empty": "No plugins found"
+    "empty": "No plugins found",
+    "tabOverview": "Overview",
+    "tabWiki": "Wiki",
+    "tabPermissions": "Permissions",
+    "author": "Author",
+    "noWiki": "This plugin has no Wiki yet."
+  },
+  "tagProvider": {
+    "cancel": "Cancel analysis",
+    "stale": "Values may be outdated, refresh to update",
+    "unavailable": "Source unavailable",
+    "empty": "No tag results yet",
+    "refreshHint": "Click refresh to analyze your library and generate tag values.",
+    "analysisFailed": "Tag analysis failed",
+    "addSongs": "Add songs",
+    "addSongsTitle": "Manage songs · {name}",
+    "removeSong": "Remove",
+    "emptyManual": "No songs here yet",
+    "manualDescription": "A song collection shaped by your hand.",
+    "manageSongs": "Manage songs",
+    "wiki": "Wiki",
+    "wikiEmpty": "This tag has no Wiki yet.",
+    "wikiOriginal": "Original",
+    "wikiPluginProvided": "Plugin Provided",
+    "wikiEdit": "Edit Wiki",
+    "wikiSave": "Save"
   },
   "pluginPermissions": {
     "ui": {
@@ -333,6 +407,18 @@
       "read": {
         "label": "Read music library",
         "description": "View songs, albums, artists, and playlist data."
+      },
+      "audio": {
+        "read": {
+          "label": "Read audio for analysis",
+          "description": "Decode short audio segments from the library for tag analysis."
+        }
+      }
+    },
+    "tag": {
+      "provider": {
+        "label": "Provide tags",
+        "description": "Generate and write tag values for tracks in the library."
       }
     },
     "notification": {
@@ -870,6 +956,10 @@
     "importing": "Importing",
     "importDone": "Import finished",
     "importFailed": "Import failed",
+    "tagAnalysisFinished": "\"{name}\" analysis finished",
+    "tagAnalysisFinishedTip": "Results updated — open the tag page to view them.",
+    "tagAnalysisFailed": "\"{name}\" analysis failed",
+    "tagAnalysisCancelled": "\"{name}\" analysis cancelled",
     "scanStarted": "Scanning folder…",
     "scanProgress": "Imported {imported} / Scanned {scanned} (skipped {skipped}, failed {failed})",
     "scanFinished": "Import finished: {imported} tracks, {skipped} skipped, {failed} failed",

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "com.dropin.tag-energy",
+  "name": "Energy Tag Provider",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "author": "dropin",
+  "description": "Headless tag provider that scores each track's energy (0-100) from a short audio sample.",
+  "categories": ["utility"],
+  "backend": "backend.wasm",
+  "icon": "icon.svg",
+  "tagProvider": {
+    "key": "energy",
+    "name": "Energy",
+    "help": "Estimates track energy (0-100) from a short audio sample.",
+    "valueType": "number",
+    "supportsSegments": false
+  },
+  "permissions": ["tag.provider", "library.read", "library.audio.read"]
+}

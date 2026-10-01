@@ -1,0 +1,3 @@
+{
+  "wiki": "## Sleep Timer\n\nLet the music keep you company, then pause it when it is time to rest.\n\n### A quiet finish\n\n1. Enable the plugin and open Sleep Timer from the sidebar.\n2. Choose a preset or enter a duration in minutes, then start the countdown.\n3. When time is up, playback pauses and a notification appears. Use Cancel to stop the countdown early.\n\nThe countdown continues while its panel is closed. Keep Dropin running and the plugin enabled; disabling it or closing Dropin ends the timer.\n\n### Permissions\n\n- **Show plugin panel** displays the timer controls.\n- **Control playback** lets the timer pause your music.\n- **Show notifications** lets it tell you when the countdown ends."
+}

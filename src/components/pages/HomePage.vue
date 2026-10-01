@@ -1,124 +1,166 @@
 <template>
-    <PageLayout>
-        <template #header>
-            <!-- 顶部问候区域 -->
-            <div class="music-banner" @click="showAlbumDetail">
-            <div class="image-container">
-                <MotionTransition variant="banner">
-                    <img :key="currentSong.cover" class="background-image" :src="currentSong.cover"
-                        referrerpolicy="no-referrer">
-                </MotionTransition>
-            </div>
-            <div class="banner-content">
-                <div class="title">{{ t('app.name') }}</div>
-                <h2 class="library-title">{{ greeting }}</h2>
-                <div class="description">{{ t('home.bannerDescription') }}
+    <PageLayout flush>
+        <div class="command-console">
+            <div ref="scrollRef" class="console-results">
+                <div class="results-inner">
+                    <AnimatePresence mode="popLayout">
+                        <MotionDiv :key="resultKind" class="console-view" :initial="viewInitial" :animate="viewAnimate"
+                            :exit="viewExit" :transition="softTransition">
+                            <div v-if="!result" class="console-idle">
+                                <h1 class="idle-greeting">{{ greeting }}</h1>
+                                <p class="idle-subtitle">{{ t('home.command.idleHint') }}</p>
+                                <p v-if="!library.tracks.value.length" class="idle-empty">{{ t('player.importHint') }}
+                                </p>
+                                <div class="command-chips">
+                                    <MotionButton v-for="(chip, index) in chips" :key="chip.name" type="button"
+                                        class="command-chip" :initial="{ opacity: 0, y: 12 }"
+                                        :animate="{ opacity: 1, y: 0 }" :transition="chipTransition(index)"
+                                        :while-hover="{ y: -2 }" :while-press="{ scale: 0.97 }" @click="runChip(chip)">
+                                        <span class="chip-usage">{{ chip.usage }}</span>
+                                        <span class="chip-desc">{{ chip.description }}</span>
+                                    </MotionButton>
+                                </div>
+                            </div>
+
+                            <div v-else-if="result.kind === 'error'" class="console-error" role="alert">
+                                <span class="error-mark">✕</span>{{ result.message }}
+                            </div>
+
+                            <div v-else-if="result.kind === 'hint'" class="console-hint">{{ result.message }}</div>
+
+                            <div v-else-if="result.kind === 'help'" class="console-help">
+                                <h2 class="help-title">{{ t('home.command.helpTitle') }}</h2>
+                                <div v-for="command in helpCommands" :key="command.name" class="help-row">
+                                    <code class="help-usage">{{ command.usage }}</code>
+                                    <span class="help-desc">{{ command.description }}</span>
+                                </div>
+                            </div>
+
+                            <div v-else-if="result.kind === 'songs'" class="console-result">
+                                <div class="result-summary">
+                                    <div class="result-meta">
+                                        <span class="result-title">{{ result.title }}</span>
+                                        <span class="result-count">{{ t('player.songCount', {
+                                            count:
+                                                result.tracks.length
+                                        })
+                                            }}</span>
+                                    </div>
+                                    <div class="result-actions">
+                                        <span class="result-hint">
+                                            <CornerDownLeft :size="12" />{{ result.autoPlay ?
+                                                t('home.command.playHint') : t('home.command.saveHint') }}
+                                        </span>
+                                        <button type="button" class="result-action" :disabled="!result.tracks.length"
+                                            @click="playAll">
+                                            <Play :size="14" />{{ t('library.playAll') }}
+                                        </button>
+                                        <button type="button" class="result-action primary"
+                                            :disabled="!result.tracks.length" @click="openSaveDialog">
+                                            <ListPlus :size="14" />{{ t('home.command.saveAsPlaylist') }}
+                                        </button>
+                                    </div>
+                                </div>
+                                <SongList v-if="result.tracks.length" :songs="result.tracks" :show-header="false"
+                                    @song-play="onSongPlay" />
+                                <div v-else class="result-empty">{{ t('home.command.emptyResult') }}</div>
+                            </div>
+                        </MotionDiv>
+                    </AnimatePresence>
                 </div>
             </div>
-            </div>
-        </template>
-        <div class="home-page">
-            <div class="recently-played">
-            <div class="section-header">
-                <h2 class="section-title">{{ t('home.recentlyPlayed') }}</h2>
-                <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }" :transition="microTransition"
-                    @click="$emit('navigate', 'library')">{{ t('home.seeAll') }}</MotionButton>
-            </div>
-            <div class="recent-grid" v-if="recentlyPlayed.length">
-                <MotionDiv v-for="item in recentlyPlayed" :key="item.id" class="recent-item" initial="rest"
-                    while-hover="hover" :variants="cardVariants" @click="$emit('song-play', item)">
-                    <div class="recent-cover">
-                        <MotionTransition variant="cover" mode="out-in">
-                            <MotionImg :key="item.cover" :src="item.cover" :alt="item.title"
-                                :variants="imageVariants" />
-                        </MotionTransition>
-                        <MotionDiv class="play-overlay" :variants="overlayVariants">
-                            <Play :size="20" :stroke-width="1.8" />
-                        </MotionDiv>
-                    </div>
-                    <div class="recent-info">
-                        <h3 class="recent-title">{{ item.title }}</h3>
-                        <p class="recent-artist">{{ item.artist }}</p>
-                    </div>
-                </MotionDiv>
-            </div>
-            <div v-else class="section-empty">{{ t('home.emptyRecentlyPlayed') }}</div>
-            </div>
 
-            <!-- 推荐播放列表 -->
-            <div class="recommended-playlists">
-            <div class="section-header">
-                <h2 class="section-title">{{ t('home.recommended') }}</h2>
-                <MotionButton class="see-all-btn" :while-hover="{ opacity: 0.8 }" :transition="microTransition"
-                    @click="$emit('navigate', 'playlists')">{{ t('home.seeAll') }}</MotionButton>
-            </div>
-            <div class="playlist-grid" v-if="recommendedPlaylists.length">
-                <MotionDiv v-for="playlist in recommendedPlaylists" :key="playlist.id" class="playlist-item"
-                    initial="rest" while-hover="hover" :variants="cardVariants"
-                    @click="$emit('playlist-play', playlist)">
-                    <div class="playlist-cover">
-                        <MotionImg :src="playlist.cover" :alt="playlist.name" :variants="imageVariants" />
-                        <MotionDiv class="play-overlay" :variants="overlayVariants">
-                            <Play :size="24" :stroke-width="1.8" />
+            <div class="console-dock">
+                <div class="dock-scrim" aria-hidden="true"></div>
+                <div class="dock-inner">
+                    <AnimatePresence>
+                        <MotionDiv v-if="suggestions.length" key="suggestion-panel" class="suggestion-list"
+                            role="listbox" :initial="{ opacity: 0, y: 10, scale: 0.985 }"
+                            :animate="{ opacity: 1, y: 0, scale: 1 }" :exit="{ opacity: 0, y: 6, scale: 0.985 }"
+                            :transition="softTransition">
+                            <button v-for="(item, index) in suggestions" :key="`${item.value}-${index}`" type="button"
+                                class="suggestion-item" :class="{ active: index === activeSuggestion }" role="option"
+                                :aria-selected="index === activeSuggestion" @mouseenter="activeSuggestion = index"
+                                @mousedown.prevent="completeSuggestion(item)">
+                                <span class="suggestion-usage">{{ item.usage }}</span>
+                                <span class="suggestion-desc">{{ item.description }}</span>
+                            </button>
                         </MotionDiv>
+                    </AnimatePresence>
+                    <div class="input-row" :class="{ 'command-mode': isCommandMode }">
+                        <Terminal :size="16" class="input-icon" />
+                        <input ref="inputRef" v-model="input" class="console-input" type="text"
+                            :placeholder="t('home.command.placeholder')" aria-autocomplete="list"
+                            :aria-label="t('home.command.placeholder')" @keydown="onKeydown" />
                     </div>
-                    <div class="playlist-info">
-                        <h3 class="playlist-title">{{ playlist.name }}</h3>
-                        <p class="playlist-desc">{{ playlist.description }}</p>
-                    </div>
-                </MotionDiv>
-            </div>
-            <div v-else class="section-empty">{{ t('home.emptyRecommended') }}</div>
+                </div>
             </div>
         </div>
+
+        <Dialog v-model="isSaveDialogOpen" :aria-labelledby="'console-save-playlist-title'">
+            <form class="dialog-content" @submit.prevent="submitSavePlaylist">
+                <header class="dialog-header">
+                    <div>
+                        <h2 id="console-save-playlist-title">{{ t('dialog.playlist.createTitle') }}</h2>
+                    </div>
+                </header>
+                <p class="dialog-message">{{ saveDialogMessage }}</p>
+                <input v-model="playlistName" class="dialog-input" type="text"
+                    :placeholder="t('dialog.playlist.createPlaceholder')" :disabled="isSavingPlaylist" />
+                <footer class="dialog-actions">
+                    <button type="button" class="dialog-button secondary" :disabled="isSavingPlaylist"
+                        @click="isSaveDialogOpen = false">
+                        {{ t('dialog.actions.cancel') }}
+                    </button>
+                    <button type="submit" class="dialog-button primary"
+                        :disabled="isSavingPlaylist || !playlistName.trim()">
+                        {{ t('dialog.playlist.createConfirm') }}
+                    </button>
+                </footer>
+            </form>
+        </Dialog>
     </PageLayout>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, inject } from 'vue'
-import Icon from '@/components/ui/Icon.vue'
+import { computed, inject, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import PageLayout from '@/components/layout/PageLayout.vue'
-import MotionTransition from '@/components/ui/MotionTransition.vue'
-import { motion, useReducedMotion } from 'motion-v'
-import { Play } from '@lucide/vue'
-import { INSTANT_MOTION, MICRO_SPRING } from '@/utils/motion.js'
+import SongList from '@/components/library/SongList.vue'
+import Dialog from '@/components/ui/Dialog.vue'
+import Tip from '@/components/notification/Tip.vue'
+import { CornerDownLeft, ListPlus, Play, Terminal } from '@lucide/vue'
+import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
+import { INSTANT_MOTION, SOFT_SPRING } from '@/utils/motion.js'
+import { useLibraryStore } from '@/stores/libraryStore.js'
 import { useI18n } from '@/i18n/index.js'
+import { execute, listCommands, parseInput, suggest } from '@/services/commandEngine.js'
+
+const emit = defineEmits(['song-play'])
 
 const { t } = useI18n()
-
-const props = defineProps({
-    recentlyPlayed: {
-        type: Array,
-        default: () => []
-    },
-    recommendedPlaylists: {
-        type: Array,
-        default: () => []
-    }
-})
-
-const emit = defineEmits(['song-play', 'playlist-play', 'navigate'])
+const library = useLibraryStore()
+const notification = inject('notification', null)
 
 const MotionDiv = motion.div
-const MotionImg = motion.img
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
-const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
-const cardVariants = {
-    rest: { y: 0 },
-    hover: { y: -4 }
-}
-const imageVariants = {
-    rest: { scale: 1 },
-    hover: { scale: 1.05 }
-}
-const overlayVariants = {
-    rest: { opacity: 0 },
-    hover: { opacity: 1 }
-}
 
-const currentTime = ref('')
-const currentSong = inject('currentSong')
+const inputRef = ref(null)
+const scrollRef = ref(null)
+const input = ref('')
+const result = ref(null)
+const suggestions = ref([])
+const activeSuggestion = ref(-1)
+const commandHistory = ref([])
+const historyIndex = ref(-1)
+const draftInput = ref('')
+const isSaveDialogOpen = ref(false)
+const playlistName = ref('')
+const isSavingPlaylist = ref(false)
+
+let queryTimer = null
+let liveRequestId = 0
+
 const greeting = computed(() => {
     const hour = new Date().getHours()
     if (hour < 12) return t('home.goodMorning')
@@ -126,231 +168,640 @@ const greeting = computed(() => {
     return t('home.goodEvening')
 })
 
-const updateTime = () => {
-    const now = new Date()
-    currentTime.value = now.toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
+const isCommandMode = computed(() => parseInput(input.value).type === 'command')
+
+const resultKind = computed(() => (result.value ? result.value.kind : 'idle'))
+
+const softTransition = computed(() => (reducedMotion.value ? INSTANT_MOTION : SOFT_SPRING))
+const viewInitial = computed(() => (
+    reducedMotion.value ? { opacity: 0 } : { opacity: 0, y: 16, filter: 'blur(6px)' }
+))
+const viewAnimate = computed(() => (
+    reducedMotion.value ? { opacity: 1 } : { opacity: 1, y: 0, filter: 'blur(0px)' }
+))
+const viewExit = computed(() => (
+    reducedMotion.value ? { opacity: 0 } : { opacity: 0, y: -8, filter: 'blur(4px)' }
+))
+const chipTransition = (index) => (
+    reducedMotion.value ? INSTANT_MOTION : { ...SOFT_SPRING, delay: 0.08 + index * 0.05 }
+)
+
+const helpCommands = computed(() => listCommands())
+
+const chips = computed(() => {
+    const wanted = ['random', 'recent', 'all', 'help']
+    return wanted
+        .map((name) => helpCommands.value.find((command) => command.name === name))
+        .filter(Boolean)
+})
+
+const buildCtx = () => ({
+    tracks: library.tracks.value,
+    albums: library.albums.value,
+    artists: library.artists.value,
+    tags: library.tags.value,
+    history: library.state.history,
+    tracksByTag: (tagId) => library.tracksByTag(tagId)
+})
+
+const refreshSuggestions = () => {
+    const parsed = parseInput(input.value)
+    if (parsed.type !== 'command') {
+        suggestions.value = []
+        activeSuggestion.value = -1
+        return
+    }
+    suggestions.value = suggest(input.value, buildCtx())
+    activeSuggestion.value = suggestions.value.length ? 0 : -1
+}
+
+const scrollToResultsTop = () => {
+    nextTick(() => {
+        if (scrollRef.value) scrollRef.value.scrollTop = 0
     })
 }
 
+const runLive = async (text) => {
+    const requestId = ++liveRequestId
+    const outcome = await execute(text, buildCtx())
+    if (requestId !== liveRequestId) return
+    result.value = outcome?.kind === 'idle' ? null : outcome
+    scrollToResultsTop()
+}
+
+const recordHistory = (raw) => {
+    const text = String(raw || '').trim()
+    if (!text || commandHistory.value[0] === text) return
+    commandHistory.value.unshift(text)
+    if (commandHistory.value.length > 50) commandHistory.value.pop()
+    historyIndex.value = -1
+}
+
+const runChip = (chip) => {
+    const text = `/${chip.name}`
+    recordHistory(text)
+    if (input.value === text) {
+        void runLive(text)
+        return
+    }
+    input.value = text
+}
+
+const completeSuggestion = (item) => {
+    if (!item) return
+    input.value = item.value
+    inputRef.value?.focus?.()
+}
+
+const navigateHistory = (step) => {
+    const history = commandHistory.value
+    if (!history.length) return
+    if (step > 0) {
+        if (historyIndex.value === -1) {
+            draftInput.value = input.value
+            historyIndex.value = 0
+        } else if (historyIndex.value < history.length - 1) {
+            historyIndex.value += 1
+        } else return
+    } else {
+        if (historyIndex.value === -1) return
+        if (historyIndex.value === 0) {
+            historyIndex.value = -1
+            input.value = draftInput.value
+            return
+        }
+        historyIndex.value -= 1
+    }
+    input.value = history[historyIndex.value] ?? ''
+}
+
+const onKeydown = (event) => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        if (suggestions.value.length) {
+            const count = suggestions.value.length
+            const delta = event.key === 'ArrowDown' ? 1 : -1
+            activeSuggestion.value = (activeSuggestion.value + delta + count) % count
+        } else {
+            navigateHistory(event.key === 'ArrowUp' ? 1 : -1)
+        }
+        return
+    }
+    if (event.key === 'Tab') {
+        if (suggestions.value.length) {
+            event.preventDefault()
+            completeSuggestion(suggestions.value[Math.max(0, activeSuggestion.value)])
+        }
+        return
+    }
+    if (event.key === 'Escape') {
+        if (input.value) {
+            input.value = ''
+        } else if (result.value) {
+            result.value = null
+        }
+        return
+    }
+    if (event.key === 'Enter') {
+        event.preventDefault()
+        const parsed = parseInput(input.value)
+        if (parsed.type === 'command') recordHistory(input.value)
+        const songs = result.value?.kind === 'songs' ? result.value : null
+        if (!songs?.tracks.length) return
+        if (songs.autoPlay) {
+            playAll()
+            return
+        }
+        openSaveDialog()
+    }
+}
+
+watch(input, (value) => {
+    refreshSuggestions()
+    if (queryTimer) {
+        clearTimeout(queryTimer)
+        queryTimer = null
+    }
+    if (parseInput(value).type === 'empty') {
+        liveRequestId += 1
+        result.value = null
+        return
+    }
+    queryTimer = setTimeout(() => {
+        queryTimer = null
+        void runLive(value)
+    }, 110)
+})
+
+const playAll = () => {
+    const tracks = result.value?.tracks || []
+    if (!tracks.length) return
+    emit('song-play', { song: tracks[0], songs: tracks })
+}
+
+const onSongPlay = (song) => {
+    const tracks = result.value?.tracks || []
+    emit('song-play', { song, songs: tracks })
+}
+
+const saveDialogMessage = computed(() => (
+    t('home.command.saveMessage', { count: result.value?.tracks?.length || 0 })
+))
+
+const openSaveDialog = () => {
+    const tracks = result.value?.tracks || []
+    if (!tracks.length) return
+    playlistName.value = result.value.title || ''
+    isSaveDialogOpen.value = true
+}
+
+const submitSavePlaylist = async () => {
+    const name = playlistName.value.trim()
+    const tracks = result.value?.kind === 'songs' ? result.value.tracks : []
+    if (!name || isSavingPlaylist.value || !tracks.length) return
+    isSavingPlaylist.value = true
+    try {
+        const created = await library.createPlaylist(name)
+        const playlistId = created?.id
+        if (!playlistId) throw new Error('create playlist failed')
+        for (const track of tracks) {
+            await library.addToPlaylist(playlistId, track.id)
+        }
+        isSaveDialogOpen.value = false
+        notification?.value?.addNotification?.(
+            t('home.command.savedTitle'),
+            name,
+            Tip,
+            null,
+            { Tip: t('home.command.savedTip', { count: tracks.length, name }) },
+            5000
+        )
+    } catch (error) {
+        console.error('保存播放列表失败:', error)
+        notification?.value?.addNotification?.(
+            t('home.command.saveFailed'),
+            name,
+            Tip,
+            null,
+            { Tip: String(error?.message || error) },
+            6000
+        )
+    } finally {
+        isSavingPlaylist.value = false
+    }
+}
+
+const focusInput = () => {
+    inputRef.value?.focus?.()
+}
+
 onMounted(() => {
-    updateTime()
-    setInterval(updateTime, 1000)
+    focusInput()
+})
+
+onActivated(() => {
+    focusInput()
+})
+
+onBeforeUnmount(() => {
+    if (queryTimer) {
+        clearTimeout(queryTimer)
+        queryTimer = null
+    }
 })
 </script>
 
 <style scoped>
-.home-page {
-    width: 100%;
-}
-
-/* 问候区域 */
-.greeting-section {
-    margin-bottom: 40px;
-}
-
-.greeting-text {
-    font-size: 48px;
-    font-weight: 700;
-    margin-bottom: 8px;
-    background: linear-gradient(135deg, rgba(var(--primary-color), 0.3), rgb(var(--secondary-color)));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-
-.current-time {
-    font-size: 16px;
-    color: rgba(var(--text-color), 0.7);
-    font-weight: 500;
-}
-
-/* 区块标题 */
-.section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 24px;
-}
-
-.section-title {
-    font-size: 24px;
-    font-weight: 600;
-    color: rgb(var(--text-color));
-}
-
-.see-all-btn {
-    background: transparent;
-    border: none;
-    color: rgba(var(--primary-color), 0.3);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    padding: 8px 0;
-}
-
-/* 最近播放网格 */
-.recently-played {
-    margin-bottom: 50px;
-}
-
-.recent-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 20px;
-}
-
-.recent-item {
-    cursor: pointer;
-}
-
-.recent-cover {
+.command-console {
+    --console-mono: ui-monospace, 'Cascadia Code', Consolas, 'Courier New', monospace;
+    --dock-clearance: 148px;
     position: relative;
-    aspect-ratio: 1;
-    border-radius: 12px;
-    overflow: hidden;
-    margin-bottom: 12px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-}
-
-.recent-cover img {
     width: 100%;
-    height: 100%;
-    object-fit: cover;
+    height: calc(100vh - 64px);
 }
 
-.play-overlay {
+/* 结果区（内部滚动；底部留白避开悬浮输入框） */
+.console-results {
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
-.recent-info {
-    text-align: left;
-}
-
-.recent-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: rgb(var(--text-color));
-    margin-bottom: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.recent-artist {
-    font-size: 14px;
-    color: rgba(var(--text-color), 0.7);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* 推荐播放列表 */
-.playlist-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 24px;
-}
-
-.playlist-item {
-    cursor: pointer;
-}
-
-.playlist-cover {
-    position: relative;
-    aspect-ratio: 1;
-    border-radius: 16px;
-    overflow: hidden;
-    margin-bottom: 16px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
-}
-
-.playlist-cover img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.playlist-info {
-    text-align: left;
-}
-
-.playlist-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: rgb(var(--text-color));
-    margin-bottom: 6px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.playlist-desc {
-    font-size: 14px;
-    color: rgba(var(--text-color), 0.7);
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-/* 空状态 */
-.section-empty {
-    padding: 40px 0;
-    text-align: center;
-    color: rgba(var(--text-color), 0.5);
-    font-size: 14px;
-}
-
-/* 滚动条样式 */
-.home-page::-webkit-scrollbar {
+.console-results::-webkit-scrollbar {
     width: 4px;
 }
 
-.home-page::-webkit-scrollbar-track {
+.console-results::-webkit-scrollbar-track {
     background: rgba(var(--outline-color), 0.1);
     border-radius: 2px;
 }
 
-.home-page::-webkit-scrollbar-thumb {
+.console-results::-webkit-scrollbar-thumb {
     background: rgba(var(--outline-color), 0.3);
     border-radius: 2px;
 }
 
-.home-page::-webkit-scrollbar-thumb:hover {
+.console-results::-webkit-scrollbar-thumb:hover {
     background: rgba(var(--outline-color), 0.5);
 }
 
-/* 响应式设计 */
+.results-inner {
+    width: 100%;
+    padding: 20px clamp(48px, 8vw, 112px) var(--dock-clearance);
+}
+
+/* 空闲状态 */
+.console-idle {
+    padding-top: 8vh;
+}
+
+.idle-greeting {
+    font-size: 34px;
+    font-weight: 700;
+    color: rgb(var(--text-color));
+}
+
+.idle-subtitle {
+    margin-top: 10px;
+    font-size: 14px;
+    color: rgba(var(--text-color), 0.55);
+}
+
+.idle-empty {
+    margin-top: 6px;
+    font-size: 13px;
+    color: rgba(var(--text-color), 0.4);
+}
+
+.command-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 28px;
+}
+
+.command-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 9px;
+    padding: 9px 14px;
+    border: 1px solid rgba(var(--outline-color), 0.16);
+    border-radius: 12px;
+    background: color-mix(in srgb, rgba(var(--primary-color), 0.5) 12%, rgba(var(--global-color), 0.55) 88%);
+    backdrop-filter: blur(10px);
+    color: rgb(var(--text-color));
+    font: inherit;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.command-chip:hover {
+    border-color: rgba(var(--primary-color), 0.45);
+    background: color-mix(in srgb, rgba(var(--primary-color), 0.5) 18%, rgba(var(--global-color), 0.6) 82%);
+}
+
+.chip-usage {
+    font-family: var(--console-mono);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.chip-desc {
+    font-size: 12px;
+    color: rgba(var(--text-color), 0.55);
+}
+
+/* 错误行（Minecraft 式红字） */
+.console-error {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 12px 16px;
+    border: 1px solid rgba(244, 67, 54, 0.18);
+    border-radius: 12px;
+    background: rgba(244, 67, 54, 0.08);
+    color: #ef5350;
+    font-size: 13.5px;
+    font-weight: 500;
+}
+
+.error-mark {
+    font-weight: 700;
+}
+
+/* 用法提示（参数不全时的中性提示条） */
+.console-hint {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 16px;
+    border: 1px solid rgba(var(--outline-color), 0.14);
+    border-radius: 12px;
+    background: rgba(var(--global-color), 0.4);
+    color: rgba(var(--text-color), 0.6);
+    font-size: 13px;
+}
+
+/* /help 结果 */
+.console-help {
+    max-width: 680px;
+}
+
+.help-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: rgb(var(--text-color));
+    margin-bottom: 12px;
+}
+
+.help-row {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 14px;
+    align-items: center;
+    padding: 7px 12px;
+    border-radius: 10px;
+}
+
+.help-row:hover {
+    background: rgba(var(--surface-color), 0.5);
+}
+
+.help-usage {
+    justify-self: start;
+    padding: 4px 10px;
+    border: 1px solid rgba(var(--primary-color), 0.2);
+    border-radius: 8px;
+    background: rgba(var(--primary-color), 0.12);
+    font-family: var(--console-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: rgb(var(--text-color));
+}
+
+.help-desc {
+    font-size: 13px;
+    color: rgba(var(--text-color), 0.6);
+}
+
+/* 歌曲结果 */
+.result-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 14px 18px;
+    margin-bottom: 14px;
+}
+
+.result-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: rgb(var(--text-color));
+}
+
+.result-count {
+    margin-left: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(var(--text-color), 0.5);
+}
+
+.result-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.result-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-right: 4px;
+    font-size: 12px;
+    color: rgba(var(--text-color), 0.45);
+}
+
+.result-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 0 14px;
+    border: 1px solid rgba(var(--outline-color), 0.16);
+    border-radius: 11px;
+    background: color-mix(in srgb, rgba(var(--primary-color), 0.5) 12%, rgba(var(--global-color), 0.6) 88%);
+    backdrop-filter: blur(8px);
+    color: rgb(var(--text-color));
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.result-action:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(var(--primary-color), 0.5);
+}
+
+.result-action.primary {
+    background: rgba(var(--primary-color), 0.22);
+    border-color: rgba(var(--primary-color), 0.3);
+}
+
+.result-action:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.result-empty {
+    padding: 48px 0;
+    text-align: center;
+    font-size: 14px;
+    color: rgba(var(--text-color), 0.5);
+}
+
+/* 底部输入区（悬浮 + 毛玻璃） */
+.console-dock {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    padding: 0 clamp(48px, 8vw, 112px) 22px;
+    pointer-events: none;
+}
+
+
+.dock-inner {
+    position: relative;
+    width: 100%;
+    pointer-events: auto;
+}
+
+.suggestion-list {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 10px);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(var(--outline-color), 0.16);
+    border-radius: 13px;
+    background: color-mix(in srgb, rgba(var(--primary-color), 0.5) 18%, rgba(var(--global-color), 0.78) 82%);
+    backdrop-filter: blur(22px);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.18);
+}
+
+.suggestion-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 9px 14px;
+    border: 0;
+    background: transparent;
+    color: rgb(var(--text-color));
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.suggestion-item.active {
+    background: rgba(var(--primary-color), 0.16);
+}
+
+.suggestion-usage {
+    flex: 0 0 auto;
+    font-family: var(--console-mono);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.suggestion-desc {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: rgba(var(--text-color), 0.55);
+}
+
+.input-row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-height: 52px;
+    padding: 0 16px;
+    border: 1px solid rgba(var(--outline-color), 0.18);
+    border-radius: 15px;
+    background: color-mix(in srgb, rgba(var(--primary-color), 0.5) 20%, rgba(var(--global-color), 0.72) 80%);
+    backdrop-filter: blur(22px);
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.input-row:focus-within {
+    border-color: rgba(var(--primary-color), 0.6);
+    box-shadow: 0 0 0 4px rgba(var(--primary-color), 0.12);
+}
+
+.input-icon {
+    flex: 0 0 auto;
+    color: rgba(var(--text-color), 0.45);
+    transition: color 0.18s ease;
+}
+
+.input-row.command-mode .input-icon {
+    color: rgba(var(--primary-color), 0.95);
+}
+
+.console-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    font-size: 15px;
+    color: rgb(var(--text-color));
+}
+
+.console-input::placeholder {
+    color: rgba(var(--text-color), 0.35);
+}
+
+/* 响应式 */
 @media (max-width: 768px) {
-    .home-page {
-        padding: 20px 24px;
+    .results-inner {
+        padding: 16px 24px 124px;
     }
 
-    .greeting-text {
-        font-size: 36px;
+    .console-dock {
+        padding: 0 24px 18px;
     }
 
-    .recent-grid,
-    .playlist-grid {
-        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-        gap: 16px;
+    .console-idle {
+        padding-top: 4vh;
     }
 
-    .section-title {
-        font-size: 20px;
+    .idle-greeting {
+        font-size: 26px;
+    }
+
+    .help-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .result-action {
+        transition: none;
+    }
+
+    .result-action:hover:not(:disabled) {
+        transform: none;
     }
 }
 </style>

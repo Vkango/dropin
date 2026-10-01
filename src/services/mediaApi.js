@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
 const commands = {
@@ -15,7 +15,6 @@ const commands = {
   artists: 'media_library_artists',
   refreshTrack: 'media_library_refresh_track',
   removeTrack: 'media_library_remove_track',
-  cover: 'media_cover_get',
   coverPath: 'media_cover_path',
   history: 'media_playback_history',
   record: 'media_playback_record',
@@ -63,8 +62,8 @@ export const mediaApi = {
   artists: (search = '') => invoke(commands.artists, { search }),
   refreshTrack: (trackId) => invoke(commands.refreshTrack, { trackId }),
   removeTrack: (trackId) => invoke(commands.removeTrack, { trackId }),
-  cover: (coverId) => invoke(commands.cover, { coverId }),
   coverPath: (coverId) => invoke(commands.coverPath, { coverId }),
+  coverUrl: (coverId) => coverId ? convertFileSrc(coverId, 'dropin-cover') : '/assets/cover.jpg',
   history: (limit = 50) => invoke(commands.history, { limit }),
   record: (trackId, positionMs = 0) => invoke(commands.record, { trackId, positionMs }),
   pickFolder: () => invoke(commands.pickFolder),
@@ -91,7 +90,8 @@ export const mediaApi = {
   sortRuleSave: (sortRuleId, name, rule) =>
     invoke(commands.sortRuleSave, { sortRuleId, name, rule }),
   sortRuleRemove: (sortRuleId) => invoke(commands.sortRuleRemove, { sortRuleId }),
-  tagCreate: (label) => invoke(commands.tagCreate, { label }),
+  tagCreate: (label, providerKey = null, wiki = null) => invoke(commands.tagCreate, { label, providerKey, wiki }),
+  tagWikiSave: (tagId, wiki) => invoke('media_tag_wiki_save', { tagId, wiki }),
   tagRemove: (tagId) => invoke(commands.tagRemove, { tagId }),
   tagList: () => invoke(commands.tagList),
   trackTag: (trackId, label) => invoke(commands.trackTag, { trackId, label }),
@@ -112,9 +112,4 @@ export async function listenToMediaEvents(handler) {
     listen(eventName, (event) => handler(eventName, event.payload))
   ))
   return () => unlisteners.forEach((unlisten) => unlisten())
-}
-
-export function coverDataUrl(payload) {
-  if (!payload?.dataBase64 || !payload?.mimeType) return ''
-  return `data:${payload.mimeType};base64,${payload.dataBase64}`
 }

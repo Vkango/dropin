@@ -61,7 +61,7 @@
                                     <div class="album-cover">
                                         <MotionTransition variant="cover" mode="out-in">
                                             <MotionImg :key="album.cover" :src="album.cover" :alt="album.title"
-                                                :variants="imageVariants" />
+                                                :variants="imageVariants" loading="lazy" decoding="async" />
                                         </MotionTransition>
                                         <MotionDiv class="album-overlay" :variants="overlayVariants">
                                             <MotionButton class="play-btn" :while-hover="{ scale: 1.1 }"

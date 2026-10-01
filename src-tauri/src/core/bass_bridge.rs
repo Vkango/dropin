@@ -244,6 +244,7 @@ impl BassRuntime {
             "bass_pause" => self.simple_engine_call(operation, |e| e.pause()),
             "bass_is_started" => Ok(json!({ "started": self.engine(operation)?.is_started() })),
             "bass_load_file" => self.load_file(args),
+            "bass_analysis_read" => self.analysis_read(args),
             "bass_pick_file" => self.pick_file(),
             "bass_load_url" => self.load_url(args),
             "bass_load_plugin" => self.load_plugin(args),
@@ -541,6 +542,52 @@ impl BassRuntime {
         let result = channel_json(id, &object);
         self.channels.insert(id, object);
         Ok(result)
+    }
+
+    fn analysis_read(&mut self, args: Value) -> Result<Value, BridgeError> {
+        if self.engine.is_none() {
+            self.load(json!({ "requireFx": false }))?;
+        }
+        let status = self.status()?;
+        if !status
+            .get("initialized")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            self.initialize(json!({}))?;
+        }
+        let path = required_string(&args, "path", "bass_analysis_read")?;
+        let start_ms = optional_u64(&args, "startMs")?.unwrap_or(0);
+        let end_ms = optional_u64(&args, "endMs")?.unwrap_or(start_ms.saturating_add(10_000));
+        let max_samples = optional_usize(&args, "maxSamples")?.unwrap_or(48_000).clamp(1, 80_000);
+        if end_ms < start_ms || end_ms.saturating_sub(start_ms) > 60_000 {
+            return Err(bridge_error("bass_analysis_read", "audio read range must be between 0 and 60000 ms"));
+        }
+        let options = SourceOptions {
+            float: true,
+            decode_only: true,
+            ..SourceOptions::default()
+        };
+        let channel = self
+            .engine("bass_analysis_read")?
+            .load_file(&path, options)
+            .map_err(|error| bass_error("bass_analysis_read", error))?;
+        channel
+            .seek(Duration::from_millis(start_ms))
+            .map_err(|error| bass_error("bass_analysis_read", error))?;
+        let info = channel
+            .info()
+            .map_err(|error| bass_error("bass_analysis_read", error))?;
+        let samples = channel
+            .read_float_data(max_samples, 0)
+            .map_err(|error| bass_error("bass_analysis_read", error))?;
+        Ok(json!({
+            "startMs": start_ms,
+            "endMs": end_ms,
+            "sampleRate": info.frequency,
+            "channels": info.channels,
+            "samples": samples,
+        }))
     }
 
     fn pick_file(&self) -> Result<Value, BridgeError> {
@@ -1461,6 +1508,17 @@ fn required_usize(args: &Value, field: &str, operation: &str) -> Result<usize, B
     let value = required_u64(args, field, operation)?;
     usize::try_from(value)
         .map_err(|_| bridge_error(operation, format!("field {field} is too large")))
+}
+
+fn optional_usize(args: &Value, field: &str) -> Result<Option<usize>, BridgeError> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value
+            .as_u64()
+            .map(|value| usize::try_from(value).unwrap_or(usize::MAX))
+            .map(Some)
+            .ok_or_else(|| bridge_error("bass_call", format!("field {field} must be a u64"))),
+    }
 }
 
 fn optional_u32(args: &Value, field: &str) -> Result<Option<u32>, BridgeError> {

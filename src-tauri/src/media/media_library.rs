@@ -12,7 +12,6 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use base64::Engine;
 use lofty::{
     file::{AudioFile, TaggedFileExt},
     prelude::Accessor,
@@ -168,6 +167,8 @@ struct SortRule {
     tag_direction: String,
     #[serde(default)]
     fields: Vec<SortField>,
+    #[serde(default)]
+    tag_terms: Vec<SortTagTerm>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,6 +177,16 @@ struct SortRule {
 struct SortTagWeight {
     tag_id: String,
     weight: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
+struct SortTagTerm {
+    provider_key: String,
+    key: String,
+    #[serde(default = "default_sort_direction")]
+    direction: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,6 +215,15 @@ enum PlaylistRuleStep {
         kind: String,
         id: Option<String>,
     },
+    #[serde(rename = "tagQuery")]
+    TagQuery {
+        provider_key: String,
+        key: String,
+        op: String,
+        value: Value,
+        #[serde(default)]
+        value_to: Option<Value>,
+    },
     #[serde(rename = "operator")]
     Operator {
         op: String,
@@ -216,20 +236,22 @@ enum PlaylistRuleStep {
 struct RuleSource {
     kind: String,
     id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    op: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    value_to: Option<Value>,
 }
 
 #[derive(Debug, Clone)]
 struct RuleTrack {
     id: String,
     sources: Vec<RuleSource>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CoverPayload {
-    pub cover_id: String,
-    pub mime_type: String,
-    pub data_base64: String,
 }
 
 struct MediaRequest {
@@ -241,12 +263,14 @@ struct MediaRequest {
 #[derive(Clone)]
 pub struct MediaService {
     sender: Sender<MediaRequest>,
+    covers_dir: PathBuf,
 }
 
 impl MediaService {
     pub fn new(app: AppHandle, paths: crate::core::paths::AppPaths) -> Self {
         let (sender, receiver) = mpsc::channel::<MediaRequest>();
         let worker_sender = sender.clone();
+        let covers_dir = paths.covers_dir.clone();
         thread::Builder::new()
             .name("media-db".into())
             .spawn(move || {
@@ -257,7 +281,22 @@ impl MediaService {
                 }
             })
             .expect("failed to start media database worker thread");
-        Self { sender }
+        Self { sender, covers_dir }
+    }
+
+    pub(crate) fn thumbnail_bytes(&self, id: &str) -> Result<Vec<u8>, MediaError> {
+        static DECODER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        if id.is_empty() || id.len() > 128 || !id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_') {
+            return Err(media_error("cover_protocol", "Invalid cover identifier"));
+        }
+        let cached = self.covers_dir.join("thumbnails-v1").join(format!("{}.jpg", stable_id(id)));
+        if cached.is_file() { return fs::read(cached).map_err(|e| io_error("cover_protocol", e)); }
+        let _decoder = DECODER.lock().map_err(|_| media_error("cover_protocol", "Thumbnail decoder unavailable"))?;
+        let result = self.call("media_cover_path", json!({ "coverId": id }))?;
+        let source = result.get("path").and_then(Value::as_str)
+            .ok_or_else(|| media_error("cover_protocol", "Cover not found"))?;
+        let thumbnail = cover_thumbnail(&self.covers_dir, id, Path::new(source))?;
+        fs::read(thumbnail).map_err(|e| io_error("cover_protocol", e))
     }
 
     pub(crate) fn call(&self, operation: &str, args: Value) -> Result<Value, MediaError> {
@@ -330,8 +369,8 @@ impl MediaRuntime {
             "media_library_artists" => self.artists(args),
             "media_library_refresh_track" => self.refresh_track(args),
             "media_library_remove_track" => self.remove_track(args),
-            "media_cover_get" => self.cover_get(args),
             "media_cover_path" => self.cover_path(args),
+            "media_tag_wiki_save" => save_tag_wiki(self.connection("media_tag_wiki_save")?, &args),
             "media_playback_history" => self.playback_history(args),
             "media_playback_record" => self.playback_record(args),
             "media_pick_folder" => self.pick_folder(),
@@ -364,6 +403,15 @@ impl MediaRuntime {
             "media_tag_list" => self.tag_list(args),
             "media_track_tag" => self.track_tag(args),
             "media_track_untag" => self.track_untag(args),
+            "media_tag_provider_list" => self.tag_provider_list(args),
+            "media_tag_provider_reconcile" => self.tag_provider_reconcile(args),
+            "media_tag_catalog_list" => self.tag_catalog_list(args),
+            "media_tag_analysis_start" => self.tag_analysis_start(args),
+            "media_tag_analysis_progress" => self.tag_analysis_progress(args),
+            "media_tag_analysis_finish" => self.tag_analysis_finish(args),
+            "media_tag_results_write" => self.tag_results_write(args),
+            "media_tag_provider_results" => self.tag_provider_results(args),
+            "media_tag_provider_cancel" => self.tag_provider_cancel(args),
             _ => Err(media_error(operation, "unknown media operation")),
         }
     }
@@ -884,42 +932,6 @@ impl MediaRuntime {
         Ok(json!({ "trackId": id, "removed": removed > 0 }))
     }
 
-    fn cover_get(&mut self, args: Value) -> Result<Value, MediaError> {
-        let id = required_string(&args, "coverId", "media_cover_get")?;
-        let record: Option<(String, String)> = self
-            .connection("media_cover_get")?
-            .query_row(
-                "SELECT path, mime_type FROM covers WHERE id = ?1",
-                params![id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()
-            .map_err(|error| sqlite_error("media_cover_get", error))?;
-        let Some((path, mime_type)) = record else {
-            return Err(media_error("media_cover_get", "cover was not found"));
-        };
-        let metadata = fs::metadata(&path).map_err(|error| io_error("media_cover_get", error))?;
-        if metadata.len() > MAX_COVER_BYTES {
-            return Err(media_error(
-                "media_cover_get",
-                "cover is larger than the IPC limit",
-            ));
-        }
-        let bytes = fs::read(&path).map_err(|error| io_error("media_cover_get", error))?;
-        self.connection("media_cover_get")?
-            .execute(
-                "UPDATE covers SET last_accessed_at = ?1 WHERE id = ?2",
-                params![now_ms(), id],
-            )
-            .map_err(|error| sqlite_error("media_cover_get", error))?;
-        Ok(serde_json::to_value(CoverPayload {
-            cover_id: id,
-            mime_type,
-            data_base64: base64::engine::general_purpose::STANDARD.encode(bytes),
-        })
-        .map_err(|error| media_error("media_cover_get", error.to_string()))?)
-    }
-
     fn cover_path(&mut self, args: Value) -> Result<Value, MediaError> {
         let id = required_string(&args, "coverId", "media_cover_path")?;
         let path: Option<String> = self
@@ -931,9 +943,10 @@ impl MediaRuntime {
             )
             .optional()
             .map_err(|error| sqlite_error("media_cover_path", error))?;
+        let path = path.filter(|path| Path::new(path).is_file());
         Ok(json!({
             "coverId": id,
-            "path": path.filter(|path| Path::new(path).is_file())
+            "path": path
         }))
     }
 
@@ -1379,12 +1392,12 @@ impl MediaRuntime {
             .get("rule")
             .cloned()
             .ok_or_else(|| media_error("media_playlist_rule_save", "rule is required"))?;
-        let rule = parse_playlist_rule(rule_value, "media_playlist_rule_save")?;
-        let rule_json = serde_json::to_string(&rule)
-            .map_err(|error| media_error("media_playlist_rule_save", error.to_string()))?;
-
+        let mut rule = parse_playlist_rule(rule_value, "media_playlist_rule_save")?;
         let connection = self.connection("media_playlist_rule_save")?;
         ensure_playlist_exists(connection, &playlist_id, "media_playlist_rule_save")?;
+        migrate_legacy_tag_rule(connection, &mut rule, "media_playlist_rule_save")?;
+        let rule_json = serde_json::to_string(&rule)
+            .map_err(|error| media_error("media_playlist_rule_save", error.to_string()))?;
         let was_dynamic = playlist_is_dynamic(connection, &playlist_id, "media_playlist_rule_save")?;
         validate_playlist_rule(connection, &playlist_id, &rule, "media_playlist_rule_save")?;
         // Evaluate before writing so indirect references cannot introduce a cycle.
@@ -2039,18 +2052,263 @@ impl MediaRuntime {
         Ok(json!({ "playlistId": playlist_id, "trackId": track_id, "removed": removed > 0 }))
     }
 
-    fn tag_create(&mut self, args: Value) -> Result<Value, MediaError> {
-        let label = required_string(&args, "label", "media_tag_create")?;
-        let connection = self.connection("media_tag_create")?;
-        let id = stable_id(&format!("tag\n{label}"));
+    fn tag_provider_list(&mut self, _args: Value) -> Result<Value, MediaError> {
+        let connection = self.connection("media_tag_provider_list")?;
+        let mut statement = connection
+            .prepare(
+                "SELECT key, name, help, value_type, plugin_id, supports_segments, enabled, source_available, stale, updated_at, wiki, source_provider_key
+                 FROM tag_providers ORDER BY CASE WHEN plugin_id IS NULL THEN 0 ELSE 1 END, name COLLATE NOCASE",
+            )
+            .map_err(|error| sqlite_error("media_tag_provider_list", error))?;
+        let rows = statement
+            .query_map([], |row| {
+                let key: String = row.get(0)?;
+                let plugin_id: Option<String> = row.get(4)?;
+                let tag_id = manual_provider_tag_id(&key);
+                let source_key: Option<String> = row.get(11)?;
+                Ok(json!({
+                    "key": key,
+                    "name": row.get::<_, String>(1)?,
+                    "help": row.get::<_, String>(2)?,
+                    "valueType": row.get::<_, String>(3)?,
+                    "pluginId": plugin_id,
+                    "tagId": tag_id,
+                    "kind": if plugin_id.is_some() || source_key.is_some() { "plugin" } else { "manual" },
+                    "supportsSegments": row.get::<_, i64>(5)? != 0,
+                    "enabled": row.get::<_, i64>(6)? != 0,
+                    "sourceAvailable": row.get::<_, i64>(7)? != 0,
+                    "stale": row.get::<_, i64>(8)? != 0,
+                    "updatedAt": row.get::<_, i64>(9)?,
+                    "wiki": row.get::<_, String>(10)?,
+                    "sourceProviderKey": source_key,
+                }))
+            })
+            .map_err(|error| sqlite_error("media_tag_provider_list", error))?;
+        let providers = rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| sqlite_error("media_tag_provider_list", error))?;
+        Ok(json!({ "providers": providers }))
+    }
+
+    fn tag_provider_reconcile(&mut self, args: Value) -> Result<Value, MediaError> {
+        reconcile_tag_providers(self.connection("media_tag_provider_reconcile")?, &args)?;
+        self.tag_provider_list(json!({}))
+    }
+
+    fn tag_catalog_list(&mut self, args: Value) -> Result<Value, MediaError> {
+        let mut catalog_args = json!({
+            "search": args.get("search").cloned().unwrap_or(Value::String(String::new())),
+            "limit": args.get("limit").cloned().unwrap_or(json!(500)),
+            "offset": args.get("offset").cloned().unwrap_or(json!(0)),
+        });
+        if let Some(object) = catalog_args.as_object_mut() {
+            object.remove("playlistId");
+            object.remove("tagId");
+        }
+        self.tracks(catalog_args)
+    }
+
+    fn tag_analysis_start(&mut self, args: Value) -> Result<Value, MediaError> {
+        let provider_key = required_string(&args, "providerKey", "media_tag_analysis_start")?;
+        let connection = self.connection("media_tag_analysis_start")?;
+        let exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM tag_providers WHERE key = ?1)",
+                params![provider_key],
+                |row| row.get(0),
+            )
+            .map_err(|error| sqlite_error("media_tag_analysis_start", error))?;
+        if !exists {
+            return Err(media_error("media_tag_analysis_start", "tag provider does not exist"));
+        }
+        let job_id = format!("tag-job-{}", stable_id(&format!("{}\n{}", provider_key, now_ms())));
         connection
             .execute(
-                "INSERT INTO tags(id, label, created_at) VALUES(?1, ?2, ?3)
-                 ON CONFLICT(id) DO NOTHING",
-                params![id, label, now_ms()],
+                "INSERT INTO tag_analysis_jobs(id, provider_key, state, total, completed, started_at) VALUES(?1, ?2, 'running', ?3, 0, ?4)",
+                params![job_id, provider_key, args.get("total").and_then(Value::as_i64).unwrap_or(0).max(0), now_ms()],
             )
-            .map_err(|error| sqlite_error("media_tag_create", error))?;
-        Ok(json!({ "id": id, "label": label }))
+            .map_err(|error| sqlite_error("media_tag_analysis_start", error))?;
+        connection
+            .execute(
+                "UPDATE tag_providers SET stale = 1, updated_at = ?2 WHERE key = ?1",
+                params![provider_key, now_ms()],
+            )
+            .map_err(|error| sqlite_error("media_tag_analysis_start", error))?;
+        connection
+            .execute(
+                "UPDATE tag_results SET status = 'stale' WHERE provider_key = ?1 AND start_ms = 0 AND end_ms = -1",
+                params![provider_key],
+            )
+            .map_err(|error| sqlite_error("media_tag_analysis_start", error))?;
+        Ok(json!({ "jobId": job_id, "providerKey": provider_key, "state": "running" }))
+    }
+
+    fn tag_analysis_progress(&mut self, args: Value) -> Result<Value, MediaError> {
+        let job_id = required_string(&args, "jobId", "media_tag_analysis_progress")?;
+        let completed = args.get("completed").and_then(Value::as_i64).unwrap_or(0).max(0);
+        let connection = self.connection("media_tag_analysis_progress")?;
+        connection
+            .execute(
+                "UPDATE tag_analysis_jobs SET completed = ?2 WHERE id = ?1 AND state = 'running'",
+                params![job_id, completed],
+            )
+            .map_err(|error| sqlite_error("media_tag_analysis_progress", error))?;
+        Ok(json!({ "jobId": job_id, "completed": completed }))
+    }
+
+    fn tag_analysis_finish(&mut self, args: Value) -> Result<Value, MediaError> {
+        let job_id = required_string(&args, "jobId", "media_tag_analysis_finish")?;
+        let state = args.get("state").and_then(Value::as_str).unwrap_or("finished");
+        if !matches!(state, "finished" | "failed" | "cancelled") {
+            return Err(media_error("media_tag_analysis_finish", "invalid analysis state"));
+        }
+        let connection = self.connection("media_tag_analysis_finish")?;
+        let provider_key: Option<String> = connection
+            .query_row(
+                "SELECT provider_key FROM tag_analysis_jobs WHERE id = ?1",
+                params![job_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| sqlite_error("media_tag_analysis_finish", error))?;
+        let Some(provider_key) = provider_key else {
+            return Err(media_error("media_tag_analysis_finish", "analysis job does not exist"));
+        };
+        connection
+            .execute(
+                "UPDATE tag_analysis_jobs SET state = ?2, error = ?3, finished_at = ?4 WHERE id = ?1",
+                params![job_id, state, args.get("error").and_then(Value::as_str), now_ms()],
+            )
+            .map_err(|error| sqlite_error("media_tag_analysis_finish", error))?;
+        if state == "finished" {
+            connection
+                .execute(
+                    "UPDATE tag_providers SET stale = 0, updated_at = ?2 WHERE key = ?1",
+                    params![provider_key, now_ms()],
+                )
+                .map_err(|error| sqlite_error("media_tag_analysis_finish", error))?;
+        } else {
+            connection
+                .execute(
+                    "UPDATE tag_results SET status = 'stale' WHERE provider_key = ?1",
+                    params![provider_key],
+                )
+                .map_err(|error| sqlite_error("media_tag_analysis_finish", error))?;
+        }
+        Ok(json!({ "jobId": job_id, "providerKey": provider_key, "state": state }))
+    }
+
+    fn tag_provider_cancel(&mut self, args: Value) -> Result<Value, MediaError> {
+        let job_id = required_string(&args, "jobId", "media_tag_provider_cancel")?;
+        let connection = self.connection("media_tag_provider_cancel")?;
+        let changed = connection
+            .execute(
+                "UPDATE tag_analysis_jobs SET state = 'cancelled', finished_at = ?2 WHERE id = ?1 AND state = 'running'",
+                params![job_id, now_ms()],
+            )
+            .map_err(|error| sqlite_error("media_tag_provider_cancel", error))?;
+        Ok(json!({ "jobId": job_id, "cancelled": changed > 0 }))
+    }
+
+    fn tag_results_write(&mut self, args: Value) -> Result<Value, MediaError> {
+        let provider_key = required_string(&args, "providerKey", "media_tag_results_write")?;
+        let values = args
+            .get("results")
+            .and_then(Value::as_array)
+            .ok_or_else(|| media_error("media_tag_results_write", "results is required"))?;
+        let connection = self.connection("media_tag_results_write")?;
+        let (value_type, supports_segments): (String, bool) = connection
+            .query_row(
+                "SELECT value_type, supports_segments FROM tag_providers WHERE key = ?1",
+                params![provider_key],
+                |row| Ok((row.get(0)?, row.get::<_, i64>(1)? != 0)),
+            )
+            .map_err(|error| sqlite_error("media_tag_results_write", error))?;
+        let tx = connection
+            .transaction()
+            .map_err(|error| sqlite_error("media_tag_results_write", error))?;
+        let now = now_ms();
+        for item in values {
+            let track_id = item.get("trackId").and_then(Value::as_str).filter(|v| !v.trim().is_empty())
+                .ok_or_else(|| media_error("media_tag_results_write", "result trackId is required"))?;
+            let key = item.get("key").and_then(Value::as_str).filter(|v| !v.trim().is_empty())
+                .ok_or_else(|| media_error("media_tag_results_write", "result key is required"))?;
+            let value = item.get("value").cloned().unwrap_or(Value::Null);
+            if !valid_tag_value(&value_type, &value) {
+                return Err(media_error("media_tag_results_write", format!("invalid {value_type} value for {key}")));
+            }
+            let start_ms = item.get("startMs").and_then(Value::as_i64).unwrap_or(0).max(0);
+            let end_ms = item.get("endMs").and_then(Value::as_i64).unwrap_or(-1);
+            if (start_ms != 0 || end_ms != -1) && !supports_segments {
+                return Err(media_error("media_tag_results_write", "provider does not support segment results"));
+            }
+            tx.execute(
+                "INSERT INTO tag_results(provider_key, tag_key, track_id, value_json, start_ms, end_ms, status, source_plugin_id, source_version, updated_at)
+                 VALUES(?1, ?2, ?3, ?4, ?5, ?6, 'ready', ?7, ?8, ?9)
+                 ON CONFLICT(provider_key, tag_key, track_id, start_ms, end_ms) DO UPDATE SET value_json=excluded.value_json,
+                   status='ready', source_plugin_id=excluded.source_plugin_id, source_version=excluded.source_version, updated_at=excluded.updated_at",
+                params![provider_key, key, track_id, serde_json::to_string(&value).map_err(|error| media_error("media_tag_results_write", error.to_string()))?, start_ms, end_ms, args.get("pluginId").and_then(Value::as_str), args.get("sourceVersion").and_then(Value::as_str), now],
+            )
+            .map_err(|error| sqlite_error("media_tag_results_write", error))?;
+            if let Some(segments) = item.get("segments").and_then(Value::as_array) {
+                tx.execute(
+                    "DELETE FROM tag_results WHERE provider_key = ?1 AND tag_key = ?2 AND track_id = ?3 AND NOT (start_ms = 0 AND end_ms = -1)",
+                    params![provider_key, key, track_id],
+                )
+                .map_err(|error| sqlite_error("media_tag_results_write", error))?;
+                for segment in segments.iter().take(1024) {
+                    let start_ms = segment.get("startMs").and_then(Value::as_i64).unwrap_or(0).max(0);
+                    let end_ms = segment.get("endMs").and_then(Value::as_i64).unwrap_or(start_ms).max(start_ms);
+                    let segment_value = segment.get("value").cloned().unwrap_or(Value::Null);
+                    if !valid_tag_value(&value_type, &segment_value) { continue; }
+                    tx.execute(
+                        "INSERT OR REPLACE INTO tag_results(provider_key, tag_key, track_id, value_json, start_ms, end_ms, status, source_plugin_id, source_version, updated_at)
+                         VALUES(?1, ?2, ?3, ?4, ?5, ?6, 'ready', ?7, ?8, ?9)",
+                        params![provider_key, key, track_id, serde_json::to_string(&segment_value).map_err(|error| media_error("media_tag_results_write", error.to_string()))?, start_ms, end_ms, args.get("pluginId").and_then(Value::as_str), args.get("sourceVersion").and_then(Value::as_str), now],
+                    )
+                    .map_err(|error| sqlite_error("media_tag_results_write", error))?;
+                }
+            }
+        }
+        tx.commit()
+            .map_err(|error| sqlite_error("media_tag_results_write", error))?;
+        Ok(json!({ "providerKey": provider_key, "written": values.len() }))
+    }
+
+    fn tag_provider_results(&mut self, args: Value) -> Result<Value, MediaError> {
+        let provider_key = required_string(&args, "providerKey", "media_tag_provider_results")?;
+        let key = args.get("key").and_then(Value::as_str).unwrap_or("");
+        let search = args.get("search").and_then(Value::as_str).unwrap_or("").trim();
+        let limit = args.get("limit").and_then(Value::as_i64).unwrap_or(500).clamp(1, 2000);
+        let offset = args.get("offset").and_then(Value::as_i64).unwrap_or(0).max(0);
+        let connection = self.connection("media_tag_provider_results")?;
+        let sql = "SELECT t.id, t.source, t.path, t.url, t.title, t.artist, t.album, t.album_artist, t.composer,
+                    t.genres_json, t.year, t.track_number, t.track_total, t.disc_number, t.disc_total,
+                    t.duration_ms, t.bitrate, t.sample_rate, t.channels, t.codec, t.format, t.cover_id,
+                    t.cover_mime_type, t.file_hash, t.warnings_json, t.added_at, t.updated_at, t.last_played_at,
+                    r.tag_key, r.value_json, r.status, r.updated_at
+             FROM tag_results r INNER JOIN tracks t ON t.id = r.track_id
+             WHERE r.provider_key = ?1 AND r.start_ms = 0 AND r.end_ms = -1 AND (?2 = '' OR r.tag_key = ?2)
+               AND t.missing = 0 AND (?3 = '' OR t.title LIKE '%' || ?3 || '%' OR t.artist LIKE '%' || ?3 || '%' OR t.album LIKE '%' || ?3 || '%')
+             ORDER BY COALESCE(t.album, ''), t.track_number IS NULL, t.track_number, t.title
+             LIMIT ?4 OFFSET ?5";
+        let mut statement = connection.prepare(sql).map_err(|error| sqlite_error("media_tag_provider_results", error))?;
+        let rows = statement.query_map(params![provider_key, key, search, limit, offset], |row| {
+            Ok((row_to_track(row)?, row.get::<_, String>(28)?, row.get::<_, String>(29)?, row.get::<_, String>(30)?, row.get::<_, i64>(31)?))
+        }).map_err(|error| sqlite_error("media_tag_provider_results", error))?;
+        let results = rows.collect::<Result<Vec<_>, _>>().map_err(|error| sqlite_error("media_tag_provider_results", error))?;
+        let values = results.into_iter().map(|(track, key, value_json, status, updated_at)| json!({
+            "track": track, "key": key, "value": serde_json::from_str::<Value>(&value_json).unwrap_or(Value::Null), "status": status, "updatedAt": updated_at
+        })).collect::<Vec<_>>();
+        let total: i64 = connection.query_row(
+            "SELECT COUNT(*) FROM tag_results r INNER JOIN tracks t ON t.id = r.track_id WHERE r.provider_key = ?1 AND r.start_ms = 0 AND r.end_ms = -1 AND (?2 = '' OR r.tag_key = ?2) AND t.missing = 0 AND (?3 = '' OR t.title LIKE '%' || ?3 || '%' OR t.artist LIKE '%' || ?3 || '%' OR t.album LIKE '%' || ?3 || '%')",
+            params![provider_key, key, search], |row| row.get(0)
+        ).map_err(|error| sqlite_error("media_tag_provider_results", error))?;
+        Ok(json!({ "providerKey": provider_key, "results": values, "total": total, "limit": limit, "offset": offset }))
+    }
+
+    fn tag_create(&mut self, args: Value) -> Result<Value, MediaError> {
+        create_tag(self.connection("media_tag_create")?, &args)
     }
 
     fn tag_remove(&mut self, args: Value) -> Result<Value, MediaError> {
@@ -2058,6 +2316,12 @@ impl MediaRuntime {
         let connection = self.connection("media_tag_remove")?;
         let removed = connection
             .execute("DELETE FROM tags WHERE id = ?1", params![id])
+            .map_err(|error| sqlite_error("media_tag_remove", error))?;
+        connection
+            .execute(
+                "DELETE FROM tag_providers WHERE key = ?1",
+                params![manual_provider_key(&id)],
+            )
             .map_err(|error| sqlite_error("media_tag_remove", error))?;
         Ok(json!({ "tagId": id, "removed": removed > 0 }))
     }
@@ -2090,6 +2354,7 @@ impl MediaRuntime {
         let label = required_string(&args, "label", "media_track_tag")?;
         let connection = self.connection("media_track_tag")?;
         let tag_id = stable_id(&format!("tag\n{label}"));
+        let provider_key = manual_provider_key(&tag_id);
         connection
             .execute(
                 "INSERT OR IGNORE INTO tags(id, label, created_at) VALUES(?1, ?2, ?3)",
@@ -2098,11 +2363,25 @@ impl MediaRuntime {
             .map_err(|error| sqlite_error("media_track_tag", error))?;
         connection
             .execute(
+                "INSERT OR IGNORE INTO tag_providers(key, name, help, value_type, plugin_id, supports_segments, enabled, source_available, stale, updated_at)
+                 VALUES(?1, ?2, '', 'text', NULL, 0, 1, 1, 0, ?3)",
+                params![provider_key, label, now_ms()],
+            )
+            .map_err(|error| sqlite_error("media_track_tag", error))?;
+        connection
+            .execute(
                 "INSERT OR IGNORE INTO track_tags(track_id, tag_id) VALUES(?1, ?2)",
                 params![track_id, tag_id],
             )
             .map_err(|error| sqlite_error("media_track_tag", error))?;
-        Ok(json!({ "trackId": track_id, "tagId": tag_id, "tagged": true }))
+        connection
+            .execute(
+                "INSERT OR REPLACE INTO tag_results(provider_key, tag_key, track_id, value_json, start_ms, end_ms, status, updated_at)
+                 VALUES(?1, ?2, ?3, ?4, 0, -1, 'ready', ?5)",
+                params![provider_key, tag_id, track_id, serde_json::to_string(&label).unwrap_or_else(|_| "\"\"".into()), now_ms()],
+            )
+            .map_err(|error| sqlite_error("media_track_tag", error))?;
+        Ok(json!({ "trackId": track_id, "tagId": tag_id, "providerKey": provider_key, "tagged": true }))
     }
 
     fn track_untag(&mut self, args: Value) -> Result<Value, MediaError> {
@@ -2115,8 +2394,208 @@ impl MediaRuntime {
                 params![track_id, tag_id],
             )
             .map_err(|error| sqlite_error("media_track_untag", error))?;
+        connection
+            .execute(
+                "DELETE FROM tag_results WHERE provider_key = ?1 AND tag_key = ?2 AND track_id = ?3",
+                params![manual_provider_key(&tag_id), tag_id, track_id],
+            )
+            .map_err(|error| sqlite_error("media_track_untag", error))?;
         Ok(json!({ "trackId": track_id, "tagId": tag_id, "removed": removed > 0 }))
     }
+}
+
+fn cover_thumbnail(directory: &Path, id: &str, source: &Path) -> Result<PathBuf, MediaError> {
+    let directory = directory.join("thumbnails-v1");
+    let destination = directory.join(format!("{}.jpg", stable_id(id)));
+    if destination.is_file() { return Ok(destination); }
+    let operation = "media_cover_path";
+    let failure = |error: String| media_error(operation, error);
+    if fs::metadata(source).map_err(|e| failure(e.to_string()))?.len() > 16 * 1024 * 1024 {
+        return Err(failure("Cover exceeds the thumbnail decoding limit".into()));
+    }
+    let open = || image::ImageReader::open(source).map_err(|e| failure(e.to_string()))?
+        .with_guessed_format().map_err(|e| failure(e.to_string()));
+    let (width, height) = open()?.into_dimensions().map_err(|e| failure(e.to_string()))?;
+    if u64::from(width) * u64::from(height) > 16_000_000 {
+        return Err(failure("Cover exceeds the thumbnail decoding limit".into()));
+    }
+    let mut reader = open()?;
+    let mut limits = image::Limits::default();
+    limits.max_alloc = Some(64 * 1024 * 1024);
+    reader.limits(limits);
+    let thumbnail = reader.decode().map_err(|e| failure(e.to_string()))?.thumbnail(512, 512).to_rgb8();
+    fs::create_dir_all(&directory).map_err(|e| failure(e.to_string()))?;
+    thumbnail.save(&destination).map_err(|e| failure(e.to_string()))?;
+    Ok(destination)
+}
+
+fn reconcile_tag_providers(connection: &mut Connection, args: &Value) -> Result<(), MediaError> {
+    let providers = args
+        .get("providers")
+        .and_then(Value::as_array)
+        .ok_or_else(|| media_error("media_tag_provider_reconcile", "providers is required"))?;
+    let tx = connection
+        .transaction()
+        .map_err(|error| sqlite_error("media_tag_provider_reconcile", error))?;
+    tx.execute(
+        "UPDATE tag_providers SET source_available = 0, enabled = 0
+         WHERE plugin_id IS NOT NULL AND source_provider_key IS NULL",
+        [],
+    )
+    .map_err(|error| sqlite_error("media_tag_provider_reconcile", error))?;
+    for provider in providers {
+        let key = provider.get("key").and_then(Value::as_str).filter(|v| !v.trim().is_empty());
+        let Some(key) = key else { continue };
+        let plugin_id = provider.get("pluginId").and_then(Value::as_str).filter(|v| !v.trim().is_empty());
+        let Some(plugin_id) = plugin_id else { continue };
+        let name = provider.get("name").and_then(Value::as_str).unwrap_or(key);
+        let help = provider.get("help").and_then(Value::as_str).unwrap_or("");
+        let value_type = provider.get("valueType").and_then(Value::as_str).unwrap_or("text");
+        let supports_segments = provider.get("supportsSegments").and_then(Value::as_bool).unwrap_or(false);
+        let enabled = provider.get("enabled").and_then(Value::as_bool).unwrap_or(false);
+        tx.execute(
+            "INSERT INTO tag_providers(key, name, help, value_type, plugin_id, supports_segments, enabled, source_available, stale, updated_at)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, 0, ?8)
+             ON CONFLICT(key) DO UPDATE SET name=excluded.name, help=excluded.help, value_type=excluded.value_type,
+               plugin_id=excluded.plugin_id, supports_segments=excluded.supports_segments, enabled=excluded.enabled,
+               source_available=1, stale=CASE WHEN excluded.enabled = 1 THEN tag_providers.stale ELSE 1 END,
+               updated_at=excluded.updated_at",
+            params![key, name, help, value_type, plugin_id, supports_segments as i64, enabled as i64, now_ms()],
+        )
+        .map_err(|error| sqlite_error("media_tag_provider_reconcile", error))?;
+        tx.execute(
+            "UPDATE tag_results SET status = 'unavailable' WHERE provider_key = ?1 AND ?2 = 0",
+            params![key, enabled as i64],
+        )
+        .map_err(|error| sqlite_error("media_tag_provider_reconcile", error))?;
+    }
+    tx.execute(
+        "UPDATE tag_providers AS target SET
+           enabled = COALESCE((SELECT source.enabled FROM tag_providers source
+             WHERE source.key = target.source_provider_key AND source.plugin_id = target.plugin_id), 0),
+           source_available = COALESCE((SELECT source.source_available FROM tag_providers source
+             WHERE source.key = target.source_provider_key AND source.plugin_id = target.plugin_id), 0)
+         WHERE target.source_provider_key IS NOT NULL",
+        [],
+    )
+    .map_err(|error| sqlite_error("media_tag_provider_reconcile", error))?;
+    tx.execute(
+        "UPDATE tag_results SET status = 'unavailable'
+         WHERE EXISTS(SELECT 1 FROM tag_providers p WHERE p.key = tag_results.provider_key AND p.plugin_id IS NOT NULL)
+           AND NOT EXISTS(
+               SELECT 1 FROM tag_providers p
+               WHERE p.key = tag_results.provider_key AND p.source_available = 1 AND p.enabled = 1
+           )",
+        [],
+    )
+    .map_err(|error| sqlite_error("media_tag_provider_reconcile", error))?;
+    tx.execute(
+        "UPDATE tag_providers SET stale = 1
+         WHERE plugin_id IS NOT NULL
+           AND (source_available = 0 OR enabled = 0)",
+        [],
+    )
+    .map_err(|error| sqlite_error("media_tag_provider_reconcile", error))?;
+    tx.commit()
+        .map_err(|error| sqlite_error("media_tag_provider_reconcile", error))?;
+    Ok(())
+}
+
+fn save_tag_wiki(connection: &Connection, args: &Value) -> Result<Value, MediaError> {
+    let operation = "media_tag_wiki_save";
+    let tag_id = required_string(args, "tagId", operation)?;
+    let wiki = args.get("wiki").and_then(Value::as_str)
+        .ok_or_else(|| media_error(operation, "Wiki must be a string"))?;
+    if wiki.chars().count() > 32_768 {
+        return Err(media_error(operation, "Wiki exceeds 32768 characters"));
+    }
+    let changed = connection.execute(
+        "UPDATE tag_providers SET wiki = ?1, updated_at = ?2 WHERE key = ?3
+         AND EXISTS(SELECT 1 FROM tags WHERE id = ?4)",
+        params![wiki, now_ms(), manual_provider_key(&tag_id), tag_id],
+    ).map_err(|error| sqlite_error(operation, error))?;
+    if changed == 0 { return Err(media_error(operation, "Tag was not found")); }
+    Ok(json!({ "wiki": wiki }))
+}
+
+fn create_tag(connection: &mut Connection, args: &Value) -> Result<Value, MediaError> {
+    let label = required_string(args, "label", "media_tag_create")?;
+    let id = stable_id(&format!("tag\n{label}"));
+    let provider_key = manual_provider_key(&id);
+    let associated_provider = args
+        .get("providerKey")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let wiki = args
+        .get("wiki")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .chars()
+        .take(32_768)
+        .collect::<String>();
+    let tx = connection.transaction().map_err(|error| sqlite_error("media_tag_create", error))?;
+    let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM tags WHERE id = ?1)", params![id], |row| row.get(0))
+        .map_err(|error| sqlite_error("media_tag_create", error))?;
+    if exists {
+        return Err(media_error("media_tag_create", "a tag with this name already exists"));
+    }
+    let (plugin_id, value_type, supports_segments, enabled, source_available, help) = match &associated_provider {
+        Some(source_key) => {
+            let source: (Option<String>, String, i64, i64, i64, String) = tx
+                .query_row(
+                    "SELECT plugin_id, value_type, supports_segments, enabled, source_available, help
+                     FROM tag_providers WHERE key = ?1 AND source_provider_key IS NULL",
+                    params![source_key],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+                )
+                .optional()
+                .map_err(|error| sqlite_error("media_tag_create", error))?
+                .ok_or_else(|| {
+                    media_error("media_tag_create", format!("associated tag provider does not exist: {source_key}"))
+                })?;
+            source
+        }
+        None => (None, "text".to_string(), 0, 1, 1, String::new()),
+    };
+    if associated_provider.is_some() && plugin_id.is_none() {
+        return Err(media_error("media_tag_create", "associated tag provider has no plugin source"));
+    }
+    tx.execute("INSERT INTO tags(id, label, created_at) VALUES(?1, ?2, ?3)", params![id, label, now_ms()])
+        .map_err(|error| sqlite_error("media_tag_create", error))?;
+    tx
+        .execute(
+            "INSERT INTO tag_providers(key, name, help, value_type, plugin_id, supports_segments, enabled, source_available, stale, updated_at, wiki, source_provider_key)
+             VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![provider_key, label, help, value_type, plugin_id, supports_segments, enabled, source_available,
+                associated_provider.is_some() as i64, now_ms(), wiki, associated_provider],
+        )
+        .map_err(|error| sqlite_error("media_tag_create", error))?;
+    tx.commit().map_err(|error| sqlite_error("media_tag_create", error))?;
+    Ok(json!({ "id": id, "label": label, "key": provider_key }))
+}
+
+fn valid_tag_value(value_type: &str, value: &Value) -> bool {
+    match value_type {
+        "number" => value.as_f64().is_some_and(f64::is_finite),
+        "text" | "enum" => value.as_str().is_some_and(|value| !value.is_empty() && value.len() <= 1024),
+        "boolean" => value.is_boolean(),
+        _ => false,
+    }
+}
+
+const MANUAL_PROVIDER_PREFIX: &str = "manual.";
+
+fn manual_provider_key(tag_id: &str) -> String {
+    format!("{MANUAL_PROVIDER_PREFIX}{tag_id}")
+}
+
+fn manual_provider_tag_id(provider_key: &str) -> Option<String> {
+    provider_key
+        .strip_prefix(MANUAL_PROVIDER_PREFIX)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
 }
 
 fn parse_playlist_rule(value: Value, operation: &str) -> Result<PlaylistRule, MediaError> {
@@ -2145,6 +2624,31 @@ fn validate_sort_rule(
     }
     if rule.tag_weights.len() > 64 || rule.fields.len() > 32 {
         return Err(media_error(operation, "sort rule contains too many conditions"));
+    }
+    if rule.tag_terms.len() > 32 {
+        return Err(media_error(operation, "sort rule contains too many tag terms"));
+    }
+    let mut tag_terms = HashSet::new();
+    for term in &rule.tag_terms {
+        if term.provider_key.trim().is_empty() || term.key.trim().is_empty() {
+            return Err(media_error(operation, "sort rule contains an invalid tag term"));
+        }
+        if !matches!(term.direction.as_str(), "asc" | "desc") {
+            return Err(media_error(operation, "tag term direction must be asc or desc"));
+        }
+        if !tag_terms.insert((&term.provider_key, &term.key)) {
+            return Err(media_error(operation, "sort rule contains a duplicate tag term"));
+        }
+        let exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM tag_providers WHERE key = ?1)",
+                params![term.provider_key],
+                |row| row.get(0),
+            )
+            .map_err(|error| sqlite_error(operation, error))?;
+        if !exists {
+            return Err(media_error(operation, format!("sort rule tag provider does not exist: {}", term.provider_key)));
+        }
     }
     let mut tag_ids = HashSet::new();
     for tag in &rule.tag_weights {
@@ -2239,14 +2743,15 @@ fn load_playlist_sort_rule_id(
     playlist_id: &str,
     operation: &str,
 ) -> Result<Option<String>, MediaError> {
-    connection
+    let sort_rule_id: Option<Option<String>> = connection
         .query_row(
             "SELECT sort_rule_id FROM playlist_order_configs WHERE playlist_id = ?1",
             params![playlist_id],
             |row| row.get(0),
         )
         .optional()
-        .map_err(|error| sqlite_error(operation, error))
+        .map_err(|error| sqlite_error(operation, error))?;
+    Ok(sort_rule_id.flatten())
 }
 
 fn load_playlist_membership_ids(
@@ -2423,6 +2928,25 @@ fn sort_tracks_by_rule(
             }
         }
     }
+    let mut tag_term_values = HashMap::<(String, String), HashMap<String, Value>>::new();
+    for term in &rule.tag_terms {
+        let mut statement = connection
+            .prepare(
+                "SELECT track_id, value_json FROM tag_results
+                 WHERE provider_key = ?1 AND tag_key = ?2 AND start_ms = 0 AND end_ms = -1 AND status = 'ready'",
+            )
+            .map_err(|error| sqlite_error(operation, error))?;
+        let rows = statement
+            .query_map(params![term.provider_key, term.key], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| sqlite_error(operation, error))?;
+        let values = rows
+            .filter_map(|row| row.ok())
+            .filter_map(|(track_id, value)| serde_json::from_str::<Value>(&value).ok().map(|value| (track_id, value)))
+            .collect::<HashMap<_, _>>();
+        tag_term_values.insert((term.provider_key.clone(), term.key.clone()), values);
+    }
     tracks.sort_by(|left, right| {
         let left_score = tag_scores.get(&left.id).copied().unwrap_or(0);
         let right_score = tag_scores.get(&right.id).copied().unwrap_or(0);
@@ -2434,6 +2958,15 @@ fn sort_tracks_by_rule(
         if tag_order != std::cmp::Ordering::Equal {
             return tag_order;
         }
+        for term in &rule.tag_terms {
+            let key = (term.provider_key.clone(), term.key.clone());
+            let left_value = tag_term_values.get(&key).and_then(|values| values.get(&left.id));
+            let right_value = tag_term_values.get(&key).and_then(|values| values.get(&right.id));
+            let ordering = compare_tag_values(left_value, right_value, term.direction == "desc");
+            if ordering != std::cmp::Ordering::Equal {
+                return ordering;
+            }
+        }
         for field in &rule.fields {
             let ordering = compare_sort_field(left, right, field);
             if ordering != std::cmp::Ordering::Equal {
@@ -2443,6 +2976,19 @@ fn sort_tracks_by_rule(
         std::cmp::Ordering::Equal
     });
     Ok(())
+}
+
+fn compare_tag_values(left: Option<&Value>, right: Option<&Value>, descending: bool) -> std::cmp::Ordering {
+    let ordering = match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (Some(left), Some(right)) => match (left.as_f64(), right.as_f64()) {
+            (Some(left), Some(right)) => left.partial_cmp(&right).unwrap_or(std::cmp::Ordering::Equal),
+            _ => left.as_str().unwrap_or("").to_lowercase().cmp(&right.as_str().unwrap_or("").to_lowercase()),
+        },
+    };
+    if descending { ordering.reverse() } else { ordering }
 }
 
 fn ensure_playlist_exists(
@@ -2487,6 +3033,43 @@ fn load_saved_playlist_rule(
         .transpose()
 }
 
+fn migrate_legacy_tag_rule(
+    connection: &Connection,
+    rule: &mut PlaylistRule,
+    operation: &str,
+) -> Result<(), MediaError> {
+    for step in &mut rule.steps {
+        let PlaylistRuleStep::Source { kind, id } = step else {
+            continue;
+        };
+        if kind != "tag" {
+            continue;
+        }
+        let Some(tag_id) = id.as_deref().filter(|value| !value.trim().is_empty()) else {
+            continue;
+        };
+        let label: Option<String> = connection
+            .query_row(
+                "SELECT label FROM tags WHERE id = ?1",
+                params![tag_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| sqlite_error(operation, error))?;
+        let Some(label) = label else {
+            continue;
+        };
+        *step = PlaylistRuleStep::TagQuery {
+            provider_key: manual_provider_key(tag_id),
+            key: tag_id.to_string(),
+            op: "eq".into(),
+            value: Value::String(label),
+            value_to: None,
+        };
+    }
+    Ok(())
+}
+
 fn ensure_static_playlist(
     connection: &Connection,
     playlist_id: &str,
@@ -2528,25 +3111,22 @@ fn validate_playlist_rule(
         ));
     }
 
-    let first_source = match &rule.steps[0] {
-        PlaylistRuleStep::Source { kind, id } => (kind, id),
+    match &rule.steps[0] {
+        PlaylistRuleStep::Source { kind, id } => {
+            validate_playlist_rule_source(connection, target_playlist_id, kind, id, operation)?;
+        }
+        PlaylistRuleStep::TagQuery { provider_key, key, op, value, value_to } => {
+            validate_tag_query(connection, provider_key, key, op, value, value_to.as_ref(), operation)?;
+        }
         PlaylistRuleStep::Operator { .. } => {
             return Err(media_error(operation, "playlist rule must start with a source"));
         }
     };
-    validate_playlist_rule_source(
-        connection,
-        target_playlist_id,
-        first_source.0,
-        first_source.1,
-        operation,
-    )?;
-
     let mut index = 1;
     while index < rule.steps.len() {
         let (op, count) = match &rule.steps[index] {
             PlaylistRuleStep::Operator { op, count } => (op, count),
-            PlaylistRuleStep::Source { .. } => {
+            PlaylistRuleStep::Source { .. } | PlaylistRuleStep::TagQuery { .. } => {
                 return Err(media_error(
                     operation,
                     "playlist rule must alternate sources and operators",
@@ -2562,19 +3142,11 @@ fn validate_playlist_rule(
                         format!("operator {op} does not accept a count"),
                     ));
                 }
-                let Some(PlaylistRuleStep::Source { kind, id }) = rule.steps.get(index + 1) else {
-                    return Err(media_error(
-                        operation,
-                        format!("operator {op} must be followed by a source"),
-                    ));
-                };
-                validate_playlist_rule_source(
-                    connection,
-                    target_playlist_id,
-                    kind,
-                    id,
-                    operation,
-                )?;
+                match rule.steps.get(index + 1) {
+                    Some(PlaylistRuleStep::Source { kind, id }) => validate_playlist_rule_source(connection, target_playlist_id, kind, id, operation)?,
+                    Some(PlaylistRuleStep::TagQuery { provider_key, key, op, value, value_to }) => validate_tag_query(connection, provider_key, key, op, value, value_to.as_ref(), operation)?,
+                    _ => return Err(media_error(operation, format!("operator {op} must be followed by a source"))),
+                }
                 index += 2;
             }
             "randomChoose" => {
@@ -2651,6 +3223,102 @@ fn validate_playlist_rule_source(
     Ok(())
 }
 
+fn validate_tag_query(
+    connection: &Connection,
+    provider_key: &str,
+    key: &str,
+    op: &str,
+    value: &Value,
+    value_to: Option<&Value>,
+    operation: &str,
+) -> Result<(), MediaError> {
+    if provider_key.trim().is_empty() || key.trim().is_empty() {
+        return Err(media_error(operation, "tagQuery requires providerKey and key"));
+    }
+    if !matches!(op, "eq" | "contains" | "gt" | "gte" | "lt" | "lte" | "between") {
+        return Err(media_error(operation, format!("unsupported tag query operator: {op}")));
+    }
+    if op == "between" && value_to.is_none() {
+        return Err(media_error(operation, "between requires valueTo"));
+    }
+    if op != "between" && value_to.is_some() {
+        return Err(media_error(operation, "valueTo is only valid for between"));
+    }
+    let value_type: String = connection
+        .query_row(
+            "SELECT value_type FROM tag_providers WHERE key = ?1",
+            params![provider_key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| sqlite_error(operation, error))?
+        .ok_or_else(|| media_error(operation, "tag provider does not exist"))?;
+    let operator_allowed = match value_type.as_str() {
+        "number" => true,
+        "boolean" => op == "eq",
+        "text" | "enum" => matches!(op, "eq" | "contains"),
+        _ => false,
+    };
+    if !operator_allowed {
+        return Err(media_error(operation, format!("operator {op} is not valid for {value_type} tag values")));
+    }
+    if !valid_tag_value(&value_type, value) || value_to.is_some_and(|value| !valid_tag_value(&value_type, value)) {
+        return Err(media_error(operation, "tag query value does not match provider value type"));
+    }
+    Ok(())
+}
+
+fn query_tag_track_ids(
+    connection: &Connection,
+    source: &RuleSource,
+    operation: &str,
+) -> Result<Vec<String>, MediaError> {
+    let provider_key = source.provider_key.as_deref().ok_or_else(|| media_error(operation, "tagQuery providerKey is required"))?;
+    let key = source.key.as_deref().ok_or_else(|| media_error(operation, "tagQuery key is required"))?;
+    let op = source.op.as_deref().ok_or_else(|| media_error(operation, "tagQuery op is required"))?;
+    let value = source.value.as_ref().ok_or_else(|| media_error(operation, "tagQuery value is required"))?;
+    validate_tag_query(connection, provider_key, key, op, value, source.value_to.as_ref(), operation)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT DISTINCT r.track_id, r.value_json FROM tag_results r INNER JOIN tracks t ON t.id = r.track_id
+             WHERE r.provider_key = ?1 AND r.tag_key = ?2 AND r.start_ms = 0 AND r.end_ms = -1 AND r.status = 'ready' AND t.missing = 0",
+        )
+        .map_err(|error| sqlite_error(operation, error))?;
+    let rows = statement
+        .query_map(params![provider_key, key], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|error| sqlite_error(operation, error))?;
+    let mut result = Vec::new();
+    for row in rows {
+        let (track_id, value_json) = row.map_err(|error| sqlite_error(operation, error))?;
+        let actual = serde_json::from_str::<Value>(&value_json).unwrap_or(Value::Null);
+        if tag_value_matches(&actual, op, value, source.value_to.as_ref()) {
+            result.push(track_id);
+        }
+    }
+    Ok(result)
+}
+
+fn tag_value_matches(actual: &Value, op: &str, expected: &Value, upper: Option<&Value>) -> bool {
+    if op == "contains" {
+        return actual.as_str().zip(expected.as_str()).is_some_and(|(actual, expected)| {
+            actual.to_lowercase().contains(&expected.to_lowercase())
+        });
+    }
+    if op == "eq" {
+        return actual == expected;
+    }
+    let Some(left) = actual.as_f64() else { return false };
+    let Some(right) = expected.as_f64() else { return false };
+    match op {
+        "gt" => left > right,
+        "gte" => left >= right,
+        "lt" => left < right,
+        "lte" => left <= right,
+        "between" => upper.and_then(Value::as_f64).is_some_and(|upper| left >= right && left <= upper),
+        _ => false,
+    }
+}
+
 fn source_track_ids(
     connection: &Connection,
     source: &RuleSource,
@@ -2673,6 +3341,7 @@ fn source_track_ids(
             rows.collect::<Result<Vec<String>, _>>()
                 .map_err(|error| sqlite_error(operation, error))
         }
+        "tagQuery" => query_tag_track_ids(connection, source, operation),
         "tag" => {
             let tag_id = source.id.as_deref().ok_or_else(|| {
                 media_error(operation, "tag source requires an id")
@@ -2804,6 +3473,20 @@ fn evaluate_playlist_rule_ids(
             PlaylistRuleStep::Source { kind, id } => RuleSource {
                 kind: kind.clone(),
                 id: id.clone(),
+                provider_key: None,
+                key: None,
+                op: None,
+                value: None,
+                value_to: None,
+            },
+            PlaylistRuleStep::TagQuery { provider_key, key, op, value, value_to } => RuleSource {
+                kind: "tagQuery".into(),
+                id: None,
+                provider_key: Some(provider_key.clone()),
+                key: Some(key.clone()),
+                op: Some(op.clone()),
+                value: Some(value.clone()),
+                value_to: value_to.clone(),
             },
             PlaylistRuleStep::Operator { .. } => {
                 return Err(media_error(operation, "playlist rule must start with a source"));
@@ -2814,7 +3497,7 @@ fn evaluate_playlist_rule_ids(
         while index < rule.steps.len() {
             let (op, count) = match &rule.steps[index] {
                 PlaylistRuleStep::Operator { op, count } => (op.as_str(), *count),
-                PlaylistRuleStep::Source { .. } => {
+                PlaylistRuleStep::Source { .. } | PlaylistRuleStep::TagQuery { .. } => {
                     return Err(media_error(
                         operation,
                         "playlist rule must alternate sources and operators",
@@ -2832,6 +3515,20 @@ fn evaluate_playlist_rule_ids(
                 Some(PlaylistRuleStep::Source { kind, id }) => RuleSource {
                     kind: kind.clone(),
                     id: id.clone(),
+                    provider_key: None,
+                    key: None,
+                    op: None,
+                    value: None,
+                    value_to: None,
+                },
+                Some(PlaylistRuleStep::TagQuery { provider_key, key, op, value, value_to }) => RuleSource {
+                    kind: "tagQuery".into(),
+                    id: None,
+                    provider_key: Some(provider_key.clone()),
+                    key: Some(key.clone()),
+                    op: Some(op.clone()),
+                    value: Some(value.clone()),
+                    value_to: value_to.clone(),
                 },
                 _ => {
                     return Err(media_error(
@@ -2973,8 +3670,69 @@ fn migrate(connection: &Connection) -> rusqlite::Result<()> {
         CREATE TABLE IF NOT EXISTS url_cache(url TEXT PRIMARY KEY, local_path TEXT NOT NULL, etag TEXT, last_modified TEXT, content_type TEXT, content_length INTEGER, fetched_at INTEGER NOT NULL, last_accessed_at INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS scan_jobs(id TEXT PRIMARY KEY, state TEXT NOT NULL, root_ids_json TEXT NOT NULL, scanned INTEGER NOT NULL DEFAULT 0, imported INTEGER NOT NULL DEFAULT 0, skipped INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, started_at INTEGER NOT NULL, finished_at INTEGER, error TEXT);
         CREATE TABLE IF NOT EXISTS playback_history(id INTEGER PRIMARY KEY AUTOINCREMENT, track_id TEXT NOT NULL, played_at INTEGER NOT NULL, position_ms INTEGER NOT NULL DEFAULT 0);
-        PRAGMA user_version = 4;",
-    )
+        CREATE TABLE IF NOT EXISTS tag_providers(
+            key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            help TEXT NOT NULL DEFAULT '',
+            value_type TEXT NOT NULL,
+            plugin_id TEXT,
+            supports_segments INTEGER NOT NULL DEFAULT 0,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            source_available INTEGER NOT NULL DEFAULT 1,
+            stale INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            wiki TEXT NOT NULL DEFAULT '',
+            source_provider_key TEXT
+        );
+        CREATE TABLE IF NOT EXISTS tag_results(
+            provider_key TEXT NOT NULL REFERENCES tag_providers(key) ON DELETE CASCADE,
+            tag_key TEXT NOT NULL,
+            track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            value_json TEXT NOT NULL,
+            start_ms INTEGER NOT NULL DEFAULT 0,
+            end_ms INTEGER NOT NULL DEFAULT -1,
+            status TEXT NOT NULL DEFAULT 'ready',
+            source_plugin_id TEXT,
+            source_version TEXT,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(provider_key, tag_key, track_id, start_ms, end_ms)
+        );
+        CREATE INDEX IF NOT EXISTS idx_tag_results_track ON tag_results(track_id);
+        CREATE INDEX IF NOT EXISTS idx_tag_results_query ON tag_results(provider_key, tag_key, status);
+        CREATE TABLE IF NOT EXISTS tag_analysis_jobs(
+            id TEXT PRIMARY KEY,
+            provider_key TEXT NOT NULL,
+            state TEXT NOT NULL,
+            total INTEGER NOT NULL DEFAULT 0,
+            completed INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            started_at INTEGER NOT NULL,
+            finished_at INTEGER
+        );
+        PRAGMA user_version = 5;",
+    )?;
+    let _ = connection.execute("ALTER TABLE tag_providers ADD COLUMN wiki TEXT NOT NULL DEFAULT ''", []);
+    let _ = connection.execute("ALTER TABLE tag_providers ADD COLUMN source_provider_key TEXT", []);
+    connection.execute(
+        "INSERT OR IGNORE INTO tag_providers(key, name, help, value_type, plugin_id, supports_segments, enabled, source_available, stale, updated_at)
+         SELECT 'manual.' || t.id, t.label, '', 'text', NULL, 0, 1, 1, 0, t.created_at FROM tags t",
+        [],
+    )?;
+    connection.execute(
+        "INSERT OR IGNORE INTO tag_results(provider_key, tag_key, track_id, value_json, status, updated_at)
+         SELECT 'manual.' || t.id, t.id, tt.track_id, json_quote(t.label), 'ready', t.created_at
+         FROM track_tags tt INNER JOIN tags t ON t.id = tt.tag_id",
+        [],
+    )?;
+    connection.execute(
+        "UPDATE OR IGNORE tag_results SET provider_key = 'manual.' || tag_key WHERE provider_key = 'manualTag'",
+        [],
+    )?;
+    connection.execute(
+        "DELETE FROM tag_providers WHERE key = 'manualTag'",
+        [],
+    )?;
+    Ok(())
 }
 
 fn row_to_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<MediaTrack> {
@@ -3727,22 +4485,16 @@ pub fn media_library_remove_track(
 }
 
 #[tauri::command]
-pub fn media_cover_get(
-    service: State<'_, MediaService>,
-    cover_id: String,
-) -> Result<CoverPayload, MediaError> {
-    value_result(
-        service.call("media_cover_get", json!({ "coverId": cover_id }))?,
-        "media_cover_get",
-    )
-}
-
-#[tauri::command]
 pub fn media_cover_path(
     service: State<'_, MediaService>,
     cover_id: String,
 ) -> Result<Value, MediaError> {
     service.call("media_cover_path", json!({ "coverId": cover_id }))
+}
+
+#[tauri::command]
+pub fn media_tag_wiki_save(service: State<'_, MediaService>, tag_id: String, wiki: String) -> Result<Value, MediaError> {
+    service.call("media_tag_wiki_save", json!({ "tagId": tag_id, "wiki": wiki }))
 }
 
 #[tauri::command]
@@ -4037,8 +4789,10 @@ pub fn media_sort_rule_remove(
 pub fn media_tag_create(
     service: State<'_, MediaService>,
     label: String,
+    provider_key: Option<String>,
+    wiki: Option<String>,
 ) -> Result<Value, MediaError> {
-    service.call("media_tag_create", json!({ "label": label }))
+    service.call("media_tag_create", json!({ "label": label, "providerKey": provider_key, "wiki": wiki }))
 }
 
 #[tauri::command]
@@ -4078,6 +4832,21 @@ pub fn media_track_untag(
     )
 }
 
+#[tauri::command]
+pub fn tag_provider_results(
+    service: State<'_, MediaService>,
+    provider_key: String,
+    key: Option<String>,
+    search: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Result<Value, MediaError> {
+    service.call(
+        "media_tag_provider_results",
+        json!({ "providerKey": provider_key, "key": key, "search": search, "limit": limit, "offset": offset }),
+    )
+}
+
 fn bridge_to_media_error(operation: &str, error: BridgeError) -> MediaError {
     MediaError {
         kind: error.kind,
@@ -4091,6 +4860,39 @@ fn bridge_to_media_error(operation: &str, error: BridgeError) -> MediaError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thumbnails_are_bounded_cached_binary_images() {
+        let directory = std::env::temp_dir().join(format!("dropin-thumbnail-{}-{}", std::process::id(), now_ms()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("original.png");
+        image::RgbImage::new(1024, 768).save(&source).unwrap();
+        let thumbnail = cover_thumbnail(&directory, "cover-test", &source).unwrap();
+        let decoded = image::open(&thumbnail).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (512, 384));
+        assert_eq!(image::open(&source).unwrap().width(), 1024);
+        fs::remove_file(&source).unwrap();
+        assert_eq!(cover_thumbnail(&directory, "cover-test", &source).unwrap(), thumbnail);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn oversized_cover_dimensions_are_rejected_before_pixel_allocation() {
+        let directory = std::env::temp_dir().join(format!("dropin-cover-limit-{}-{}", std::process::id(), now_ms()));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("oversized.bmp");
+        let mut header = vec![0u8; 54];
+        header[..2].copy_from_slice(b"BM");
+        header[10..14].copy_from_slice(&54u32.to_le_bytes());
+        header[14..18].copy_from_slice(&40u32.to_le_bytes());
+        header[18..22].copy_from_slice(&5000i32.to_le_bytes());
+        header[22..26].copy_from_slice(&5000i32.to_le_bytes());
+        header[26..28].copy_from_slice(&1u16.to_le_bytes());
+        header[28..30].copy_from_slice(&24u16.to_le_bytes());
+        fs::write(&source, header).unwrap();
+        assert!(cover_thumbnail(&directory, "huge-cover", &source).unwrap_err().message.contains("decoding limit"));
+        fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn stable_ids_are_deterministic() {
@@ -4155,6 +4957,26 @@ mod tests {
             kind: kind.to_string(),
             id: id.map(str::to_string),
         }
+    }
+
+    fn test_tag_query_for(
+        provider_key: &str,
+        key: &str,
+        op: &str,
+        value: Value,
+        value_to: Option<Value>,
+    ) -> PlaylistRuleStep {
+        PlaylistRuleStep::TagQuery {
+            provider_key: provider_key.into(),
+            key: key.into(),
+            op: op.into(),
+            value,
+            value_to,
+        }
+    }
+
+    fn test_tag_query(op: &str, value: Value, value_to: Option<Value>) -> PlaylistRuleStep {
+        test_tag_query_for("bpm", "bpm", op, value, value_to)
     }
 
     fn test_operator(op: &str) -> PlaylistRuleStep {
@@ -4254,6 +5076,22 @@ mod tests {
             "test",
         )
         .is_err());
+    }
+
+    #[test]
+    fn legacy_tag_sources_migrate_to_manual_tag_queries() {
+        let connection = rule_test_connection();
+        let mut rule = test_rule(vec![test_source("tag", Some("tag-one"))]);
+        migrate_legacy_tag_rule(&connection, &mut rule, "test").expect("migration");
+        assert!(matches!(
+            &rule.steps[0],
+            PlaylistRuleStep::TagQuery { provider_key, key, op, value, value_to }
+                if provider_key == "manual.tag-one"
+                    && key == "tag-one"
+                    && op == "eq"
+                    && value == &json!("Tag one")
+                    && value_to.is_none()
+        ));
     }
 
     #[test]
@@ -4389,6 +5227,166 @@ mod tests {
     }
 
     #[test]
+    fn playlist_rule_tag_queries_are_typed_and_provider_backed() {
+        let connection = rule_test_connection();
+        connection
+            .execute(
+                "INSERT INTO tag_providers(key, name, value_type, updated_at) VALUES('bpm', 'BPM', 'number', 1)",
+                [],
+            )
+            .expect("bpm provider");
+        for (track_id, bpm) in [("track-a", 128), ("track-b", 110), ("track-c", 121)] {
+            connection
+                .execute(
+                    "INSERT INTO tag_results(provider_key, tag_key, track_id, value_json, status, updated_at)
+                     VALUES('bpm', 'bpm', ?1, ?2, 'ready', 1)",
+                    params![track_id, serde_json::to_string(&bpm).expect("bpm json")],
+                )
+                .expect("bpm result");
+        }
+
+        let query = |step| {
+            let mut tracks = evaluate_playlist_rule_ids(
+                &connection,
+                "target",
+                &test_rule(vec![step]),
+                &mut Vec::new(),
+                "test",
+            )
+            .expect("tag query");
+            tracks.sort_by(|left, right| left.id.cmp(&right.id));
+            tracks.into_iter().map(|track| track.id).collect::<Vec<_>>()
+        };
+        assert_eq!(query(test_tag_query("gt", json!(120), None)), vec!["track-a", "track-c"]);
+        assert_eq!(query(test_tag_query("gte", json!(128), None)), vec!["track-a"]);
+        assert_eq!(query(test_tag_query("lt", json!(121), None)), vec!["track-b"]);
+        assert_eq!(query(test_tag_query("lte", json!(121), None)), vec!["track-b", "track-c"]);
+        assert_eq!(
+            query(test_tag_query("between", json!(110), Some(json!(121)))),
+            vec!["track-b", "track-c"]
+        );
+        assert!(validate_playlist_rule(
+            &connection,
+            "target",
+            &test_rule(vec![test_tag_query("contains", json!("12"), None)]),
+            "test"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn text_tag_queries_support_equals_and_contains_only() {
+        let connection = rule_test_connection();
+        connection
+            .execute(
+                "INSERT INTO tag_providers(key, name, value_type, updated_at) VALUES('genre', 'Genre', 'text', 1)",
+                [],
+            )
+            .expect("genre provider");
+        for (track_id, genre) in [("track-a", "Rock"), ("track-b", "Electronic"), ("track-c", "Post-Rock")] {
+            connection
+                .execute(
+                    "INSERT INTO tag_results(provider_key, tag_key, track_id, value_json, status, updated_at)
+                     VALUES('genre', 'genre', ?1, ?2, 'ready', 1)",
+                    params![track_id, serde_json::to_string(genre).expect("genre json")],
+                )
+                .expect("genre result");
+        }
+        let query = |op, value| {
+            evaluate_playlist_rule_ids(
+                &connection,
+                "target",
+                &test_rule(vec![test_tag_query_for("genre", "genre", op, json!(value), None)]),
+                &mut Vec::new(),
+                "test",
+            )
+            .expect("text query")
+            .into_iter()
+            .map(|track| track.id)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(query("eq", "Rock"), vec!["track-a"]);
+        assert_eq!(query("contains", "rock"), vec!["track-a", "track-c"]);
+        assert!(validate_playlist_rule(
+            &connection,
+            "target",
+            &test_rule(vec![test_tag_query_for("genre", "genre", "gt", json!("Rock"), None)]),
+            "test"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn tag_sort_terms_order_numeric_provider_values() {
+        let connection = rule_test_connection();
+        connection
+            .execute(
+                "INSERT INTO tag_providers(key, name, value_type, updated_at) VALUES('bpm', 'BPM', 'number', 1)",
+                [],
+            )
+            .expect("bpm provider");
+        for (track_id, bpm) in [("track-a", 128), ("track-b", 110), ("track-c", 121)] {
+            connection
+                .execute(
+                    "INSERT INTO tag_results(provider_key, tag_key, track_id, value_json, status, updated_at)
+                     VALUES('bpm', 'bpm', ?1, ?2, 'ready', 1)",
+                    params![track_id, serde_json::to_string(&bpm).expect("bpm json")],
+                )
+                .expect("bpm result");
+        }
+        let rule = SortRule {
+            version: 1,
+            tag_weights: Vec::new(),
+            tag_direction: "desc".into(),
+            fields: Vec::new(),
+            tag_terms: vec![SortTagTerm {
+                provider_key: "bpm".into(),
+                key: "bpm".into(),
+                direction: "desc".into(),
+            }],
+        };
+        validate_sort_rule(&connection, &rule, "test").expect("valid tag sort rule");
+        let mut tracks = ordered_tracks(
+            &connection,
+            &["track-a".into(), "track-b".into(), "track-c".into()],
+            "test",
+        )
+        .expect("tracks");
+        sort_tracks_by_rule(&connection, &mut tracks, &rule, "test").expect("sort");
+        assert_eq!(
+            tracks.iter().map(|track| track.id.as_str()).collect::<Vec<_>>(),
+            vec!["track-a", "track-c", "track-b"]
+        );
+    }
+
+    #[test]
+    fn unavailable_tag_results_are_not_playlist_membership() {
+        let connection = rule_test_connection();
+        connection
+            .execute(
+                "INSERT INTO tag_providers(key, name, value_type, updated_at) VALUES('bpm', 'BPM', 'number', 1)",
+                [],
+            )
+            .expect("bpm provider");
+        connection
+            .execute(
+                "INSERT INTO tag_results(provider_key, tag_key, track_id, value_json, status, updated_at)
+                 VALUES('bpm', 'bpm', 'track-a', '128', 'unavailable', 1)",
+                [],
+            )
+            .expect("stale bpm result");
+        let result = evaluate_playlist_rule_ids(
+            &connection,
+            "target",
+            &test_rule(vec![test_tag_query("gt", json!(120), None)]),
+            &mut Vec::new(),
+            "test",
+        )
+        .expect("tag query");
+        assert!(result.is_empty());
+    }
+
+    #[test]
     fn sort_rule_sums_tag_weights_then_applies_metadata_chain() {
         let connection = rule_test_connection();
         connection
@@ -4417,6 +5415,7 @@ mod tests {
             ],
             tag_direction: "desc".into(),
             fields: vec![SortField { field: "year".into(), direction: "asc".into() }],
+            tag_terms: Vec::new(),
         };
         validate_sort_rule(&connection, &rule, "test").expect("valid sort rule");
         let ids = vec!["track-b", "track-c", "track-d", "track-a"];
@@ -4444,6 +5443,7 @@ mod tests {
             tag_weights: Vec::new(),
             tag_direction: "desc".into(),
             fields: vec![SortField { field: "year".into(), direction: "asc".into() }],
+            tag_terms: Vec::new(),
         };
         let ids = vec!["track-a", "track-d", "track-b", "track-c"];
         let mut tracks = ordered_tracks(
@@ -4514,6 +5514,155 @@ mod tests {
     }
 
     #[test]
+    fn playlist_order_config_null_sort_rule_reads_as_none() {
+        let connection = rule_test_connection();
+        connection
+            .execute(
+                "INSERT INTO playlist_order_configs(playlist_id, sort_rule_id, updated_at)
+                 VALUES('playlist-one', NULL, 1)",
+                [],
+            )
+            .expect("playlist order config");
+        assert_eq!(
+            load_playlist_sort_rule_id(&connection, "playlist-one", "test")
+                .expect("playlist null sort rule read"),
+            None
+        );
+    }
+
+    #[test]
+    fn tag_creation_preserves_wiki_and_rejects_duplicate_names() {
+        let mut connection = rule_test_connection();
+        let created = create_tag(&mut connection, &json!({ "label": "Night", "wiki": "## My collection" }))
+            .expect("create collection");
+        let key = created["key"].as_str().expect("provider key");
+        let stored: (Option<String>, String, i64) = connection.query_row(
+            "SELECT plugin_id, wiki, enabled FROM tag_providers WHERE key = ?1", params![key],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).expect("collection");
+        assert_eq!(stored, (None, "## My collection".into(), 1));
+        assert!(create_tag(&mut connection, &json!({ "label": "Night", "wiki": "replacement" })).is_err());
+        migrate(&connection).expect("repeat migration");
+        let wiki: String = connection.query_row("SELECT wiki FROM tag_providers WHERE key = ?1", params![key], |row| row.get(0))
+            .expect("saved wiki");
+        assert_eq!(wiki, "## My collection");
+    }
+
+    #[test]
+    fn invalid_associated_provider_does_not_leave_a_tag_behind() {
+        let mut connection = rule_test_connection();
+        for provider in ["missing", "manual.tag-one"] {
+            assert!(create_tag(&mut connection, &json!({ "label": "Invalid", "providerKey": provider })).is_err());
+            let count: i64 = connection.query_row("SELECT COUNT(*) FROM tags WHERE label = 'Invalid'", [], |row| row.get(0))
+                .expect("tag count");
+            assert_eq!(count, 0);
+        }
+    }
+
+    #[test]
+    fn original_wiki_is_editable_for_manual_and_plugin_tags_without_changing_the_source() {
+        let mut connection = rule_test_connection();
+        reconcile_tag_providers(&mut connection, &json!({ "providers": [{
+            "key": "energy", "name": "Energy", "valueType": "number", "pluginId": "com.dropin.energy", "enabled": true
+        }] })).unwrap();
+        for (label, source) in [("Manual Wiki", None), ("Plugin Wiki", Some("energy"))] {
+            let created = create_tag(&mut connection, &json!({ "label": label, "providerKey": source, "wiki": "Initial" })).unwrap();
+            let id = created["id"].as_str().unwrap();
+            let key = created["key"].as_str().unwrap();
+            let metadata = |connection: &Connection| connection.query_row(
+                "SELECT plugin_id, source_provider_key, stale FROM tag_providers WHERE key = ?1", params![key],
+                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?, row.get::<_, i64>(2)?)),
+            ).unwrap();
+            let before = metadata(&connection);
+            save_tag_wiki(&connection, &json!({ "tagId": id, "wiki": "## My edited Wiki" })).unwrap();
+            migrate(&connection).unwrap();
+            let wiki: String = connection.query_row("SELECT wiki FROM tag_providers WHERE key = ?1", params![key], |row| row.get(0)).unwrap();
+            assert_eq!(wiki, "## My edited Wiki");
+            assert_eq!(metadata(&connection), before);
+            assert!(save_tag_wiki(&connection, &json!({ "tagId": id, "wiki": "x".repeat(32_769) })).is_err());
+            save_tag_wiki(&connection, &json!({ "tagId": id, "wiki": "" })).unwrap();
+            let wiki: String = connection.query_row("SELECT wiki FROM tag_providers WHERE key = ?1", params![key], |row| row.get(0)).unwrap();
+            assert!(wiki.is_empty());
+        }
+        assert!(save_tag_wiki(&connection, &json!({ "tagId": "energy", "wiki": "Overwrite plugin" })).is_err());
+    }
+
+    #[test]
+    fn associated_tags_follow_their_source_without_replacing_their_wiki() {
+        let mut connection = rule_test_connection();
+        let provider = json!({ "key": "energy", "name": "Energy", "valueType": "number", "pluginId": "com.dropin.energy", "enabled": true });
+        reconcile_tag_providers(&mut connection, &json!({ "providers": [provider] })).expect("source");
+        let created = create_tag(&mut connection, &json!({ "label": "Workout", "providerKey": "energy", "wiki": "My edited Wiki" }))
+            .expect("associated tag");
+        let key = created["key"].as_str().expect("key");
+        connection.execute(
+            "INSERT INTO tag_results(provider_key, tag_key, track_id, value_json, status, updated_at) VALUES(?1, 'energy', 'track-a', '82', 'ready', 1)",
+            params![key],
+        ).expect("result");
+        let state = |connection: &Connection| connection.query_row(
+            "SELECT enabled, source_available, wiki, source_provider_key FROM tag_providers WHERE key = ?1", params![key],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?)),
+        ).expect("tag state");
+
+        let mut disabled = provider.clone();
+        disabled["enabled"] = json!(false);
+        reconcile_tag_providers(&mut connection, &json!({ "providers": [disabled] })).expect("disable source");
+        assert_eq!(state(&connection), (0, 1, "My edited Wiki".into(), "energy".into()));
+        let status: String = connection.query_row("SELECT status FROM tag_results WHERE provider_key = ?1", params![key], |row| row.get(0))
+            .expect("result status");
+        assert_eq!(status, "unavailable");
+
+        reconcile_tag_providers(&mut connection, &json!({ "providers": [provider] })).expect("enable source");
+        assert_eq!(state(&connection), (1, 1, "My edited Wiki".into(), "energy".into()));
+        reconcile_tag_providers(&mut connection, &json!({ "providers": [] })).expect("uninstall source");
+        assert_eq!(state(&connection), (0, 0, "My edited Wiki".into(), "energy".into()));
+
+        let mut other_plugin = provider.clone();
+        other_plugin["pluginId"] = json!("com.other.energy");
+        reconcile_tag_providers(&mut connection, &json!({ "providers": [other_plugin] })).expect("same key, different plugin");
+        assert_eq!(state(&connection), (0, 0, "My edited Wiki".into(), "energy".into()));
+        migrate(&connection).expect("repeat migration");
+        assert_eq!(state(&connection).2, "My edited Wiki");
+    }
+
+    #[test]
+    fn manual_tag_migration_keeps_one_result_per_tag_id() {
+        let connection = rule_test_connection();
+        migrate(&connection).expect("repeat migration");
+
+        let result: (String, String) = connection
+            .query_row(
+                "SELECT tag_key, value_json FROM tag_results
+                 WHERE provider_key = 'manual.tag-one' AND track_id = 'track-a'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("manual tag result");
+        assert_eq!(result.0, "tag-one");
+        assert_eq!(result.1, "\"Tag one\"");
+
+        let legacy_provider: Option<String> = connection
+            .query_row(
+                "SELECT key FROM tag_providers WHERE key = 'manualTag'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .expect("legacy provider lookup");
+        assert!(legacy_provider.is_none());
+
+        let manual_provider: (String, Option<String>) = connection
+            .query_row(
+                "SELECT name, plugin_id FROM tag_providers WHERE key = 'manual.tag-one'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("manual provider row");
+        assert_eq!(manual_provider.0, "Tag one");
+        assert!(manual_provider.1.is_none());
+    }
+
+    #[test]
     fn deleting_sort_rule_detaches_playlist_reference_without_changing_order_data() {
         let connection = rule_test_connection();
         let rule = SortRule {
@@ -4521,6 +5670,7 @@ mod tests {
             tag_weights: Vec::new(),
             tag_direction: "desc".into(),
             fields: vec![SortField { field: "title".into(), direction: "asc".into() }],
+            tag_terms: Vec::new(),
         };
         connection
             .execute(
