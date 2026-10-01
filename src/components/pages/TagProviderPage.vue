@@ -18,7 +18,19 @@
             {{ description }}
           </MotionDiv>
         </div>
-        <div class="controls-row">
+        <div v-if="provider?.tagId" class="controls-row">
+          <MotionButton type="button" class="control-btn" :while-hover="{ y: -1 }" :while-press="{ scale: 0.96 }"
+            :transition="microTransition" @click="openRenameTag">
+            <Icon src="/assets/setting.svg" size="xs" />
+            <span>{{ t('playlistsPage.rename') }}</span>
+          </MotionButton>
+          <MotionButton type="button" class="control-btn" :while-hover="{ y: -1 }" :while-press="{ scale: 0.96 }"
+            :transition="microTransition" @click="openDeleteTag">
+            <Icon src="/assets/delete.svg" size="xs" />
+            <span>{{ t('playlistsPage.delete') }}</span>
+          </MotionButton>
+        </div>
+        <div class="banner-status-row">
           <MotionButton v-if="refreshing && progress.jobId" type="button" class="control-btn cancel-btn"
             :while-hover="{ y: -1 }" :while-press="{ scale: 0.96 }" :transition="microTransition"
             @click="cancelRefresh">
@@ -42,7 +54,9 @@
           <SongList :songs="loading ? [] : listSongs" show-header :primary-action-label="primaryActionLabel"
             :primary-action-clickable="true" :primary-action-disabled="primaryActionDisabled"
             :show-play-all="true" :group-of="groupOf" :sort-value-of="sortValueOf"
+            :context-source="contextSource" :song-badge-of="songBadgeOf"
             @primary-action="handlePrimaryAction" @play-all="playAll" @song-play="handleSongPlay"
+            @song-context-menu="$emit('song-context-menu', $event)"
             @group-label-click="handleGroupLabelClick" @filter-click="focusSearch">
             <template #primary-icon>
               <Plus v-if="isManual" size="13" />
@@ -145,6 +159,47 @@
         </div>
       </div>
     </Dialog>
+
+    <Dialog v-model="isRenameTagDialogOpen" width="460" :aria-labelledby="'rename-tag-dialog-title'">
+      <form class="dialog-content" @submit.prevent="submitRenameTag">
+        <header class="dialog-header">
+          <h2 :id="'rename-tag-dialog-title'">{{ t('tagProvider.renameTitle') }}</h2>
+        </header>
+        <input v-model="renameTagValue" class="dialog-input" type="text"
+          :placeholder="t('dialog.tag.createPlaceholder')" :disabled="isRenamingTag" autofocus />
+        <p v-if="renameTagError" class="provider-error">{{ renameTagError }}</p>
+        <footer class="dialog-actions">
+          <button type="button" class="dialog-button secondary" :disabled="isRenamingTag"
+            @click="isRenameTagDialogOpen = false">
+            {{ t('dialog.actions.cancel') }}
+          </button>
+          <button type="submit" class="dialog-button primary" :disabled="isRenamingTag || !renameTagValue.trim()">
+            {{ t('playlistsPage.renameConfirm') }}
+          </button>
+        </footer>
+      </form>
+    </Dialog>
+
+    <Dialog v-model="isDeleteTagDialogOpen" width="460" :aria-labelledby="'delete-tag-dialog-title'"
+      :aria-describedby="'delete-tag-dialog-message'">
+      <div class="dialog-content">
+        <header class="dialog-header">
+          <h2 :id="'delete-tag-dialog-title'">{{ t('tagProvider.deleteTitle') }}</h2>
+        </header>
+        <p :id="'delete-tag-dialog-message'" class="dialog-message">
+          {{ provider ? t('tagProvider.deleteMessage', { name: provider.name || providerKey }) : '' }}
+        </p>
+        <footer class="dialog-actions">
+          <button type="button" class="dialog-button secondary" :disabled="isDeletingTag"
+            @click="isDeleteTagDialogOpen = false">
+            {{ t('dialog.actions.cancel') }}
+          </button>
+          <button type="button" class="dialog-button danger" :disabled="isDeletingTag" @click="confirmDeleteTag">
+            {{ t('playlistsPage.delete') }}
+          </button>
+        </footer>
+      </div>
+    </Dialog>
   </PageLayout>
 </template>
 
@@ -155,16 +210,18 @@ import { Plus, RefreshCw, Search, BookOpen } from '@lucide/vue'
 import PageLayout from '@/components/layout/PageLayout.vue'
 import MotionTransition from '@/components/ui/MotionTransition.vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import Icon from '@/components/ui/Icon.vue'
 import SongList from '@/components/library/SongList.vue'
 import VirtualList from '@/components/ui/VirtualList.vue'
 import AlphabetFilter from '@/components/ui/AlphabetFilter.vue'
 import { getLocale, useI18n } from '@/i18n/index.js'
+import Tip from '@/components/notification/Tip.vue'
 import { useLibraryStore } from '@/stores/libraryStore.js'
 import { listenToPluginEvents } from '@/services/pluginApi.js'
 import { getAvailableInitials } from '@/utils/alphabet.js'
 import { useAlphabetNavigation } from '@/utils/useAlphabetNavigation.js'
 import MarkdownContent from '@/components/ui/MarkdownContent.vue'
-import { isManualTag } from '@/utils/tagProvider.js'
+import { isManualTag, formatTagBadge } from '@/utils/tagProvider.js'
 import { mediaApi } from '@/services/mediaApi.js'
 import { INSTANT_MOTION, MICRO_SPRING, SOFT_SPRING } from '@/utils/motion.js'
 
@@ -172,9 +229,10 @@ const props = defineProps({
   provider: { type: Object, default: null },
   pluginRuntime: { type: Object, required: true }
 })
-const emit = defineEmits(['song-play'])
+const emit = defineEmits(['song-play', 'song-context-menu', 'navigate'])
 const { t } = useI18n()
 const currentSong = inject('currentSong')
+const notificationRef = inject('notification', null)
 const libraryStore = useLibraryStore()
 const search = ref('')
 const loading = ref(false)
@@ -335,6 +393,79 @@ const handlePrimaryAction = () => {
   else void refresh()
 }
 
+// —— 徽标与右键菜单来源 ——
+const songBadgeOf = (song) => formatTagBadge(props.provider?.name || '', song.tagValue)
+const contextSource = computed(() => props.provider?.tagId
+  ? { type: 'tag', id: props.provider.tagId, name: props.provider?.name || '' }
+  : null)
+
+// —— 重命名 / 删除标签（与播放列表页一致）——
+const isRenameTagDialogOpen = ref(false)
+const renameTagValue = ref('')
+const renameTagError = ref('')
+const isRenamingTag = ref(false)
+const isDeleteTagDialogOpen = ref(false)
+const isDeletingTag = ref(false)
+
+const notifyTag = (tip) => {
+  void notificationRef?.value?.addNotification(
+    t('contextMenu.menuDone'),
+    t('notification.source'),
+    Tip,
+    null,
+    { Tip: tip },
+    2600
+  ).catch(() => undefined)
+}
+
+const openRenameTag = () => {
+  if (!props.provider?.tagId) return
+  renameTagValue.value = props.provider.name || ''
+  renameTagError.value = ''
+  isRenameTagDialogOpen.value = true
+}
+
+const submitRenameTag = async () => {
+  const tagId = props.provider?.tagId
+  const name = renameTagValue.value.trim()
+  if (!tagId || !name || isRenamingTag.value) return
+  isRenamingTag.value = true
+  renameTagError.value = ''
+  try {
+    await libraryStore.renameTag(tagId, name)
+    isRenameTagDialogOpen.value = false
+    await props.pluginRuntime.refresh().catch(() => undefined)
+    notifyTag(t('contextMenu.tagRenamed', { name }))
+  } catch (cause) {
+    renameTagError.value = cause?.message || String(cause)
+  } finally {
+    isRenamingTag.value = false
+  }
+}
+
+const openDeleteTag = () => {
+  if (!props.provider?.tagId) return
+  isDeleteTagDialogOpen.value = true
+}
+
+const confirmDeleteTag = async () => {
+  const tagId = props.provider?.tagId
+  const name = props.provider?.name || providerKey.value
+  if (!tagId || isDeletingTag.value) return
+  isDeletingTag.value = true
+  try {
+    await libraryStore.removeTag(tagId)
+    isDeleteTagDialogOpen.value = false
+    await props.pluginRuntime.refresh().catch(() => undefined)
+    notifyTag(t('contextMenu.tagDeleted', { name }))
+    emit('navigate', 'library')
+  } catch (cause) {
+    error.value = cause?.message || String(cause)
+  } finally {
+    isDeletingTag.value = false
+  }
+}
+
 const openAddSongs = () => {
   addSearch.value = ''
   isAddSongsDialogOpen.value = true
@@ -478,6 +609,11 @@ watch(providerKey, () => {
   progress.value = { completed: 0, total: 0 }
   void load()
 })
+
+// 曲库刷新（如右键“从标签移除”）后同步重载当前标签的结果
+watch(() => libraryStore.state.tracks, () => {
+  if (providerKey.value && !loading.value) void load()
+})
 onMounted(async () => {
   unlistenPluginEvents = await listenToPluginEvents(handlePluginEvent)
   void load()
@@ -492,9 +628,9 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.controls-row { display: flex; align-items: center; gap: 8px; position: absolute; right: 18px; bottom: 16px; }
-.control-btn { display: flex; align-items: center; gap: 6px; border: 0; border-radius: 5px; padding: 7px 11px; color: rgb(var(--text-color)); background: rgba(var(--surface-color), .68); cursor: pointer; font-size: 12px; }
-.control-btn.cancel-btn { color: #e05b5b; }
+.banner-status-row { display: flex; align-items: center; gap: 8px; position: absolute; right: 18px; bottom: 16px; }
+/* 右上角重命名/删除直接复用全局 .controls-row / .control-btn（见 App.vue） */
+.control-btn.cancel-btn { color: #e05b5b; opacity: 1; }
 .control-btn:disabled, .secondary-action:disabled { cursor: default; opacity: .55; }
 .status { font-size: 11px; }.status.stale { color: #d58b2a; }.status.unavailable { color: #e05b5b; }
 .library-content-with-alphabet { display: flex; align-items: flex-start; gap: 16px; }

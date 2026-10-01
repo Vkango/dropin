@@ -31,8 +31,10 @@
             <div class="song-list-container">
                 <SongList :songs="musicLibrary.songs" :primary-action-label="resolvedPrimaryActionLabel"
                     :primary-action-clickable="primaryActionClickable" :show-play-all="showPlayAll"
+                    :context-source="songContextSource"
                     @primary-action="$emit('primary-action')" @play-all="$emit('play-all')"
                     @song-select="$emit('song-select', $event)" @song-play="$emit('song-play', $event)"
+                    @song-context-menu="$emit('song-context-menu', $event)"
                     @group-label-click="handleGroupLabelClick" />
             </div>
             <AlphabetFilter :active-initial="activeInitial" :top-offset="alphabetTopOffset"
@@ -87,10 +89,15 @@ const props = defineProps({
     showPlayAll: {
         type: Boolean,
         default: false
+    },
+    // 透传给 SongList 的右键菜单来源（如当前播放列表）
+    songContextSource: {
+        type: Object,
+        default: null
     }
 })
 
-const emit = defineEmits(['header-control-click', 'primary-action', 'play-all', 'song-select', 'song-play'])
+const emit = defineEmits(['header-control-click', 'primary-action', 'play-all', 'song-select', 'song-play', 'song-context-menu'])
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
 const microTransition = computed(() => reducedMotion.value ? INSTANT_MOTION : MICRO_SPRING)
@@ -124,37 +131,8 @@ const getIconPath = (iconName) => {
 </script>
 
 <style scoped>
-.controls-row {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    position: absolute;
-    right: 40px;
-    width: fit-content;
-    top: 20px;
-}
+/* 横幅右上角 .controls-row / .control-btn 样式已提升为全局（App.vue），供各页面共用 */
 
-.control-btn {
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: rgb(var(--primary-color), 0.5);
-    padding: 8px 12px;
-    font-size: 12px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    opacity: 0.5;
-}
-
-.control-btn.selected {
-    font-weight: bold;
-    color: rgb(var(--primary-color));
-    opacity: 1;
-}
-
-/* 库信息 */
 .library-info {
     margin-bottom: 24px;
 }

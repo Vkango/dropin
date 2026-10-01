@@ -31,7 +31,8 @@ const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 const WASM_MEMORY_BYTES: usize = 32 * 1024 * 1024;
 const WASM_FUEL: u64 = 2_000_000;
-const TAG_ANALYSIS_FUEL: u64 = 20_000_000;
+// Tag 分析逐首调用，插件可能整曲多点取样（多次音频读取 + JSON 解析），预算需远大于普通调用
+const TAG_ANALYSIS_FUEL: u64 = 200_000_000;
 const STATE_VERSION: u32 = 2;
 const EVENT_PLUGIN_NOTIFICATION: &str = "plugin/notification";
 const EVENT_TAG_ANALYSIS_PROGRESS: &str = "tag/analysis-progress";
@@ -1228,7 +1229,6 @@ fn read_library_audio(args: Value, host: &HostApiContext) -> Result<Value, Strin
     if end_ms < start_ms || end_ms.saturating_sub(start_ms) > 60_000 {
         return Err("audio read range must be between 0 and 60000 ms".into());
     }
-    let max_samples = args.get("maxSamples").and_then(Value::as_u64).unwrap_or(48_000).clamp(1, 80_000);
     let source = host
         .media
         .call("media_track_source", json!({ "trackId": track_id }))
@@ -1239,16 +1239,40 @@ fn read_library_audio(args: Value, host: &HostApiContext) -> Result<Value, Strin
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| "track audio is not available for analysis".to_string())?;
+    let max_samples = args.get("maxSamples").and_then(Value::as_u64).unwrap_or(48_000).clamp(1, 80_000);
+    // 多区间流式读取：host 单次打开文件顺序采样。限制总采样数以保证响应远小于 1 MiB 上限
+    let ranges = match args.get("ranges").and_then(Value::as_array) {
+        Some(items) if !items.is_empty() => {
+            let mut total_samples: u64 = 0;
+            for item in items {
+                total_samples += item
+                    .get("maxSamples")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(48_000)
+                    .clamp(1, 80_000);
+            }
+            if items.len() > 32 {
+                return Err("too many audio read ranges (max 32)".to_string());
+            }
+            if total_samples > 64_000 {
+                return Err("audio read ranges exceed 64000 samples in total".to_string());
+            }
+            args.get("ranges").cloned().unwrap_or(Value::Null)
+        }
+        _ => Value::Null,
+    };
+    let mut request = json!({ "path": path, "startMs": start_ms, "endMs": end_ms, "maxSamples": max_samples });
+    if !ranges.is_null() {
+        request["ranges"] = ranges;
+    }
     let result = host
         .bass
-        .call_operation(
-            "bass_analysis_read",
-            json!({ "path": path, "startMs": start_ms, "endMs": end_ms, "maxSamples": max_samples }),
-        )
+        .call_operation("bass_analysis_read", request)
         .map_err(|error| error.to_string())?;
     Ok(json!({ "trackId": track_id, "startMs": start_ms, "endMs": end_ms,
         "sampleRate": result.get("sampleRate").cloned().unwrap_or(json!(0)),
         "channels": result.get("channels").cloned().unwrap_or(json!(0)),
+        "rangeCount": result.get("rangeCount").cloned().unwrap_or(json!(1)),
         "samples": result.get("samples").cloned().unwrap_or_else(|| json!([])),
     }))
 }

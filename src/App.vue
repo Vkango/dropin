@@ -22,6 +22,9 @@ import AlbumDetailCard from './components/library/AlbumDetailCard.vue'
 import Notification from './components/notification/Notification.vue'
 import LoadingWithTip from './components/notification/LoadingWithTip.vue'
 import Tip from './components/notification/Tip.vue'
+import ContextMenu from './components/ui/ContextMenu.vue'
+import SongPropertiesDialog from './components/library/SongPropertiesDialog.vue'
+import { Bookmark, BookmarkX, Info, ListEnd, ListMusic, ListStart, ListX, Play, Plus } from '@lucide/vue'
 import { AnimatePresence, motion, useReducedMotion } from 'motion-v'
 import { themeManager } from './utils/themeManager.js'
 import { bassCall, listenToBassEvents } from './services/bassApi.js'
@@ -35,6 +38,7 @@ import { useLibraryStore } from './stores/libraryStore.js'
 import { useAppSettingsStore } from './stores/appSettingsStore.js'
 import { getLocale, useI18n } from './i18n/index.js'
 import { activateLocale } from './stores/i18nStore.js'
+import { openContextMenu } from './utils/contextMenu.js'
 import { animateElement, APPLE_SPRING, INSTANT_MOTION, SOFT_SPRING } from './utils/motion.js'
 
 const libraryStore = useLibraryStore()
@@ -839,6 +843,180 @@ const handleSongPlay = (payload) => {
   }
 }
 
+// —— 歌曲右键菜单（容器为通用组件 ContextMenu，可复用于任意位置）——
+const isSongPropertiesOpen = ref(false)
+const contextSong = ref(null)
+const pendingPlaylistTrackId = ref(null)
+
+const notifySongMenu = (tip) => {
+  if (!notificationRef.value) return
+  void notificationRef.value.addNotification(
+    t('contextMenu.menuDone'),
+    t('notification.source'),
+    Tip,
+    null,
+    { Tip: tip },
+    2600
+  )
+}
+
+// 可手动添加的标签：排除插件提供的标签（插件 Tag 列表不允许直接添加）
+const manualTagOptions = computed(() => {
+  const pluginTagIds = new Set(tagProviders.value
+    .filter((provider) => provider.pluginId && provider.tagId)
+    .map((provider) => provider.tagId))
+  return libraryStore.tags.value.filter((tag) => !pluginTagIds.has(tag.id))
+})
+
+const buildSongContextMenuItems = (song, source) => {
+  const playlists = libraryStore.playlists.value
+  const tags = manualTagOptions.value
+  const playlistItems = [
+    { id: 'playlist-create', label: t('contextMenu.newPlaylist'), icon: Plus },
+    { separator: true },
+    ...(playlists.length
+      ? playlists.map((playlist) => ({ id: `playlist:${playlist.id}`, label: playlist.name }))
+      : [{ id: 'playlist-empty', label: t('contextMenu.emptyPlaylists'), disabled: true }])
+  ]
+  const tagItems = [
+    { id: 'tag-create', label: t('contextMenu.newTag'), icon: Plus },
+    { separator: true },
+    ...(tags.length
+      ? tags.map((tag) => ({ id: `tag:${tag.id}`, label: tag.label }))
+      : [{ id: 'tag-empty', label: t('contextMenu.emptyTags'), disabled: true }])
+  ]
+  const items = [
+    { id: 'play', label: t('contextMenu.play'), icon: Play },
+    { id: 'play-next', label: t('contextMenu.playNext'), icon: ListStart },
+    { separator: true },
+    { id: 'add-to-queue', label: t('contextMenu.addToQueue'), icon: ListEnd },
+    { id: 'add-to-playlist', label: t('contextMenu.addToPlaylist'), icon: ListMusic, children: playlistItems },
+    { id: 'add-to-tag', label: t('contextMenu.addToTag'), icon: Bookmark, children: tagItems }
+  ]
+  // 来源页附加项：从所在播放列表 / 标签移除
+  if (source?.type === 'playlist' && source.id) {
+    items.push(
+      { separator: true },
+      { id: 'remove-from-playlist', label: t('contextMenu.removeFromPlaylist'), icon: ListX, destructive: true }
+    )
+  } else if (source?.type === 'tag' && source.id) {
+    items.push(
+      { separator: true },
+      { id: 'remove-from-tag', label: t('contextMenu.removeFromTag'), icon: BookmarkX, destructive: true }
+    )
+  }
+  items.push({ separator: true }, { id: 'properties', label: t('contextMenu.properties'), icon: Info })
+  return items
+}
+
+// 下一首播放 / 添加到当前播放队列：直接操作内存中的播放队列
+const enqueueSong = (song, playNext = false) => {
+  if (!activeChannelId.value) {
+    // 当前没有正在播放的歌曲：直接开始播放
+    shufflePlayedIds.clear()
+    playSong(song)
+    notifySongMenu(playNext
+      ? t('contextMenu.playingNow', { title: song.title })
+      : t('contextMenu.addedToQueue', { title: song.title }))
+    return
+  }
+  const queue = playbackQueue.value?.length ? [...playbackQueue.value] : [...libraryStore.tracks.value]
+  if (!queue.length) {
+    shufflePlayedIds.clear()
+    playSong(song)
+    notifySongMenu(t('contextMenu.playingNow', { title: song.title }))
+    return
+  }
+  const currentIndex = queue.findIndex((item) => item.id === currentSong.value?.id)
+  const insertIndex = playNext ? Math.max(0, currentIndex + 1) : queue.length
+  queue.splice(insertIndex, 0, song)
+  playbackQueue.value = queue
+  notifySongMenu(playNext
+    ? t('contextMenu.playNextQueued', { title: song.title })
+    : t('contextMenu.addedToQueue', { title: song.title }))
+}
+
+const addSongToPlaylistById = async (playlistId, song) => {
+  const playlist = libraryStore.playlists.value.find((item) => item.id === playlistId)
+  if (!playlist) return
+  try {
+    await libraryStore.addToPlaylist(playlistId, song.id)
+    notifySongMenu(t('contextMenu.addedToPlaylist', { name: playlist.name }))
+  } catch (error) {
+    console.error('添加到播放列表失败:', error)
+  }
+}
+
+const addSongToTagById = async (tagId, song) => {
+  const tag = libraryStore.tags.value.find((item) => item.id === tagId)
+  if (!tag) return
+  try {
+    await libraryStore.tagTrack(song.id, tag.label)
+    notifySongMenu(t('contextMenu.addedToTag', { name: tag.label }))
+  } catch (error) {
+    console.error('添加标签失败:', error)
+  }
+}
+
+const removeSongFromPlaylistById = async (playlistId, song) => {
+  try {
+    await libraryStore.removeFromPlaylist(playlistId, song.id)
+    const playlist = libraryStore.playlists.value.find((item) => item.id === playlistId)
+    notifySongMenu(t('contextMenu.removedFromPlaylist', { name: playlist?.name || '' }))
+  } catch (error) {
+    console.error('从播放列表移除失败:', error)
+  }
+}
+
+const removeSongFromTagById = async (tagId, song) => {
+  try {
+    await libraryStore.untagTrack(song.id, tagId)
+    const tag = libraryStore.tags.value.find((item) => item.id === tagId)
+    notifySongMenu(t('contextMenu.removedFromTag', { name: tag?.label || '' }))
+  } catch (error) {
+    console.error('从标签移除失败:', error)
+  }
+}
+
+const runSongContextMenuAction = async (actionId, song, source = null) => {
+  if (actionId === 'play') {
+    shufflePlayedIds.clear()
+    playSong(song)
+  } else if (actionId === 'play-next') {
+    enqueueSong(song, true)
+  } else if (actionId === 'add-to-queue') {
+    enqueueSong(song, false)
+  } else if (actionId === 'playlist-create') {
+    pendingPlaylistTrackId.value = song.id
+    handleAddPlaylist()
+  } else if (actionId.startsWith('playlist:')) {
+    await addSongToPlaylistById(actionId.slice('playlist:'.length), song)
+  } else if (actionId === 'tag-create') {
+    handleAddTag()
+  } else if (actionId.startsWith('tag:')) {
+    await addSongToTagById(actionId.slice('tag:'.length), song)
+  } else if (actionId === 'remove-from-playlist') {
+    if (source?.id) await removeSongFromPlaylistById(source.id, song)
+  } else if (actionId === 'remove-from-tag') {
+    if (source?.id) await removeSongFromTagById(source.id, song)
+  } else if (actionId === 'properties') {
+    contextSong.value = song
+    isSongPropertiesOpen.value = true
+  }
+}
+
+const handleSongContextMenu = async ({ song, x, y, source = null }) => {
+  if (!song) return
+  const selection = await openContextMenu({
+    x,
+    y,
+    items: buildSongContextMenuItems(song, source),
+    minWidth: 230
+  })
+  if (!selection) return
+  await runSongContextMenuAction(selection.id, song, source)
+}
+
 const handleAlbumSelect = (album) => {
   console.log('选择专辑:', album.title)
   // 可以导航到专辑详情页面
@@ -1290,6 +1468,15 @@ const submitCreatePlaylist = async () => {
     const result = await libraryStore.createPlaylist(name)
     isCreatePlaylistDialogOpen.value = false
     selectedPlaylistId.value = result?.id || ''
+    // 右键菜单“新建播放列表…”会携带待添加的歌曲
+    if (result?.id && pendingPlaylistTrackId.value) {
+      const trackId = pendingPlaylistTrackId.value
+      pendingPlaylistTrackId.value = null
+      await libraryStore.addToPlaylist(result.id, trackId).catch((error) => {
+        console.error('添加到播放列表失败:', error)
+      })
+      notifySongMenu(t('contextMenu.addedToPlaylist', { name }))
+    }
     navigateToPage('playlists')
     return result
   } catch (error) {
@@ -1637,6 +1824,7 @@ onBeforeUnmount(() => {
             @artist-follow="handleArtistFollow" @playlist-play="handlePlaylistPlay"
             @playlist-select="handlePlaylistPageSelect" @playlist-song-play="handlePlaylistSongPlay"
             @user-playlist-play="handleUserPlaylistPlay" @navigate="handleNavigate"
+            @song-context-menu="handleSongContextMenu"
             @header-control-click="handleHeaderControlClick" @plugin-open="handleSelectPlugin" @plugin-close="navigateToPage('plugins')" @close="navigateToPage('plugins')" />
         </KeepAlive>
       </Transition>
@@ -1746,6 +1934,11 @@ onBeforeUnmount(() => {
     </Dialog>
 
     <Notification ref="notificationRef" class="app-notification-layer" />
+
+    <!-- 通用右键菜单宿主：全局唯一实例，任何位置可通过 openContextMenu() 弹出 -->
+    <ContextMenu />
+
+    <SongPropertiesDialog v-model="isSongPropertiesOpen" :song="contextSong" />
   </div>
 </template>
 
@@ -1889,6 +2082,37 @@ body {
   color: rgb(var(--text-color), 0.4);
   font-size: 14px;
   /* text-shadow: 0 1px 5px rgba(0, 0, 0, 0.7); */
+}
+
+/* 页面横幅右上角控制按钮（Library / 播放列表 / Tag 等页面共用） */
+.controls-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: absolute;
+  right: 40px;
+  width: fit-content;
+  top: 20px;
+}
+
+.control-btn {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: rgb(var(--primary-color), 0.5);
+  padding: 8px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0.5;
+}
+
+.control-btn.selected {
+  font-weight: bold;
+  color: rgb(var(--primary-color));
+  opacity: 1;
 }
 
 /* 滚动条样式 */

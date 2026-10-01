@@ -403,6 +403,8 @@ impl MediaRuntime {
             "media_tag_list" => self.tag_list(args),
             "media_track_tag" => self.track_tag(args),
             "media_track_untag" => self.track_untag(args),
+            "media_tag_rename" => self.tag_rename(args),
+            "media_track_tags_read" => self.track_tags_read(args),
             "media_tag_provider_list" => self.tag_provider_list(args),
             "media_tag_provider_reconcile" => self.tag_provider_reconcile(args),
             "media_tag_catalog_list" => self.tag_catalog_list(args),
@@ -2401,6 +2403,166 @@ impl MediaRuntime {
             )
             .map_err(|error| sqlite_error("media_track_untag", error))?;
         Ok(json!({ "trackId": track_id, "tagId": tag_id, "removed": removed > 0 }))
+    }
+
+    fn tag_rename(&mut self, args: Value) -> Result<Value, MediaError> {
+        let id = required_string(&args, "tagId", "media_tag_rename")?;
+        let name = required_string(&args, "name", "media_tag_rename")?;
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(media_error("media_tag_rename", "tag name cannot be empty"));
+        }
+        let connection = self.connection("media_tag_rename")?;
+        let duplicate: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM tags WHERE label = ?1 COLLATE NOCASE AND id != ?2)",
+                params![trimmed, id],
+                |row| row.get(0),
+            )
+            .map_err(|error| sqlite_error("media_tag_rename", error))?;
+        if duplicate {
+            return Err(media_error("media_tag_rename", "a tag with this name already exists"));
+        }
+        let updated = connection
+            .execute(
+                "UPDATE tags SET label = ?1 WHERE id = ?2",
+                params![trimmed, id],
+            )
+            .map_err(|error| sqlite_error("media_tag_rename", error))?;
+        // 手动 Tag 的提供者名称与结果值都派生自标签名，保持同步
+        let provider_key = manual_provider_key(&id);
+        connection
+            .execute(
+                "UPDATE tag_providers SET name = ?1, updated_at = ?2 WHERE key = ?3",
+                params![trimmed, now_ms(), provider_key],
+            )
+            .map_err(|error| sqlite_error("media_tag_rename", error))?;
+        connection
+            .execute(
+                "UPDATE tag_results SET value_json = ?1, updated_at = ?2 WHERE provider_key = ?3",
+                params![
+                    serde_json::to_string(trimmed).unwrap_or_else(|_| "\"\"".into()),
+                    now_ms(),
+                    provider_key
+                ],
+            )
+            .map_err(|error| sqlite_error("media_tag_rename", error))?;
+        Ok(json!({ "tagId": id, "name": trimmed, "updated": updated > 0 }))
+    }
+
+    fn track_tags_read(&mut self, args: Value) -> Result<Value, MediaError> {
+        let track_id = required_string(&args, "trackId", "media_track_tags_read")?;
+        let connection = self.connection("media_track_tags_read")?;
+        let manual_prefix = MANUAL_PROVIDER_PREFIX;
+
+        // 来源一：track_tags 显式关联的标签（手动/关联创建）
+        // 注意：SQLite 不允许子查询 ORDER BY 引用外层别名，故手动提供者偏好用两个
+        // 关联子查询 + COALESCE 表达（关联仅出现在 WHERE，合法）
+        let mut linked_statement = connection
+            .prepare(
+                "SELECT tg.id, tg.label,
+                        COALESCE(
+                          (SELECT r.value_json FROM tag_results r
+                            WHERE r.provider_key = ?2 || tg.id AND r.track_id = ?1
+                              AND r.start_ms = 0 AND r.end_ms = -1
+                            ORDER BY r.updated_at DESC LIMIT 1),
+                          (SELECT r.value_json FROM tag_results r
+                            WHERE r.tag_key = tg.id AND r.track_id = ?1
+                              AND r.start_ms = 0 AND r.end_ms = -1
+                            ORDER BY r.updated_at DESC LIMIT 1)
+                        ),
+                        EXISTS(SELECT 1 FROM tag_providers p
+                                WHERE p.key = ?2 || tg.id AND p.plugin_id IS NULL
+                                  AND (p.source_provider_key IS NULL OR p.source_provider_key = ''))
+                 FROM track_tags tt INNER JOIN tags tg ON tg.id = tt.tag_id
+                 WHERE tt.track_id = ?1
+                 ORDER BY tg.label COLLATE NOCASE",
+            )
+            .map_err(|error| sqlite_error("media_track_tags_read", error))?;
+        let linked_rows = linked_statement
+            .query_map(params![track_id, manual_prefix], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, bool>(3)?,
+                ))
+            })
+            .map_err(|error| sqlite_error("media_track_tags_read", error))?;
+        let linked_rows = linked_rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| sqlite_error("media_track_tags_read", error))?;
+        drop(linked_statement);
+
+        let parse_value = |value_json: &Option<String>| {
+            value_json
+                .as_deref()
+                .and_then(|json| serde_json::from_str::<Value>(json).ok())
+                .unwrap_or(Value::Null)
+        };
+        let mut entries: Vec<(String, String, Value, bool)> = linked_rows
+            .into_iter()
+            .map(|(tag_id, label, value_json, manual)| (tag_id, label, parse_value(&value_json), manual))
+            .collect();
+        let mut seen: std::collections::HashSet<String> = entries
+            .iter()
+            .map(|(tag_id, ..)| tag_id.clone())
+            .collect();
+
+        // 来源二：关联/手动提供者写入 tag_results 的分析值（tag_key 未必等于标签 id）。
+        // 仅取 manual.* 提供者：原始插件提供者（如 energy）若已关联会生成 manual.* 副本，
+        // 未关联则不在“我的标签”体系内展示，避免同名标签重复出现。
+        let mut value_statement = connection
+            .prepare(
+                "SELECT p.key, p.name, p.plugin_id, p.source_provider_key, r.tag_key, r.value_json
+                 FROM tag_results r INNER JOIN tag_providers p ON p.key = r.provider_key
+                 WHERE r.track_id = ?1 AND r.start_ms = 0 AND r.end_ms = -1
+                   AND p.key LIKE 'manual.%'
+                 ORDER BY r.updated_at DESC",
+            )
+            .map_err(|error| sqlite_error("media_track_tags_read", error))?;
+        let value_rows = value_statement
+            .query_map(params![track_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })
+            .map_err(|error| sqlite_error("media_track_tags_read", error))?;
+        let value_rows = value_rows
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| sqlite_error("media_track_tags_read", error))?;
+        drop(value_statement);
+
+        for (provider_key, provider_name, plugin_id, source_provider_key, tag_key, value_json) in value_rows {
+            let Some(tag_id) = manual_provider_tag_id(&provider_key) else {
+                continue;
+            };
+            if seen.contains(&tag_id) {
+                continue;
+            }
+            seen.insert(tag_id.clone());
+            // 关联标签能从 tags 表查到正式名称，其余用提供者名称
+            let label = connection
+                .query_row("SELECT label FROM tags WHERE id = ?1", params![tag_id], |row| row.get::<_, String>(0))
+                .unwrap_or_else(|_| provider_name.clone());
+            let manual = plugin_id.is_none()
+                && source_provider_key.as_deref().map(str::is_empty).unwrap_or(true);
+            let _ = tag_key;
+            entries.push((tag_id, label, parse_value(&value_json), manual));
+        }
+
+        let tags = entries
+            .into_iter()
+            .map(|(tag_id, label, value, manual)| {
+                json!({ "tagId": tag_id, "label": label, "value": value, "manual": manual })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({ "trackId": track_id, "tags": tags }))
     }
 }
 
@@ -4806,6 +4968,23 @@ pub fn media_tag_remove(
 #[tauri::command]
 pub fn media_tag_list(service: State<'_, MediaService>) -> Result<Value, MediaError> {
     service.call("media_tag_list", json!({}))
+}
+
+#[tauri::command]
+pub fn media_tag_rename(
+    service: State<'_, MediaService>,
+    tag_id: String,
+    name: String,
+) -> Result<Value, MediaError> {
+    service.call("media_tag_rename", json!({ "tagId": tag_id, "name": name }))
+}
+
+#[tauri::command]
+pub fn media_track_tags_read(
+    service: State<'_, MediaService>,
+    track_id: String,
+) -> Result<Value, MediaError> {
+    service.call("media_track_tags_read", json!({ "trackId": track_id }))
 }
 
 #[tauri::command]

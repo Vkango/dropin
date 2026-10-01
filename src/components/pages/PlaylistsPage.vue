@@ -8,10 +8,12 @@
     :primary-action-label="t('playlistsPage.manageSongsTitle')"
     :primary-action-clickable="true"
     :show-play-all="true"
+    :song-context-source="playlistContextSource"
     @header-control-click="handleHeaderControlClick"
     @primary-action="openSongPicker"
     @play-all="playAll"
     @song-play="playSong"
+    @song-context-menu="$emit('song-context-menu', $event)"
   />
 
   <ManageSongsDialog v-if="songPickerContext" v-model:open="isSongPickerDialogOpen"
@@ -112,6 +114,7 @@ const emit = defineEmits([
   'playlist-select',
   'playlist-song-play',
   'user-playlist-play',
+  'song-context-menu',
   'navigate'
 ])
 
@@ -134,6 +137,11 @@ let tracksRequestId = 0
 const selectedPlaylist = computed(() =>
   props.playlists.find((playlist) => playlist.id === props.selectedPlaylistId) || null
 )
+
+// 右键歌曲时告知菜单处理方当前所在的播放列表（用于“从播放列表移除”）
+const playlistContextSource = computed(() => selectedPlaylist.value
+  ? { type: 'playlist', id: selectedPlaylist.value.id, name: selectedPlaylist.value.name }
+  : null)
 
 const playlistLibrary = computed(() => ({
   totalSongs: playlistSongs.value.length,
@@ -434,6 +442,11 @@ watch(
   syncSelectedPlaylist,
   { immediate: true }
 )
+
+// 曲库刷新（如右键“从播放列表移除”）后同步重载当前列表歌曲
+watch(() => libraryStore.state.tracks, () => {
+  if (selectedPlaylist.value) void loadSelectedTracks(selectedPlaylist.value.id)
+})
 </script>
 
 <style scoped></style>

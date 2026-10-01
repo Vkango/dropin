@@ -4,6 +4,14 @@ use serde_json::{json, Value};
 pub const API_VERSION: i32 = 1;
 pub type PluginResult = Result<Value, String>;
 
+/// 一次音频读取区间（流式批量读取用）
+#[derive(Debug, Clone, Copy)]
+pub struct AudioRange {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub max_samples: u32,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Request {
     pub method: String,
@@ -150,6 +158,24 @@ pub mod host {
             args["maxSamples"] = json!(max_samples);
         }
         call("library.audio.read", args)
+    }
+
+    /// 多区间流式读取：一次调用内 host 打开一次文件、逐区间定位采样并合并返回。
+    /// 适合整曲多点取样（如能量分析），避免多次打开文件；总采样数上限见 host 校验。
+    pub fn library_audio_read_ranges(track_id: &str, ranges: &[AudioRange]) -> PluginResult {
+        let ranges: Value = Value::Array(
+            ranges
+                .iter()
+                .map(|range| {
+                    json!({
+                        "startMs": range.start_ms,
+                        "endMs": range.end_ms,
+                        "maxSamples": range.max_samples,
+                    })
+                })
+                .collect(),
+        );
+        call("library.audio.read", json!({ "trackId": track_id, "ranges": ranges }))
     }
 
     pub fn notification_show(title: &str, body: &str, duration_ms: u64) -> PluginResult {

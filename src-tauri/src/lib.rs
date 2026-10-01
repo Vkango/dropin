@@ -194,6 +194,8 @@ pub fn run() {
             media_library::media_tag_create,
             media_library::media_tag_remove,
             media_library::media_tag_list,
+            media_library::media_tag_rename,
+            media_library::media_track_tags_read,
             media_library::media_track_tag,
             media_library::media_track_untag,
             media_library::tag_provider_results,

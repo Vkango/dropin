@@ -1,9 +1,11 @@
-use dropin_wasm_sdk::{dropin_plugin, host, PluginResult, Request};
+use dropin_wasm_sdk::{dropin_plugin, host, AudioRange, PluginResult, Request};
 use serde_json::{json, Value};
 
 const TAG_KEY: &str = "energy";
+/// 整曲均匀取样的位置数：把全曲均分为多段，一次流式调用内逐段读取汇总，避免只测前奏造成不公平
+const WINDOW_COUNT: u32 = 8;
 const READ_WINDOW_MS: u64 = 5_000;
-const MAX_SAMPLES: u32 = 2_000;
+const SAMPLES_PER_WINDOW: u32 = 5_000;
 /// RMS values of decoded float audio rarely exceed 0.5; map 0.0..0.5 to 0..100.
 const RMS_FULL_SCALE: f64 = 0.5;
 
@@ -58,17 +60,30 @@ fn analyze_entry(args: Value) -> PluginResult {
 
 fn analyze_track(track_id: &str, track: &Value) -> Result<f64, String> {
     let duration_ms = track.get("durationMs").and_then(Value::as_u64).unwrap_or(0);
-    let start_ms = if duration_ms > READ_WINDOW_MS {
-        (duration_ms / 4).min(10_000)
+    // 整曲公平取样：在全曲均匀分布的多个位置各读一小段，汇总所有采样计算整体 RMS。
+    let mut starts: Vec<u64> = if duration_ms > READ_WINDOW_MS {
+        (0..WINDOW_COUNT)
+            .map(|index| {
+                let raw = duration_ms * u64::from(index) / u64::from(WINDOW_COUNT);
+                // 保证窗口完整落在曲长之内
+                raw.min(duration_ms - READ_WINDOW_MS)
+            })
+            .collect()
     } else {
-        0
+        vec![0]
     };
-    let audio = host::library_audio_read_ex(
-        track_id,
-        start_ms,
-        start_ms + READ_WINDOW_MS,
-        Some(MAX_SAMPLES),
-    )?;
+    starts.sort_unstable();
+    starts.dedup();
+    // 一次流式调用读取全部区间：host 只打开一次文件
+    let ranges: Vec<AudioRange> = starts
+        .iter()
+        .map(|&start_ms| AudioRange {
+            start_ms,
+            end_ms: start_ms + READ_WINDOW_MS,
+            max_samples: SAMPLES_PER_WINDOW,
+        })
+        .collect();
+    let audio = host::library_audio_read_ranges(track_id, &ranges)?;
     let samples = audio
         .get("samples")
         .and_then(Value::as_array)

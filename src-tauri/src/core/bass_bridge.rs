@@ -557,12 +557,7 @@ impl BassRuntime {
             self.initialize(json!({}))?;
         }
         let path = required_string(&args, "path", "bass_analysis_read")?;
-        let start_ms = optional_u64(&args, "startMs")?.unwrap_or(0);
-        let end_ms = optional_u64(&args, "endMs")?.unwrap_or(start_ms.saturating_add(10_000));
-        let max_samples = optional_usize(&args, "maxSamples")?.unwrap_or(48_000).clamp(1, 80_000);
-        if end_ms < start_ms || end_ms.saturating_sub(start_ms) > 60_000 {
-            return Err(bridge_error("bass_analysis_read", "audio read range must be between 0 and 60000 ms"));
-        }
+        let ranges = parse_analysis_ranges(&args)?;
         let options = SourceOptions {
             float: true,
             decode_only: true,
@@ -572,11 +567,53 @@ impl BassRuntime {
             .engine("bass_analysis_read")?
             .load_file(&path, options)
             .map_err(|error| bass_error("bass_analysis_read", error))?;
-        channel
-            .seek(Duration::from_millis(start_ms))
-            .map_err(|error| bass_error("bass_analysis_read", error))?;
         let info = channel
             .info()
+            .map_err(|error| bass_error("bass_analysis_read", error))?;
+
+        // 多区间流式读取：只打开一次文件，逐区间定位采样后合并返回
+        if !ranges.is_empty() {
+            let mut samples = Vec::new();
+            let mut readable_ranges = 0usize;
+            for (range_start, _range_end, range_max_samples) in &ranges {
+                if channel
+                    .seek(Duration::from_millis(*range_start))
+                    .is_err()
+                {
+                    continue;
+                }
+                match channel.read_float_data(*range_max_samples, 0) {
+                    Ok(part) => {
+                        readable_ranges += 1;
+                        samples.extend(part);
+                    }
+                    Err(_) => continue,
+                }
+            }
+            if readable_ranges == 0 {
+                return Err(bridge_error(
+                    "bass_analysis_read",
+                    "no readable audio ranges",
+                ));
+            }
+            return Ok(json!({
+                "startMs": ranges[0].0,
+                "endMs": ranges[ranges.len() - 1].1,
+                "sampleRate": info.frequency,
+                "channels": info.channels,
+                "rangeCount": readable_ranges,
+                "samples": samples,
+            }));
+        }
+
+        let start_ms = optional_u64(&args, "startMs")?.unwrap_or(0);
+        let end_ms = optional_u64(&args, "endMs")?.unwrap_or(start_ms.saturating_add(10_000));
+        let max_samples = optional_usize(&args, "maxSamples")?.unwrap_or(48_000).clamp(1, 80_000);
+        if end_ms < start_ms || end_ms.saturating_sub(start_ms) > 60_000 {
+            return Err(bridge_error("bass_analysis_read", "audio read range must be between 0 and 60000 ms"));
+        }
+        channel
+            .seek(Duration::from_millis(start_ms))
             .map_err(|error| bass_error("bass_analysis_read", error))?;
         let samples = channel
             .read_float_data(max_samples, 0)
@@ -2752,6 +2789,52 @@ fn effect_catalog_entry(kind: &str, family: &str, fields: &[&str]) -> Value {
         "family": family,
         "parameters": fields.iter().map(|field| effect_parameter(field, kind == "bassFx.mix" && *field == "lChannel")).collect::<Vec<_>>(),
     })
+}
+
+/// 解析多区间流式读取请求 ranges: [{ startMs, endMs, maxSamples }]
+/// 返回 (startMs, endMs, maxSamples) 列表；未提供 ranges 时返回空列表（走旧单区间路径）
+fn parse_analysis_ranges(args: &Value) -> Result<Vec<(u64, u64, usize)>, BridgeError> {
+    let Some(items) = args.get("ranges").and_then(Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
+    if items.len() > 32 {
+        return Err(bridge_error(
+            "bass_analysis_read",
+            "too many audio read ranges (max 32)",
+        ));
+    }
+    let mut ranges = Vec::with_capacity(items.len());
+    let mut total_samples = 0usize;
+    for item in items {
+        let start_ms = item.get("startMs").and_then(Value::as_u64).unwrap_or(0);
+        let end_ms = item
+            .get("endMs")
+            .and_then(Value::as_u64)
+            .unwrap_or(start_ms.saturating_add(10_000));
+        let max_samples = item
+            .get("maxSamples")
+            .and_then(Value::as_u64)
+            .unwrap_or(48_000)
+            .clamp(1, 80_000) as usize;
+        if end_ms < start_ms || end_ms.saturating_sub(start_ms) > 60_000 {
+            return Err(bridge_error(
+                "bass_analysis_read",
+                "audio read range must be between 0 and 60000 ms",
+            ));
+        }
+        total_samples += max_samples;
+        ranges.push((start_ms, end_ms, max_samples));
+    }
+    if total_samples > 80_000 {
+        return Err(bridge_error(
+            "bass_analysis_read",
+            "audio read ranges exceed 80000 samples in total",
+        ));
+    }
+    Ok(ranges)
 }
 
 fn effect_catalog() -> Value {

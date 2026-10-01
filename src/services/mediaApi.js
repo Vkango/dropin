@@ -40,8 +40,10 @@ const commands = {
   sortRuleRemove: 'media_sort_rule_remove',
   tagCreate: 'media_tag_create',
   tagRemove: 'media_tag_remove',
+  tagRename: 'media_tag_rename',
   tagList: 'media_tag_list',
   trackTag: 'media_track_tag',
+  trackTagsRead: 'media_track_tags_read',
   trackUntag: 'media_track_untag',
   dataDirRead: 'data_dir_read',
   dataDirSet: 'data_dir_set'
@@ -93,8 +95,10 @@ export const mediaApi = {
   tagCreate: (label, providerKey = null, wiki = null) => invoke(commands.tagCreate, { label, providerKey, wiki }),
   tagWikiSave: (tagId, wiki) => invoke('media_tag_wiki_save', { tagId, wiki }),
   tagRemove: (tagId) => invoke(commands.tagRemove, { tagId }),
+  tagRename: (tagId, name) => invoke(commands.tagRename, { tagId, name }),
   tagList: () => invoke(commands.tagList),
   trackTag: (trackId, label) => invoke(commands.trackTag, { trackId, label }),
+  trackTags: (trackId) => invoke(commands.trackTagsRead, { trackId }),
   trackUntag: (trackId, tagId) => invoke(commands.trackUntag, { trackId, tagId }),
   dataDirRead: () => invoke(commands.dataDirRead),
   dataDirSet: (dataDir = null) => invoke(commands.dataDirSet, { dataDir })

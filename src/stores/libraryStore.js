@@ -251,6 +251,17 @@ export function useLibraryStore() {
     return result
   }
 
+  const renameTag = async (tagId, name) => {
+    const result = await mediaApi.tagRename(tagId, name)
+    await refresh()
+    return result
+  }
+
+  const trackTags = async (trackId) => {
+    const result = await mediaApi.trackTags(trackId)
+    return result?.tags || []
+  }
+
   const tagTrack = async (trackId, label) => {
     const result = await mediaApi.trackTag(trackId, label)
     await refresh()
@@ -325,8 +336,10 @@ export function useLibraryStore() {
     sourceTracks,
     createTag,
     removeTag,
+    renameTag,
     tagTrack,
     untagTrack,
+    trackTags,
     tracksByTag,
     saveSortRule,
     removeSortRule,

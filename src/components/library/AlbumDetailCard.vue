@@ -226,15 +226,12 @@ const handleTrackPlay = (track) => {
     align-self: flex-start;
     background: transparent;
     border: none;
-    padding: 4px 8px;
-    border-radius: 8px;
     color: rgba(var(--text-color), 0.8);
     font-size: 14px;
     cursor: pointer;
 }
 
 .album-artist:hover {
-    background: rgba(var(--primary-color), 0.08);
     color: rgb(var(--text-color));
 }
 

@@ -78,6 +78,7 @@ host::notification_show("Paused", "Sleep timer finished.", 8000)?;
 - `key` 是本次写入的标签键名, `value` 的类型必须匹配清单中的 `valueType`.
 - 当 `supportsSegments` 为 true 时, 每条结果可携带 `startMs`/`endMs`, 或用 `segments: [{ startMs, endMs, value }]` 写入分段值.
 - 音频读取使用 `host::library_audio_read_ex(&track_id, start_ms, end_ms, Some(max_samples))`; 请保持较小的读取窗口, host 响应上限为 1 MiB.
+- 整曲多点取样建议用 `host::library_audio_read_ranges(&track_id, &[AudioRange { start_ms, end_ms, max_samples }, ...])`: 一次调用内 host 只打开一次文件, 顺序定位读取所有区间并合并返回 (最多 32 个区间, 总采样数上限 64,000).
 
 ## 插件 Wiki
 

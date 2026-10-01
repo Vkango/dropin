@@ -5,14 +5,14 @@
   "version": "1.0.0",
   "apiVersion": 1,
   "author": "dropin",
-  "description": "Headless tag provider that scores each track's energy (0-100) from a short audio sample.",
+  "description": "Headless tag provider that scores each track's energy (0-100) from samples spread across the whole track.",
   "categories": ["utility"],
   "backend": "backend.wasm",
   "icon": "icon.svg",
   "tagProvider": {
     "key": "energy",
     "name": "Energy",
-    "help": "Estimates track energy (0-100) from a short audio sample.",
+    "help": "Estimates track energy (0-100) from audio samples spread across the whole track.",
     "valueType": "number",
     "supportsSegments": false
   },

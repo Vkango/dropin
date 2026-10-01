@@ -38,12 +38,14 @@
                 <VirtualList :items="group.items" :item-height="64" v-slot="{ item: song }">
                 <MotionDiv class="song-item"
                     :while-hover="{ backgroundColor: 'rgba(var(--surface-color), 0.5)' }" :transition="microTransition"
-                    @click="$emit('song-play', song)">
+                    @click="$emit('song-play', song)"
+                    @contextmenu.prevent.stop="$emit('song-context-menu', { song, x: $event.clientX, y: $event.clientY, source: contextSource })">
                     <div class="col-info">
                         <img :src="song.cover" :alt="song.title" class="song-cover" loading="lazy" decoding="async" />
                         <div class="song-details">
                             <div class="song-title">{{ song.title }}</div>
                             <div class="song-artist">
+                                <span v-if="songBadgeOf" class="song-tag-badge">{{ songBadgeOf(song) }}</span>
                                 <span>{{ song.artist }}</span>
                             </div>
                         </div>
@@ -101,10 +103,20 @@ const props = defineProps({
     sortValueOf: {
         type: Function,
         default: null
+    },
+    // 右键菜单来源描述（如 { type: 'playlist', id, name }），透传给菜单处理方
+    contextSource: {
+        type: Object,
+        default: null
+    },
+    // 歌曲行的徽标文案（如 My Tag 页的 “Energy 30”），显示在艺术家之前
+    songBadgeOf: {
+        type: Function,
+        default: null
     }
 })
 
-const emit = defineEmits(['primary-action', 'play-all', 'song-select', 'song-play', 'group-label-click', 'filter-click'])
+const emit = defineEmits(['primary-action', 'play-all', 'song-select', 'song-play', 'song-context-menu', 'group-label-click', 'filter-click'])
 const MotionDiv = motion.div
 const MotionButton = motion.button
 const reducedMotion = useReducedMotion()
@@ -257,6 +269,19 @@ const resolvedPrimaryActionLabel = computed(() => props.primaryActionLabel || t(
     gap: 8px;
     font-size: 12px;
     color: rgba(var(--text-color), 0.6);
+}
+
+.song-tag-badge {
+    flex: 0 0 auto;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 1px 7px;
+    border-radius: 5px;
+    background: rgba(var(--primary-color), 0.16);
+    color: rgb(var(--text-color));
+    font-size: 11px;
 }
 
 .col-album {
